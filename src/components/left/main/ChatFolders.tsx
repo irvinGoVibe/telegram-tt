@@ -3,7 +3,7 @@ import { memo, useEffect, useMemo, useRef } from '@teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
 import type { ApiChatFolder, ApiChatlistExportedInvite, ApiSession } from '../../../api/types';
-import type { GlobalState } from '../../../global/types';
+import type { GlobalState, SharedSettings } from '../../../global/types';
 import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
 import type { AnimationLevel } from '../../../types';
 import type { MenuItemContextAction } from '../../ui/ListItem';
@@ -22,6 +22,7 @@ import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { resolveTransitionName } from '../../../util/resolveTransitionName';
 import { renderTextWithEntities } from '../../common/helpers/renderTextWithEntities';
 
+import useAppLayout from '../../../hooks/useAppLayout';
 import useDerivedState from '../../../hooks/useDerivedState';
 import {
   useFolderManagerForUnreadChatsByFolder,
@@ -32,7 +33,9 @@ import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useShowTransition from '../../../hooks/useShowTransition';
 
+import Icon from '../../common/icons/Icon';
 import StoryRibbon from '../../story/StoryRibbon';
+import Tab from '../../ui/Tab';
 import TabList from '../../ui/TabList';
 import Transition from '../../ui/Transition';
 import ChatList from './ChatList';
@@ -60,6 +63,12 @@ type StateProps = {
   isStoryRibbonShown?: boolean;
   sessions?: Record<string, ApiSession>;
   isAccountFrozen?: boolean;
+  chatFolderLayout: SharedSettings['chatFolderLayout'];
+};
+
+type FolderTab = TabWithProperties & {
+  emoticon?: string;
+  isAllChats?: boolean;
 };
 
 const SAVED_MESSAGES_HOTKEY = '0';
@@ -85,6 +94,7 @@ const ChatFolders: FC<OwnProps & StateProps> = ({
   isStoryRibbonShown,
   sessions,
   isAccountFrozen,
+  chatFolderLayout,
 }) => {
   const {
     loadChatFolders,
@@ -101,6 +111,7 @@ const ChatFolders: FC<OwnProps & StateProps> = ({
   const transitionRef = useRef<HTMLDivElement>();
 
   const lang = useLang();
+  const { isDesktop } = useAppLayout();
 
   useEffect(() => {
     loadChatFolders();
@@ -254,7 +265,9 @@ const ChatFolders: FC<OwnProps & StateProps> = ({
         isBadgeActive: Boolean(folderCountersById[id]?.notificationsCount),
         isBlocked,
         contextActions: contextActions?.length ? contextActions : undefined,
-      } satisfies TabWithProperties;
+        emoticon: folder.emoticon,
+        isAllChats: id === ALL_FOLDER_ID,
+      } satisfies FolderTab;
     });
   }, [
     displayedFolders, maxFolders, folderCountersById, lang, chatFoldersById, maxChatLists, folderInvitesById,
@@ -374,6 +387,46 @@ const ChatFolders: FC<OwnProps & StateProps> = ({
   }
 
   const shouldRenderFolders = folderTabs && folderTabs.length > 1;
+  const shouldRenderFolderSidebar = shouldRenderFolders && chatFolderLayout === 'sidebar' && isDesktop;
+
+  const renderChatList = () => (
+    <Transition
+      ref={transitionRef}
+      name={resolveTransitionName('slideOptimized', animationLevel, shouldSkipHistoryAnimations, lang.isRtl)}
+      activeKey={activeChatFolder}
+      renderCount={shouldRenderFolders ? folderTabs.length : undefined}
+    >
+      {renderCurrentTab}
+    </Transition>
+  );
+
+  const renderFolderSidebar = () => (
+    <nav className="ChatFolders-sidebar no-scrollbar" aria-label={lang('Filters')}>
+      {folderTabs!.map((tab, index) => (
+        <Tab
+          key={tab.id}
+          title={(
+            <span className="ChatFolders-sidebarContent">
+              <span className="ChatFolders-sidebarIcon" aria-hidden="true">
+                {tab.emoticon || <Icon name={tab.isAllChats ? 'chats-badge' : 'folder'} />}
+              </span>
+              <span className="ChatFolders-sidebarLabel">{tab.title}</span>
+            </span>
+          )}
+          isActive={index === activeChatFolder}
+          isBlocked={tab.isBlocked}
+          badgeCount={tab.badgeCount}
+          isBadgeActive={tab.isBadgeActive}
+          onClick={handleSwitchTab}
+          clickArg={index}
+          contextActions={tab.contextActions}
+          contextRootElementSelector="#LeftColumn"
+          className="ChatFolders-sidebarTab"
+          shouldAnimatePlatform={false}
+        />
+      ))}
+    </nav>
+  );
 
   return (
     <div
@@ -381,28 +434,24 @@ const ChatFolders: FC<OwnProps & StateProps> = ({
       className={buildClassName(
         'ChatFolders',
         shouldRenderFolders && shouldHideFolderTabs && 'ChatFolders--tabs-hidden',
+        shouldRenderFolderSidebar && 'ChatFolders--sidebar',
         shouldRenderStoryRibbon && 'with-story-ribbon',
       )}
     >
       {shouldRenderStoryRibbon && <StoryRibbon isClosing={isStoryRibbonClosing} />}
-      {shouldRenderFolders ? (
-        <TabList
-          contextRootElementSelector="#LeftColumn"
-          tabs={folderTabs}
-          activeTab={activeChatFolder}
-          onSwitchTab={handleSwitchTab}
-        />
-      ) : shouldRenderPlaceholder ? (
-        <div ref={placeholderRef} className="tabs-placeholder" />
-      ) : undefined}
-      <Transition
-        ref={transitionRef}
-        name={resolveTransitionName('slideOptimized', animationLevel, shouldSkipHistoryAnimations, lang.isRtl)}
-        activeKey={activeChatFolder}
-        renderCount={shouldRenderFolders ? folderTabs.length : undefined}
-      >
-        {renderCurrentTab}
-      </Transition>
+      <div className="ChatFolders-layout">
+        {shouldRenderFolderSidebar ? renderFolderSidebar() : shouldRenderFolders ? (
+          <TabList
+            contextRootElementSelector="#LeftColumn"
+            tabs={folderTabs}
+            activeTab={activeChatFolder}
+            onSwitchTab={handleSwitchTab}
+          />
+        ) : shouldRenderPlaceholder ? (
+          <div ref={placeholderRef} className="tabs-placeholder" />
+        ) : undefined}
+        {renderChatList()}
+      </div>
     </div>
   );
 };
@@ -431,7 +480,7 @@ export default memo(withGlobal<OwnProps>(
       currentUserId,
       archiveSettings,
     } = global;
-    const { animationLevel } = selectSharedSettings(global);
+    const { animationLevel, chatFolderLayout } = selectSharedSettings(global);
     const { shouldSkipHistoryAnimations, activeChatFolder } = selectTabState(global);
     const { storyViewer: { isRibbonShown: isStoryRibbonShown } } = selectTabState(global);
     const isAccountFrozen = selectIsCurrentUserFrozen(global);
@@ -453,6 +502,7 @@ export default memo(withGlobal<OwnProps>(
       isStoryRibbonShown,
       sessions,
       isAccountFrozen,
+      chatFolderLayout,
     };
   },
 )(ChatFolders));

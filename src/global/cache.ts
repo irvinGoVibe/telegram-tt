@@ -314,6 +314,7 @@ function unsafeMigrateCache(cached: GlobalState, initialState: GlobalState) {
       canDisplayChatInTitle: untypedCached.settings.byKey.canDisplayChatInTitle,
       animationLevel: untypedCached.settings.byKey.animationLevel,
       messageSendKeyCombo: untypedCached.settings.byKey.messageSendKeyCombo,
+      chatFolderLayout: initialState.sharedState.settings.chatFolderLayout,
       messageTextSize: untypedCached.settings.byKey.messageTextSize,
       performance: untypedCached.settings.performance,
       theme: untypedCached.settings.byKey.theme,
@@ -343,6 +344,9 @@ function unsafeMigrateCache(cached: GlobalState, initialState: GlobalState) {
   }
 
   const cachedSharedSettings = cached.sharedState.settings;
+  if (!cachedSharedSettings.chatFolderLayout) {
+    cachedSharedSettings.chatFolderLayout = initialState.sharedState.settings.chatFolderLayout;
+  }
   if (!cachedSharedSettings.wasAnimationLevelSetManually) {
     cachedSharedSettings.animationLevel = ANIMATION_LEVEL_DEFAULT;
     cachedSharedSettings.performance = INITIAL_PERFORMANCE_STATE_MED;
