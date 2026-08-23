@@ -10,8 +10,9 @@ export type ThreadSource = {
   telegramUrl?: string;
 };
 
-export function openThreadWorkspace(source?: ThreadSource) {
+export function openThreadWorkspace(source?: ThreadSource | ThreadSource[]) {
+  const sources = source ? (Array.isArray(source) ? source : [source]) : undefined;
   window.dispatchEvent(new CustomEvent(THREAD_WORKSPACE_EVENT, {
-    detail: source ? { source } : {},
+    detail: sources ? { sources } : {},
   }));
 }

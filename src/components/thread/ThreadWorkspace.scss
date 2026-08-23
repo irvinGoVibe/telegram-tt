@@ -162,6 +162,15 @@
   }
 }
 
+.ThreadWorkspace-sources {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  max-height: 15rem;
+}
+
 .ThreadWorkspace-source {
   padding: 0.75rem 0.875rem;
   border-inline-start: 0.1875rem solid var(--color-primary);

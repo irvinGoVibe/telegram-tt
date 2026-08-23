@@ -3,22 +3,27 @@ import { memo, useEffect, useState } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type { ApiChat } from '../../api/types';
+import type { ThreadSource } from '../../thread/events';
 import type { MessageListType } from '../../types';
 import type { IconName } from '../../types/icons';
 
+import { getMessageLink, getUserFullName, isActionMessage, isMessageLocal } from '../../global/helpers';
 import {
   selectCanDeleteSelectedMessages,
   selectCanDownloadSelectedMessages,
   selectCanForwardMessages,
-  selectCanReportSelectedMessages, selectCurrentChat,
+  selectCanReportSelectedMessages, selectChat, selectChatMessage, selectCurrentChat,
   selectCurrentMessageList, selectHasIpRevealingMedia,
   selectHasProtectedMessage,
   selectSelectedMessagesCount,
   selectTabState,
+  selectUser,
 } from '../../global/selectors';
 import { selectSharedSettings } from '../../global/selectors/sharedState';
 import buildClassName from '../../util/buildClassName';
 import captureKeyboardListeners from '../../util/captureKeyboardListeners';
+import { isUserId } from '../../util/entities/ids';
+import { openThreadWorkspace } from '../../thread/events';
 
 import useFlag from '../../hooks/useFlag';
 import useLastCallback from '../../hooks/useLastCallback';
@@ -50,6 +55,7 @@ type StateProps = {
   hasProtectedMessage?: boolean;
   isAnyModalOpen?: boolean;
   selectedMessageIds?: number[];
+  selectedSources?: ThreadSource[];
   shouldWarnAboutFiles?: boolean;
   hasIpRevealingMedia?: boolean;
 };
@@ -68,6 +74,7 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
   hasProtectedMessage,
   isAnyModalOpen,
   selectedMessageIds,
+  selectedSources,
   shouldWarnAboutFiles,
   hasIpRevealingMedia,
 }) => {
@@ -119,6 +126,12 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
     showNotification({
       message: lang('Share.Link.Copied'),
     });
+    exitMessageSelectMode();
+  });
+
+  const handleCreateTask = useLastCallback(() => {
+    if (!selectedSources?.length) return;
+    openThreadWorkspace(selectedSources);
     exitMessageSelectMode();
   });
 
@@ -206,6 +219,9 @@ const MessageSelectToolbar: FC<OwnProps & StateProps> = ({
                   'forward', lang('Chat.ForwardActionHeader'), openForwardMenuForSelectedMessages,
                 )
               )}
+              {messageListType !== 'scheduled' && Boolean(selectedSources?.length) && (
+                renderButton('check', lang('TitleAddTask'), handleCreateTask)
+              )}
               {canReportMessages && (
                 renderButton('flag', lang('Conversation.ReportMessages'), openMessageReport)
               )}
@@ -245,7 +261,7 @@ export default memo(withGlobal<OwnProps>(
     const { shouldWarnAboutFiles } = selectSharedSettings(global);
     const chat = selectCurrentChat(global);
 
-    const { type: messageListType, chatId } = selectCurrentMessageList(global) || {};
+    const { type: messageListType, chatId, threadId } = selectCurrentMessageList(global) || {};
     const isSchedule = messageListType === 'scheduled';
     const { canDelete } = selectCanDeleteSelectedMessages(global);
     const canReport = Boolean(!isSchedule && selectCanReportSelectedMessages(global));
@@ -259,6 +275,26 @@ export default memo(withGlobal<OwnProps>(
     const isAnyModalOpen = Boolean(isShareMessageModalOpen || tabState.requestedDraft
       || tabState.requestedAttachBotInChat || tabState.requestedAttachBotInstall || tabState.reportModal
       || tabState.deleteMessageModal);
+    const selectedSources = selectedMessageIds && chatId && chat
+      ? selectedMessageIds.flatMap((messageId): ThreadSource[] => {
+        const message = selectChatMessage(global, chatId, messageId);
+        if (!message || isActionMessage(message) || isMessageLocal(message)) return [];
+        const senderUser = message.senderId ? selectUser(global, message.senderId) : undefined;
+        const senderChat = message.senderId ? selectChat(global, message.senderId) : undefined;
+        const senderName = senderUser
+          ? (getUserFullName(senderUser) || 'Telegram user')
+          : (senderChat?.title || (message.isOutgoing ? 'You' : chat.title) || 'Telegram user');
+        return [{
+          telegramChatId: message.chatId,
+          telegramMessageId: message.id,
+          chatTitle: chat.title || 'Telegram chat',
+          senderName,
+          text: message.content.text?.text || 'Media message',
+          sentAt: message.date * 1000,
+          telegramUrl: !isUserId(chat.id) ? getMessageLink(chat, threadId, message.id) : undefined,
+        }];
+      }).sort((left, right) => left.sentAt - right.sentAt).slice(0, 20)
+      : undefined;
 
     return {
       chat,
@@ -269,6 +305,7 @@ export default memo(withGlobal<OwnProps>(
       canDownloadMessages: canDownload,
       canForwardMessages: canForward,
       selectedMessageIds,
+      selectedSources,
       hasProtectedMessage,
       isAnyModalOpen,
       shouldWarnAboutFiles,

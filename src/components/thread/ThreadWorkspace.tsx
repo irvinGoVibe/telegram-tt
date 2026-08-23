@@ -56,7 +56,7 @@ const ThreadWorkspace: FC = () => {
   const [projects, setProjects] = useState<ThreadProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState('');
   const [workspace, setWorkspace] = useState<ThreadWorkspacePayload>();
-  const [source, setSource] = useState<ThreadSource>();
+  const [sources, setSources] = useState<ThreadSource[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [createdTask, setCreatedTask] = useState<ThreadTask>();
@@ -117,14 +117,14 @@ const ThreadWorkspace: FC = () => {
 
   useEffect(() => {
     const handleOpen = (event: Event) => {
-      const nextSource = (event as CustomEvent<{ source?: ThreadSource }>).detail?.source;
+      const nextSources = (event as CustomEvent<{ sources?: ThreadSource[] }>).detail?.sources;
       setIsOpen(true);
       setCreatedTask(undefined);
       setError('');
-      if (nextSource) {
-        setSource(nextSource);
-        setTaskTitle(buildThreadTaskTitle(nextSource));
-        setTaskDescription(buildThreadTaskDescription(nextSource));
+      if (nextSources?.length) {
+        setSources(nextSources);
+        setTaskTitle(buildThreadTaskTitle(nextSources));
+        setTaskDescription(buildThreadTaskDescription(nextSources));
       }
       void bootstrap();
     };
@@ -217,7 +217,7 @@ const ThreadWorkspace: FC = () => {
   });
 
   const handleCreateTask = useLastCallback(async (publishToLinear: boolean) => {
-    if (isLoading || !source || !activeProjectId) return;
+    if (isLoading || !sources.length || !activeProjectId) return;
     if (!taskTitle.trim()) {
       setError('Enter a task title.');
       return;
@@ -225,14 +225,14 @@ const ThreadWorkspace: FC = () => {
     setIsLoading(true);
     setError('');
     try {
-      const result = await createClientTask(activeProjectId, taskTitle, taskDescription, source);
+      const result = await createClientTask(activeProjectId, taskTitle, taskDescription, sources);
       let nextTask = result.task;
       if (publishToLinear) {
         const published = await publishTaskToLinear(result.task.id);
         nextTask = published.task;
       }
       setCreatedTask(nextTask);
-      setSource(undefined);
+      setSources([]);
       await loadWorkspace(activeProjectId);
     } catch (nextError) {
       setError(errorMessage(nextError));
@@ -458,29 +458,33 @@ const ThreadWorkspace: FC = () => {
     </section>
   );
 
-  const renderTaskComposer = () => source && (
+  const renderTaskComposer = () => sources.length > 0 && (
     <section className="ThreadWorkspace-taskComposer">
       <div className="ThreadWorkspace-sectionHeading">
         <div>
           <span>Telegram source</span>
           <strong>Review task</strong>
         </div>
-        <button type="button" aria-label="Remove source" onClick={() => setSource(undefined)}>
+        <button type="button" aria-label="Remove source" onClick={() => setSources([])}>
           <Icon name="close" />
         </button>
       </div>
-      <div className="ThreadWorkspace-source">
-        <div>
-          <strong>{source.senderName}</strong>
-          <span>{source.chatTitle}</span>
-        </div>
-        <p>{source.text || 'Media message'}</p>
-        {source.telegramUrl && (
-          <a href={source.telegramUrl} target="_blank" rel="noreferrer">
-            Open message
-            <Icon name="open-in-new-tab" />
-          </a>
-        )}
+      <div className="ThreadWorkspace-sources">
+        {sources.map((source) => (
+          <div className="ThreadWorkspace-source" key={`${source.telegramChatId}-${source.telegramMessageId}`}>
+            <div>
+              <strong>{source.senderName}</strong>
+              <span>{source.chatTitle}</span>
+            </div>
+            <p>{source.text || 'Media message'}</p>
+            {source.telegramUrl && (
+              <a href={source.telegramUrl} target="_blank" rel="noreferrer">
+                Open message
+                <Icon name="open-in-new-tab" />
+              </a>
+            )}
+          </div>
+        ))}
       </div>
       <label className="input-group touched with-label">
         <input
