@@ -31,6 +31,7 @@ import {
   areReactionsEmpty,
   getCanPostInChat,
   getIsDownloading,
+  getMessageLink,
   getMessageVideo,
   getUserFullName,
   hasMessageTtl,
@@ -77,6 +78,7 @@ import { selectMessageDownloadableMedia } from '../../../global/selectors/media'
 import buildClassName from '../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../util/clipboard';
 import { isUserId } from '../../../util/entities/ids';
+import { openThreadWorkspace } from '../../../thread/events';
 import { getSelectionAsFormattedText } from './helpers/getSelectionAsFormattedText';
 import { isSelectionRangeInsideMessage } from './helpers/isSelectionRangeInsideMessage';
 
@@ -130,6 +132,7 @@ type StateProps = {
   canReport?: boolean;
   canEdit?: boolean;
   canAppendTodoList?: boolean;
+  canCreateTask?: boolean;
   canForward?: boolean;
   canFaveSticker?: boolean;
   canUnfaveSticker?: boolean;
@@ -199,6 +202,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
   canShowReactionList,
   canEdit,
   canAppendTodoList,
+  canCreateTask,
   enabledReactions,
   reactionsLimit,
   isPrivate,
@@ -434,6 +438,25 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
         replyToPeerId: undefined,
       });
     }
+    closeMenu();
+  });
+
+  const handleCreateTask = useLastCallback(() => {
+    const global = getGlobal();
+    const senderUser = message.senderId ? selectUser(global, message.senderId) : undefined;
+    const senderChat = message.senderId ? selectChat(global, message.senderId) : undefined;
+    const senderName = senderUser
+      ? (getUserFullName(senderUser) || 'Telegram user')
+      : (senderChat?.title || (message.isOutgoing ? 'You' : chat?.title) || 'Telegram user');
+    openThreadWorkspace({
+      telegramChatId: message.chatId,
+      telegramMessageId: message.id,
+      chatTitle: chat?.title || 'Telegram chat',
+      senderName,
+      text: message.content.text?.text || 'Media message',
+      sentAt: message.date * 1000,
+      telegramUrl: chat && !isUserId(chat.id) ? getMessageLink(chat, threadId, message.id) : undefined,
+    });
     closeMenu();
   });
 
@@ -707,6 +730,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
         canUnpin={canUnpin}
         canEdit={canEdit}
         canAppendTodoList={canAppendTodoList}
+        canCreateTask={canCreateTask}
         canForward={canForward}
         canFaveSticker={canFaveSticker}
         canUnfaveSticker={canUnfaveSticker}
@@ -737,6 +761,7 @@ const ContextMenuContainer: FC<OwnProps & StateProps> = ({
         onReply={handleReply}
         onEdit={handleEdit}
         onAppendTodoList={handleAppendTodoList}
+        onCreateTask={handleCreateTask}
         onPin={handlePin}
         onUnpin={handleUnpin}
         onForward={handleForward}
@@ -918,6 +943,7 @@ export default memo(withGlobal<OwnProps>(
       canDelete,
       canEdit: !isPinned && canEdit,
       canAppendTodoList,
+      canCreateTask: !isScheduled && !isAction && !isLocal,
       canForward: !isScheduled && canForward,
       canFaveSticker: !isScheduled && canFaveSticker,
       canUnfaveSticker: !isScheduled && canUnfaveSticker,

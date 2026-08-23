@@ -1,0 +1,426 @@
+/* stylelint-disable plugin/selector-tag-no-without-class */
+
+.ThreadWorkspace {
+  --thread-gap: 1rem;
+
+  .modal-dialog {
+    overflow: hidden;
+    border-radius: 0.875rem;
+  }
+
+  .ThreadWorkspace-content {
+    max-height: min(46rem, calc(100vh - 7rem));
+    padding: 0;
+    background: var(--color-background);
+  }
+}
+
+.ThreadWorkspace-body,
+.ThreadWorkspace-auth,
+.ThreadWorkspace-projectForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--thread-gap);
+  padding: 1.25rem;
+}
+
+.ThreadWorkspace-auth {
+  align-items: stretch;
+  width: min(24rem, 100%);
+  margin: 0 auto;
+  padding-block: 2rem;
+
+  h3,
+  p {
+    margin: 0;
+    text-align: center;
+  }
+
+  h3 {
+    font-size: 1.25rem;
+    line-height: 1.25;
+    color: var(--color-text);
+  }
+
+  p {
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: var(--color-text-secondary);
+  }
+}
+
+.ThreadWorkspace-heroIcon {
+  display: grid;
+  place-items: center;
+
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto;
+  border-radius: 50%;
+
+  font-size: 1.75rem;
+  color: white;
+
+  background: var(--color-primary);
+}
+
+.ThreadWorkspace-authSwitch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  padding: 0.1875rem;
+  border-radius: 0.625rem;
+
+  background: var(--color-background-secondary);
+
+  button {
+    min-height: 2.375rem;
+    border: 0;
+    border-radius: 0.5rem;
+
+    font-weight: 500;
+    color: var(--color-text-secondary);
+
+    background: transparent;
+
+    &.active {
+      color: var(--color-text);
+      background: var(--color-background);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+  }
+}
+
+.ThreadWorkspace-projectBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+
+  .input-group {
+    margin: 0;
+  }
+}
+
+.ThreadWorkspace-taskComposer,
+.ThreadWorkspace-linear,
+.ThreadWorkspace-tasks,
+.ThreadWorkspace-projectForm {
+  padding: 1rem;
+  border: 1px solid var(--color-borders);
+  border-radius: 0.75rem;
+  background: var(--color-background);
+}
+
+.ThreadWorkspace-taskComposer,
+.ThreadWorkspace-linear,
+.ThreadWorkspace-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.ThreadWorkspace-sectionHeading {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  span {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+  }
+
+  strong {
+    font-size: 1rem;
+    line-height: 1.25;
+    color: var(--color-text);
+  }
+
+  > span,
+  > button {
+    display: grid;
+    place-items: center;
+
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0 0.625rem;
+    border: 0;
+    border-radius: 1rem;
+
+    background: var(--color-background-secondary);
+  }
+
+  > span.ready {
+    color: var(--color-green);
+  }
+}
+
+.ThreadWorkspace-source {
+  padding: 0.75rem 0.875rem;
+  border-inline-start: 0.1875rem solid var(--color-primary);
+  border-radius: 0.25rem 0.625rem 0.625rem 0.25rem;
+  background: var(--color-background-secondary);
+
+  > div {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+
+    font-size: 0.8125rem;
+    color: var(--color-primary);
+  }
+
+  p {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+
+    margin: 0.375rem 0 0;
+
+    line-height: 1.4;
+    color: var(--color-text);
+  }
+
+  a {
+    display: inline-flex;
+    gap: 0.25rem;
+    align-items: center;
+
+    margin-top: 0.5rem;
+
+    font-size: 0.8125rem;
+    color: var(--color-primary);
+  }
+}
+
+.ThreadWorkspace-taskComposer .input-group,
+.ThreadWorkspace-projectForm .input-group,
+.ThreadWorkspace-linearForm .input-group,
+.ThreadWorkspace-auth .input-group {
+  margin-bottom: 0;
+}
+
+.ThreadWorkspace-taskComposer textarea {
+  min-height: 8.5rem;
+  max-height: 15rem;
+}
+
+.ThreadWorkspace-taskActions,
+.ThreadWorkspace-rowEnd,
+.ThreadWorkspace-linearForm {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.ThreadWorkspace-taskActions > .Button {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
+.ThreadWorkspace-rowEnd > .Button,
+.ThreadWorkspace-linearForm > .Button {
+  width: auto;
+}
+
+.ThreadWorkspace-taskComposer > small {
+  color: var(--color-text-secondary);
+  text-align: end;
+}
+
+.ThreadWorkspace-linearPath {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+
+  min-height: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.625rem;
+
+  color: var(--color-text-secondary);
+
+  background: var(--color-background-secondary);
+
+  > .icon {
+    color: var(--color-green);
+  }
+
+  strong {
+    overflow: hidden;
+    color: var(--color-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  button {
+    margin-inline-start: auto;
+    border: 0;
+    color: var(--color-primary);
+    background: transparent;
+  }
+}
+
+.ThreadWorkspace-linearForm {
+  align-items: center;
+
+  .input-group {
+    flex: 1;
+  }
+}
+
+.ThreadWorkspace-success,
+.ThreadWorkspace-taskRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+
+  min-height: 3.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.625rem;
+
+  color: var(--color-text);
+
+  background: var(--color-background-secondary);
+}
+
+.ThreadWorkspace-success {
+  color: var(--color-green);
+
+  > span {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    color: var(--color-text);
+  }
+
+  a {
+    color: var(--color-primary);
+  }
+}
+
+.ThreadWorkspace-taskRow {
+  transition: background-color 150ms ease-out;
+
+  &:hover {
+    text-decoration: none;
+    background: var(--color-chat-hover);
+  }
+
+  > span {
+    display: grid;
+    place-items: center;
+
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+
+    color: var(--color-text-secondary);
+
+    background: var(--color-background);
+
+    &.published {
+      color: var(--color-green);
+    }
+  }
+
+  > div {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  strong,
+  small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    color: var(--color-text-secondary);
+  }
+}
+
+.ThreadWorkspace-empty,
+.ThreadWorkspace-loading {
+  padding: 2rem 1rem;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.ThreadWorkspace-error {
+  margin: 1rem 1.25rem 0;
+  padding: 0.75rem;
+  border-radius: 0.625rem;
+
+  color: var(--color-error);
+
+  background: rgba(var(--color-error-rgb), 0.08);
+}
+
+.ThreadWorkspace-projectForm {
+  margin: 1.25rem;
+
+  p {
+    margin: 0.25rem 0 0;
+    color: var(--color-text-secondary);
+  }
+}
+
+.ThreadWorkspace-signOut {
+  align-self: center;
+
+  min-height: 2.75rem;
+  border: 0;
+
+  color: var(--color-text-secondary);
+
+  background: transparent;
+}
+
+@media (max-width: 600px) {
+  .ThreadWorkspace {
+    .modal-dialog {
+      width: 100% !important;
+      max-width: 100% !important;
+      height: 100%;
+      margin: 0;
+      border-radius: 0;
+    }
+
+    .ThreadWorkspace-content {
+      max-height: none;
+    }
+  }
+
+  .ThreadWorkspace-body {
+    padding: 0.75rem;
+  }
+
+  .ThreadWorkspace-taskActions,
+  .ThreadWorkspace-linearForm {
+    flex-direction: column;
+    align-items: stretch;
+
+    > .Button {
+      flex: 0 0 auto;
+      width: 100%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ThreadWorkspace-taskRow {
+    transition: none;
+  }
+}

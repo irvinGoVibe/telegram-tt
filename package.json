@@ -28,6 +28,11 @@
     "test": "cross-env APP_ENV=test jest --verbose --silent --forceExit",
     "test:playwright": "playwright test",
     "test:record": "playwright codegen localhost:1235",
+    "thread:dev": "npm --prefix thread-server run dev",
+    "thread:start": "THREAD_WEB_ROOT=../dist THREAD_CLIENT_REDIRECT_PATH=/ npm --prefix thread-server start",
+    "thread:check": "npm --prefix thread-server run check && npm --prefix thread-server test",
+    "dev:integrated": "concurrently \"npm run thread:dev\" \"npm run dev\"",
+    "build:integrated": "npm run build:production && npm run thread:check",
     "statoscope:validate-diff": "statoscope validate --input input.json --reference reference.json",
     "postversion": "echo $(node -p \"require('./package.json').version\") > public/version.txt && git commit --amend --no-verify --no-edit public/version.txt"
   },

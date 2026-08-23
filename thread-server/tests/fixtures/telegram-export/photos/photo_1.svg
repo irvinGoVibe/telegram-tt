@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <rect width="960" height="640" fill="#e9e6dd"/>
+  <rect x="64" y="72" width="832" height="496" rx="20" fill="#fbfaf7" stroke="#182128" stroke-opacity=".15"/>
+  <circle cx="248" cy="270" r="86" fill="#1976d2" opacity=".9"/>
+  <path d="M132 500 360 324l128 112 116-84 224 148Z" fill="#182128" opacity=".82"/>
+  <text x="480" y="150" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#182128">TELEGRAM EXPORT PHOTO</text>
+</svg>

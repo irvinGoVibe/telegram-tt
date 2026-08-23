@@ -1,0 +1,48 @@
+{
+  "name": "Fixture Group",
+  "type": "private_supergroup",
+  "id": 123456,
+  "messages": [
+    {
+      "id": 1,
+      "type": "service",
+      "date": "2026-01-15T08:00:00",
+      "date_unixtime": "1768464000",
+      "actor": "Анна",
+      "actor_id": "user1",
+      "action": "create_group",
+      "text": "Анна создала группу"
+    },
+    {
+      "id": 2,
+      "type": "message",
+      "date": "2026-01-15T08:05:00",
+      "date_unixtime": "1768464300",
+      "from": "Анна",
+      "from_id": "user1",
+      "text": [
+        "Документы: ",
+        { "type": "link", "text": "https://example.com/docs" }
+      ],
+      "text_entities": [
+        { "type": "plain", "text": "Документы: " },
+        { "type": "link", "text": "https://example.com/docs" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "message",
+      "date": "2026-01-15T08:07:00",
+      "date_unixtime": "1768464420",
+      "from": "Борис",
+      "from_id": "user2",
+      "reply_to_message_id": 2,
+      "text": "Принял, посмотрю сегодня.",
+      "text_entities": [
+        { "type": "plain", "text": "Принял, посмотрю сегодня." }
+      ],
+      "file": "files/plan.pdf",
+      "mime_type": "application/pdf"
+    }
+  ]
+}

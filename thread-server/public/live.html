@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Live Telegram project workspace with sourced AI research and tasks" />
+    <title>Thread — Live project workspace</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/live.css" />
+  </head>
+  <body class="live-body">
+    <main class="auth-gate" id="authGate" hidden>
+      <section class="auth-card" aria-labelledby="authTitle">
+        <div class="auth-brand">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+          <div><strong>Thread</strong><small>Live project workspace</small></div>
+        </div>
+        <div class="auth-heading">
+          <span class="live-kicker"><i></i> Private workspace</span>
+          <h1 id="authTitle">Turn live conversations<br />into accountable work.</h1>
+          <p>Connect your Telegram account, collect the chats that belong to a project, and keep every task linked to its source.</p>
+        </div>
+        <div class="auth-mode-switch" role="tablist" aria-label="Account access">
+          <button id="authLoginTab" type="button" role="tab" aria-selected="true">Sign in</button>
+          <button id="authSignupTab" type="button" role="tab" aria-selected="false">Create account</button>
+        </div>
+        <form class="auth-form" id="authForm">
+          <label id="authNameLabel" for="authName" hidden>
+            <span>Name</span>
+            <input id="authName" name="name" type="text" autocomplete="name" maxlength="120" placeholder="Your name" hidden />
+          </label>
+          <label id="authEmailLabel" for="authEmail">
+            <span>Email</span>
+            <input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="you@company.com" />
+          </label>
+          <label id="authPasswordLabel" for="authPassword">
+            <span>Password</span>
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" required placeholder="At least 8 characters" />
+          </label>
+          <label id="authConfirmLabel" for="authConfirmPassword" hidden>
+            <span>Confirm password</span>
+            <input id="authConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Repeat your password" hidden />
+          </label>
+          <p class="form-error" id="authError" role="alert" hidden></p>
+          <button class="live-primary wide" id="authSubmit" type="submit">Sign in</button>
+        </form>
+        <p class="auth-footnote">Telegram is connected separately. Your phone code and 2FA password are never stored.</p>
+      </section>
+      <aside class="auth-context" aria-label="Product overview">
+        <div class="context-thread">
+          <span class="context-line"></span>
+          <article><small>CLIENT CHAT · 09:42</small><p>Can we move the rollout to Thursday and keep the current analytics events?</p></article>
+          <article class="context-answer"><small>PROJECT TASK</small><strong>Confirm Thursday rollout</strong><p>Linked to 3 original messages</p></article>
+          <article><small>THREAD AI</small><p>The client confirmed the date but the analytics naming still needs approval.</p></article>
+        </div>
+      </aside>
+    </main>
+
+    <div class="live-shell" id="liveApp" hidden>
+      <aside class="live-rail" aria-label="Projects and chats">
+        <header class="live-brand-row">
+          <a class="brand" href="/" aria-label="Thread home">
+            <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span class="brand-copy"><strong>Thread</strong><small><i class="status-dot"></i> Live workspace</small></span>
+          </a>
+        </header>
+
+        <button class="live-primary new-project-button" id="newProjectButton" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          New project
+        </button>
+
+        <section class="rail-section project-section" aria-labelledby="projectsHeading">
+          <div class="rail-label-row"><h2 id="projectsHeading">Projects</h2><span id="projectCount">0</span></div>
+          <div class="live-project-list" id="projectList"></div>
+          <p class="rail-empty-state" id="projectsEmpty">Create a project to start monitoring chats.</p>
+        </section>
+
+        <section class="rail-section chats-section" aria-labelledby="chatsHeading">
+          <div class="rail-label-row">
+            <h2 id="chatsHeading">Project chats</h2>
+            <button class="rail-mini-button" id="addChatButton" type="button" aria-label="Add chat" title="Add Telegram chat" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </div>
+          <div class="live-chat-list" id="projectChatList"></div>
+          <p class="rail-empty-state" id="projectChatsEmpty">No Telegram chats in this project.</p>
+        </section>
+
+        <section class="telegram-connection-card" id="telegramConnectionCard">
+          <div class="connection-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="m21 4-3 16-6-4-3 3-1-5-5-2 18-8Z" /><path d="m8 14 8-6" /></svg>
+          </div>
+          <div class="connection-copy"><strong>Telegram</strong><span id="telegramConnectionStatus">Not connected</span></div>
+          <button class="live-secondary" id="connectTelegramButton" type="button">Connect</button>
+        </section>
+
+        <footer class="live-user-footer">
+          <span class="user-avatar" id="liveUserAvatar">U</span>
+          <div><strong id="liveUserName">User</strong><small id="liveUserEmail"></small></div>
+          <button class="live-icon-button" id="signOutButton" type="button" aria-label="Sign out" title="Sign out">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4m4-4H9" /></svg>
+          </button>
+        </footer>
+      </aside>
+
+      <main class="live-chat-main">
+        <header class="live-chat-header">
+          <div class="live-chat-identity">
+            <button class="live-icon-button mobile-rail-button" id="mobileRailButton" type="button" aria-label="Open projects">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            </button>
+            <span class="live-chat-avatar" id="liveChatAvatar">TH</span>
+            <div><h1 id="liveChatTitle">Choose a project</h1><p id="liveChatMeta">Connect Telegram and add a chat</p></div>
+          </div>
+          <div class="live-header-actions">
+            <span class="sync-state" id="syncState"><i></i> Waiting</span>
+            <button class="live-secondary" id="refreshMessagesButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 8.5A7 7 0 0 1 18.8 10M17.9 15.5A7 7 0 0 1 5.2 14" /></svg>
+              Refresh
+            </button>
+            <button class="live-icon-button" id="projectSettingsButton" type="button" aria-label="Project settings" title="Project settings" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.5 1A8 8 0 0 0 14.8 6l-.4-2.7h-4L10 6a8 8 0 0 0-1.6 1.1l-2.5-1-2 3.4L6 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.5-1A8 8 0 0 0 10 18l.4 2.7h4l.4-2.7a8 8 0 0 0 1.6-1.1l2.5 1 2-3.4L19 13a7 7 0 0 0 .1-1Z" /></svg>
+            </button>
+          </div>
+        </header>
+
+        <section class="selection-bar" id="selectionBar" hidden>
+          <strong><span id="selectedMessageCount">0</span> selected</strong>
+          <span>Selected messages anchor a 10-day conversation analysis.</span>
+          <button class="live-secondary" id="clearSelectionButton" type="button">Clear</button>
+          <button class="live-primary" id="createTaskFromSelectionButton" type="button">Draft task</button>
+        </section>
+
+        <section class="live-message-stage" id="liveMessageStage" aria-live="polite">
+          <div class="live-empty" id="liveMessagesEmpty">
+            <div class="live-empty-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
+            <span class="live-kicker">Source-linked workspace</span>
+            <h2>Choose the conversations<br />that move the project.</h2>
+            <p>Connect Telegram, create a project, and attach only the chats your team needs to follow.</p>
+            <button class="live-primary" id="emptyConnectButton" type="button">Connect Telegram</button>
+          </div>
+          <div class="live-message-list" id="liveMessageList" hidden></div>
+          <div class="message-loading" id="messageLoading" hidden><i></i><i></i><i></i></div>
+        </section>
+
+        <form class="telegram-message-composer" id="telegramMessageComposer" hidden>
+          <div class="telegram-composer-identity" hidden>
+            <small id="telegramComposerIdentity">Send as yourself</small>
+          </div>
+          <div class="telegram-composer-shell" id="telegramComposerShell">
+            <section class="telegram-reply-preview" id="telegramReplyPreview" hidden>
+              <i aria-hidden="true"></i>
+              <div>
+                <strong id="telegramReplyAuthor">Reply</strong>
+                <span id="telegramReplyText"></span>
+              </div>
+              <button id="telegramReplyCancel" type="button" aria-label="Cancel reply" title="Cancel reply">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
+              </button>
+            </section>
+            <div class="telegram-composer-input-row">
+              <button class="telegram-format-toggle" id="telegramFormatToggle" type="button" aria-label="Formatting options" aria-expanded="false" aria-controls="telegramFormatToolbar" title="Formatting options">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 18 5.5-14h3L19 18M7.5 12.5h9" /></svg>
+              </button>
+              <div class="telegram-rich-input" id="telegramMessageInput" contenteditable="false" role="textbox" aria-label="Telegram message" aria-multiline="true" data-placeholder="Write to this Telegram chat…"></div>
+            </div>
+            <div class="telegram-format-toolbar" id="telegramFormatToolbar" role="toolbar" aria-label="Message formatting" hidden>
+              <button type="button" data-telegram-format="bold" aria-label="Bold" title="Bold · ⌘B"><strong>B</strong></button>
+              <button type="button" data-telegram-format="italic" aria-label="Italic" title="Italic · ⌘I"><em>I</em></button>
+              <button type="button" data-telegram-format="code" aria-label="Inline code" title="Inline code"><span>&lt;/&gt;</span></button>
+              <span aria-hidden="true"></span>
+              <button type="button" data-telegram-format="bullet" aria-label="Bulleted list" title="Bulleted list"><span>• ≡</span></button>
+              <button type="button" data-telegram-format="number" aria-label="Numbered list" title="Numbered list"><span>1. ≡</span></button>
+            </div>
+          </div>
+          <button class="telegram-send-button" id="telegramMessageSend" type="submit" aria-label="Send to Telegram" title="Send to Telegram" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-5-7-2Z" /><path d="m12 14 7-9" /></svg>
+          </button>
+        </form>
+      </main>
+
+      <aside class="live-assistant" aria-label="Project assistant">
+        <header class="assistant-live-header">
+          <div>
+            <span class="assistant-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
+            <div><strong>Researcher</strong><small id="assistantProjectLabel">No project selected</small></div>
+          </div>
+          <nav aria-label="Assistant views">
+            <button class="live-icon-button active" id="assistantChatViewButton" type="button" aria-label="Assistant chats" title="Assistant chats">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v11H9l-4 4V5Z" /></svg>
+            </button>
+            <button class="live-icon-button" id="assistantTasksViewButton" type="button" aria-label="Project tasks" title="Project tasks">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 7 2 2 4-4M6 14l2 2 4-4M13 8h5M13 15h5" /></svg>
+              <span class="live-badge" id="liveTaskCount" hidden>0</span>
+            </button>
+            <button class="live-icon-button" id="newAssistantThreadButton" type="button" aria-label="New AI chat" title="New AI chat" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </nav>
+        </header>
+
+        <section class="assistant-chat-surface" id="assistantChatSurface">
+          <div class="thread-strip" id="assistantThreadStrip"></div>
+          <div class="assistant-live-messages" id="assistantLiveMessages">
+            <div class="assistant-live-empty" id="assistantLiveEmpty">
+              <span class="assistant-orbit large" aria-hidden="true"><i></i><i></i><i></i></span>
+              <h2>Ask the project,<br />not your memory.</h2>
+              <p>Answers use the open project chat and keep citations connected to source messages.</p>
+            </div>
+          </div>
+          <form class="assistant-live-composer" id="assistantLiveForm">
+            <div class="assistant-attachment-preview" id="assistantAttachmentPreview" hidden></div>
+            <textarea id="assistantLiveInput" rows="1" maxlength="8000" placeholder="Choose a project chat first…" disabled></textarea>
+            <div>
+              <input id="assistantImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden />
+              <button class="assistant-attach-button" id="assistantAttachButton" type="button" aria-label="Attach images" title="Attach images" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8" /></svg>
+              </button>
+              <label class="live-model-picker">
+                <span aria-hidden="true">✦</span>
+                <select id="liveModelSelect" aria-label="Choose AI model" disabled><option value="">Loading models…</option></select>
+              </label>
+              <small id="assistantContextCount">0 messages in context</small>
+              <button class="assistant-send-button" id="assistantLiveSend" type="submit" aria-label="Send" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-5-7-2Z" /><path d="m12 14 7-9" /></svg>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section class="assistant-task-surface" id="assistantTaskSurface" hidden>
+          <div class="task-surface-heading"><span class="live-kicker">Project folder</span><h2>Tasks with sources</h2><p>Tasks created from messages and AI answers stay traceable.</p></div>
+          <div class="live-task-list" id="liveTaskList"></div>
+          <div class="assistant-live-empty compact" id="liveTasksEmpty"><h3>No tasks yet</h3><p>Select messages in the chat and create the first task.</p></div>
+        </section>
+      </aside>
+
+      <nav class="live-mobile-nav" aria-label="Mobile views">
+        <button class="active" type="button" data-live-mobile-view="chat">Chat</button>
+        <button type="button" data-live-mobile-view="assistant">Researcher</button>
+      </nav>
+    </div>
+
+    <dialog class="live-dialog" id="createProjectDialog">
+      <form method="dialog" id="createProjectForm">
+        <header><div><span class="live-kicker">New workspace</span><h2>Create project</h2></div><button class="live-icon-button" value="cancel" formnovalidate aria-label="Close">×</button></header>
+        <label><span>Project name</span><input id="projectNameInput" type="text" maxlength="120" required placeholder="Client launch" /></label>
+        <label><span>Description <small>optional</small></span><textarea id="projectDescriptionInput" rows="3" maxlength="4000" placeholder="What this project is responsible for"></textarea></label>
+        <footer><button class="live-secondary" value="cancel" formnovalidate>Cancel</button><button class="live-primary" id="createProjectSubmit" value="default">Create project</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="live-dialog" id="telegramDialog">
+      <form method="dialog" id="telegramForm">
+        <header><div><span class="live-kicker">Secure connection</span><h2>Connect Telegram</h2></div><button class="live-icon-button" value="cancel" formnovalidate aria-label="Close">×</button></header>
+        <div class="telegram-step" id="telegramPhoneStep">
+          <p>Thread uses Telegram’s user authorization to read only the chats you add to projects.</p>
+          <label><span>Phone number</span><input id="telegramPhoneInput" type="tel" autocomplete="tel" placeholder="+1 202 555 0123" required /></label>
+        </div>
+        <div class="telegram-step" id="telegramCodeStep" hidden>
+          <p id="telegramCodeHint">Enter the code sent by Telegram.</p>
+          <label><span>Login code</span><input id="telegramCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="12345" /></label>
+        </div>
+        <div class="telegram-step" id="telegramPasswordStep" hidden>
+          <p>This account has Telegram two-step verification enabled.</p>
+          <label><span>2FA password</span><input id="telegramPasswordInput" type="password" autocomplete="current-password" maxlength="256" /></label>
+        </div>
+        <p class="form-error" id="telegramError" role="alert" hidden></p>
+        <footer><button class="live-secondary" value="cancel" formnovalidate>Cancel</button><button class="live-primary" id="telegramSubmit" value="default">Send code</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="live-dialog wide-dialog" id="addChatDialog">
+      <form method="dialog" id="addChatForm">
+        <header><div><span class="live-kicker">Project sources</span><h2>Add Telegram chats</h2></div><button class="live-icon-button" value="cancel" formnovalidate aria-label="Close">×</button></header>
+        <label class="dialog-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg><input id="addChatSearch" type="search" placeholder="Search your Telegram chats" /></label>
+        <div class="available-chat-list" id="availableChatList"></div>
+        <p class="dialog-empty" id="availableChatsEmpty" hidden>No available chats. Refresh Telegram first.</p>
+        <footer><button class="live-secondary" value="cancel" formnovalidate>Done</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="live-dialog task-draft-dialog" id="createTaskDialog">
+      <form method="dialog" id="createTaskForm">
+        <header><div><span class="live-kicker">Evidence-linked draft</span><h2>Review technical task</h2></div><button class="live-icon-button" value="cancel" formnovalidate aria-label="Close">×</button></header>
+        <section class="task-draft-loading" id="taskDraftLoading" hidden>
+          <div class="task-draft-pulse" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div><strong>Reconstructing the discussion</strong><p>Loading 10 days of Telegram history, tracing related replies, and drafting requirements with source links.</p></div>
+        </section>
+        <p class="form-error" id="taskDraftError" role="alert" hidden></p>
+        <section class="task-draft-workspace" id="taskDraftWorkspace">
+          <aside class="task-evidence-panel">
+            <div class="task-evidence-heading"><span class="live-kicker">Evidence window</span><strong id="taskSourceSummary">Selected messages</strong><p id="taskDraftStats">10 days before the selected anchors</p></div>
+            <div class="task-source-preview" id="taskSourcePreview"></div>
+          </aside>
+          <div class="task-draft-editor">
+            <label id="taskTitleLabel"><span>Task title</span><input id="taskTitleInput" type="text" maxlength="300" required placeholder="What needs to happen?" /></label>
+            <label id="taskDescriptionLabel"><span>Technical specification <small>editable Markdown</small></span><textarea id="taskDescriptionInput" rows="18" maxlength="50000" placeholder="The generated specification will appear here."></textarea></label>
+          </div>
+        </section>
+        <footer><button class="live-secondary" value="cancel" formnovalidate>Cancel</button><button class="live-primary" id="createTaskSubmit" value="default">Create task</button></footer>
+      </form>
+    </dialog>
+
+    <dialog class="live-dialog wide-dialog" id="projectSettingsDialog">
+      <form method="dialog" id="projectSettingsForm">
+        <header><div><span class="live-kicker">Project context</span><h2>Instructions</h2></div><button class="live-icon-button" value="cancel" formnovalidate aria-label="Close">×</button></header>
+        <label><span>Assistant instructions</span><textarea id="projectInstructionsInput" rows="5" maxlength="20000" placeholder="Product vocabulary, constraints, definition of done…"></textarea></label>
+        <label><span>Answer language</span><select id="projectResponseLanguage"><option value="auto">Match the question</option><option value="en">English</option><option value="ru">Russian</option></select></label>
+        <section class="project-integration" id="linearIntegrationSection" hidden>
+          <div class="project-integration-heading"><div><span class="live-kicker">Task delivery</span><h3>Linear</h3></div><span class="integration-readiness" id="linearReadiness">Not connected</span></div>
+          <p id="linearIntegrationStatus">Connect a Linear workspace to send source-linked tasks.</p>
+          <button class="live-secondary" id="connectLinearButton" type="button">Connect Linear</button>
+          <div class="linear-destination" id="linearDestination" hidden>
+            <div class="linear-destination-path" id="linearDestinationPath" aria-live="polite"></div>
+            <div class="linear-destination-grid">
+              <label id="linearTeamLabel"><span>Destination team</span><select id="linearTeamSelect"></select></label>
+              <label id="linearProjectLabel"><span>Linear project</span><select id="linearProjectSelect"></select></label>
+            </div>
+            <small id="linearDestinationHint">Published tasks will always use this destination.</small>
+          </div>
+        </section>
+        <section class="project-appearance">
+          <div><span class="live-kicker">Your workspace</span><h3>Appearance</h3></div>
+          <div class="project-appearance-grid">
+            <label><span>Interface language</span><select id="interfaceLanguageSelect"><option value="en">English</option><option value="ru">Русский</option></select></label>
+            <label><span>Theme</span><select id="themeSelect"><option value="dark">Dark</option><option value="light">Light</option></select></label>
+          </div>
+        </section>
+        <section class="project-access" id="projectAccessSection">
+          <div><span class="live-kicker">Project access</span><h3>Members</h3></div>
+          <div class="project-member-list" id="projectMemberList"></div>
+          <div class="project-invite-row" id="projectInviteRow">
+            <input id="projectInviteEmail" type="email" autocomplete="email" placeholder="teammate@company.com" aria-label="Invite email" />
+            <select id="projectInviteRole" aria-label="Project role"><option value="viewer">Viewer</option><option value="editor">Editor</option></select>
+            <button class="live-secondary" id="createInviteButton" type="button">Create invite</button>
+          </div>
+          <div class="project-invite-result" id="projectInviteResult" hidden>
+            <input id="projectInviteLink" type="text" readonly aria-label="Invitation link" />
+            <button class="live-secondary" id="copyInviteButton" type="button">Copy link</button>
+          </div>
+        </section>
+        <section class="project-migration">
+          <div><span class="live-kicker">One-time import</span><h3>Local archive tasks</h3></div>
+          <p id="migrationStatus">Import tasks previously saved by the archive-only workspace in this browser. Re-running the import is safe.</p>
+          <button class="live-secondary" id="migrateLocalButton" type="button">Import local data</button>
+        </section>
+        <footer><button class="live-secondary" value="cancel" formnovalidate>Cancel</button><button class="live-primary" id="saveProjectSettings" value="default">Save settings</button></footer>
+      </form>
+    </dialog>
+
+    <div class="live-toast" id="liveToast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="/live-app.js"></script>
+  </body>
+</html>

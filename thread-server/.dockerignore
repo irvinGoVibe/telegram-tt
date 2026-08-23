@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+.vercel
+designs
+node_modules
+public
+supabase
+tests
+*.log

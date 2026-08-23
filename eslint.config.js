@@ -40,6 +40,7 @@ export default tseslint.config(
     'src/types/language.d.ts',
     'dist/',
     'public/',
+    'thread-server/',
     'deploy/update_version.js',
     'tauri/target/',
   ]),
