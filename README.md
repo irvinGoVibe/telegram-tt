@@ -1,5 +1,19 @@
 # Telegram Web A
 
+This fork combines the complete Telegram Web A client with Thread project workflows. Telegram remains the primary
+interface; Thread adds project selection, source-linked task drafts, and Linear delivery directly to message actions.
+
+## Thread integration
+
+- Open **Projects & Linear** from Telegram's main menu to create/select a project and connect Linear.
+- Open a message context menu and choose **Create Linear task** to build an editable draft from that message.
+- Every task stores its Telegram source metadata. Public/group sources include a direct `t.me` link in the Linear issue.
+- `thread-server/` contains the account, Convex persistence, assistant, encrypted integration, and Linear MCP services
+  imported from `telergamThread`.
+
+The Telegram MTProto session stays in the Telegram client. Thread has its own HttpOnly account session for project
+membership and Linear access; Linear credentials remain encrypted on the server.
+
 This project won the first prize 🥇 at [Telegram Lightweight Client Contest](https://contest.com/javascript-web-3) and now is an official Telegram client available to anyone at [web.telegram.org/a](https://web.telegram.org/a).
 
 According to the original contest rules, it has nearly zero dependencies and is fully based on its own [Teact](https://github.com/Ajaxy/teact) framework (which re-implements React paradigm). It also uses a custom version of [GramJS](https://github.com/gram-js/gramjs) as an MTProto implementation.
@@ -23,6 +37,26 @@ Obtain API ID and API hash on [my.telegram.org](https://my.telegram.org) and pop
 ```sh
 npm run dev
 ```
+
+For the integrated client, install the server workspace, configure `thread-server/.env.local`, start Convex once, and
+run both processes:
+
+```sh
+npm --prefix thread-server ci
+cd thread-server && npx convex dev --once && cd ..
+npm run dev:integrated
+```
+
+Webpack serves Telegram at `http://127.0.0.1:1234` and proxies `/api` to Thread on `http://127.0.0.1:4317`.
+
+For a production-style local run, build Telegram and let the Thread server serve `dist/` on the same origin:
+
+```sh
+npm run build:production
+npm run thread:start
+```
+
+The build requires real `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` values in the root `.env`.
 
 ### Invoking API from console
 

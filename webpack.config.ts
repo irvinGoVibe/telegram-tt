@@ -44,7 +44,8 @@ const CSP = `
   img-src 'self' data: blob: https://ss3.4sqi.net/img/categories_v2/;
   media-src 'self' blob: data:;
   object-src 'none';
-  frame-src http: https: bitkeep: bnc: bybitapp: echooo: imtokenv2: mytonwallet-tc: nicegram-tc: safepal-tc: tonkeeper-pro-tc: tonkeeper-tc:;
+  frame-src http: https: bitkeep: bnc: bybitapp: echooo: imtokenv2: mytonwallet-tc:
+    nicegram-tc: safepal-tc: tonkeeper-pro-tc: tonkeeper-tc:;
   base-uri 'none';
   form-action 'none';`
   .replace(/\s+/g, ' ').trim();
@@ -68,6 +69,12 @@ export default function createConfig(
       client: {
         overlay: false,
       },
+      proxy: [
+        {
+          context: ['/api'],
+          target: 'http://127.0.0.1:4317',
+        },
+      ],
       static: [
         {
           directory: path.resolve(__dirname, 'public'),
@@ -208,6 +215,8 @@ export default function createConfig(
         APP_MOCKED_CLIENT,
         // eslint-disable-next-line no-null/no-null
         APP_NAME: null,
+        // eslint-disable-next-line no-null/no-null
+        THREAD_API_URL: null,
         APP_TITLE,
         TELEGRAM_API_ID: undefined,
         TELEGRAM_API_HASH: undefined,

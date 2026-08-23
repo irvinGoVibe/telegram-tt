@@ -1,0 +1,31 @@
+{
+  "name": "Архив с фотографиями",
+  "type": "private_group",
+  "id": 424242,
+  "messages": [
+    {
+      "id": 100,
+      "type": "message",
+      "date": "2026-02-01T10:00:00",
+      "date_unixtime": "1769940000",
+      "from": "Лена",
+      "from_id": "user10",
+      "text": "Фото с планёрки",
+      "text_entities": [{ "type": "plain", "text": "Фото с планёрки" }],
+      "photo": "photos/photo_1.svg",
+      "width": 960,
+      "height": 640
+    },
+    {
+      "id": 101,
+      "type": "message",
+      "date": "2026-02-01T10:04:00",
+      "date_unixtime": "1769940240",
+      "from": "Максим",
+      "from_id": "user11",
+      "reply_to_message_id": 100,
+      "text": "Сохранил, спасибо!",
+      "text_entities": [{ "type": "plain", "text": "Сохранил, спасибо!" }]
+    }
+  ]
+}

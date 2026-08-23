@@ -6,7 +6,8 @@
   ],
   "ignoreFiles": [
     "dist/*.css",
-    "src/styles/icons.scss"
+    "src/styles/icons.scss",
+    "thread-server/**/*"
   ],
   "plugins": [
     "@stylistic/stylelint-plugin",

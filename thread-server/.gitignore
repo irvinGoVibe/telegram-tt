@@ -1,0 +1,9 @@
+node_modules/
+tests/artifacts/
+.vercel/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+.convex-runtime-url

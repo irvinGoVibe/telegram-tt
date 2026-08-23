@@ -77,6 +77,7 @@ type OwnProps = {
   canBuyPremium?: boolean;
   canEdit?: boolean;
   canAppendTodoList?: boolean;
+  canCreateTask?: boolean;
   canForward?: boolean;
   canFaveSticker?: boolean;
   canUnfaveSticker?: boolean;
@@ -106,6 +107,7 @@ type OwnProps = {
   onOpenThread?: VoidFunction;
   onEdit?: NoneToVoidFunction;
   onAppendTodoList?: NoneToVoidFunction;
+  onCreateTask?: NoneToVoidFunction;
   onPin?: NoneToVoidFunction;
   onUnpin?: NoneToVoidFunction;
   onForward?: NoneToVoidFunction;
@@ -166,6 +168,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   canQuote,
   canEdit,
   canAppendTodoList,
+  canCreateTask,
   noReplies,
   canPin,
   canUnpin,
@@ -200,6 +203,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   onOpenThread,
   onEdit,
   onAppendTodoList,
+  onCreateTask,
   onPin,
   onUnpin,
   onForward,
@@ -420,6 +424,11 @@ const MessageContextMenu: FC<OwnProps> = ({
         {canReply && (
           <MenuItem icon="reply" onClick={onReply}>
             {oldLang(canQuote ? 'lng_context_quote_and_reply' : 'Reply')}
+          </MenuItem>
+        )}
+        {canCreateTask && (
+          <MenuItem icon="check" onClick={onCreateTask}>
+            Create Linear task
           </MenuItem>
         )}
         {!noReplies && Boolean(repliesThreadInfo?.messagesCount) && (

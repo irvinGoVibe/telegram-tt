@@ -29,6 +29,7 @@ import { IS_MULTIACCOUNT_SUPPORTED } from '../../../util/browser/globalEnvironme
 import { IS_TAURI } from '../../../util/browser/globalEnvironment';
 import { getPromptInstall } from '../../../util/installPrompt';
 import { switchPermanentWebVersion } from '../../../util/permanentWebVersion';
+import { openThreadWorkspace } from '../../../thread/events';
 
 import { useFolderManagerForUnreadCounters } from '../../../hooks/useFolderManager';
 import useLang from '../../../hooks/useLang';
@@ -100,6 +101,10 @@ const LeftSideMenuItems = ({
     openChat({ id: currentUserId, shouldReplaceHistory: true });
   });
 
+  const handleOpenThreadWorkspace = useLastCallback(() => {
+    openThreadWorkspace();
+  });
+
   const handleDarkModeToggle = useLastCallback((e: React.SyntheticEvent<HTMLElement>) => {
     e.stopPropagation();
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -162,6 +167,12 @@ const LeftSideMenuItems = ({
         onClick={handleSelectSaved}
       >
         {lang('MenuSavedMessages')}
+      </MenuItem>
+      <MenuItem
+        icon="folder"
+        onClick={handleOpenThreadWorkspace}
+      >
+        Projects &amp; Linear
       </MenuItem>
       {archiveSettings.isHidden && (
         <MenuItem
