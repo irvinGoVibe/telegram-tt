@@ -51,10 +51,19 @@ const MAX_STORED_EMOJIS = 8 * 4; // Represents four rows of recent emojis
 
 addActionHandler('toggleChatInfo', (global, actions, payload): ActionReturnType => {
   const { force, tabId = getCurrentTabId() } = payload || {};
-  const isChatInfoShown = force !== undefined ? force : !selectTabState(global, tabId).isChatInfoShown;
+  const chatInfo = selectTabState(global, tabId).chatInfo;
+  const willChatInfoBeShown = force !== undefined ? force : !chatInfo.isOpen;
 
-  global = updateTabState(global, { isChatInfoShown }, tabId);
-  global = { ...global, lastIsChatInfoShown: isChatInfoShown };
+  if (willChatInfoBeShown !== chatInfo.isOpen) {
+    global = updateTabState(global, {
+      chatInfo: {
+        ...chatInfo,
+        isOpen: willChatInfoBeShown,
+      },
+      ...(willChatInfoBeShown && { isThreadAssistantShown: false }),
+    }, tabId);
+  }
+  global = { ...global, lastIsChatInfoShown: willChatInfoBeShown };
 
   return global;
 });
@@ -66,7 +75,12 @@ addActionHandler('toggleThreadAssistant', (global, actions, payload): ActionRetu
 
   return updateTabState(global, {
     isThreadAssistantShown,
-    ...(isThreadAssistantShown && { isChatInfoShown: false }),
+    ...(isThreadAssistantShown && {
+      chatInfo: {
+        ...tabState.chatInfo,
+        isOpen: false,
+      },
+    }),
   }, tabId);
 });
 
@@ -167,15 +181,24 @@ addActionHandler('processOpenChatOrThread', (global, actions, payload): ActionRe
   }, tabId);
 });
 
-addActionHandler('resetNextProfileTab', (global, actions, payload): ActionReturnType => {
-  const { tabId = getCurrentTabId() } = payload || {};
+addActionHandler('changeProfileTab', (global, actions, payload): ActionReturnType => {
+  const { profileTab, shouldScrollTo, tabId = getCurrentTabId() } = payload;
   const { chatId } = selectCurrentMessageList(global, tabId) || {};
 
   if (!chatId) {
     return undefined;
   }
 
-  return updateTabState(global, { nextProfileTab: undefined, forceScrollProfileTab: false }, tabId);
+  const chatInfo = selectTabState(global, tabId).chatInfo;
+
+  return updateTabState(global, {
+    chatInfo: {
+      ...chatInfo,
+      isOpen: true,
+      profileTab,
+      forceScrollProfileTab: shouldScrollTo,
+    },
+  }, tabId);
 });
 
 addActionHandler('toggleStatistics', (global, actions, payload): ActionReturnType => {
@@ -551,6 +574,27 @@ addActionHandler('updateAttachmentSettings', (global, actions, payload): ActionR
     attachmentSettings: {
       ...global.attachmentSettings,
       ...payload,
+    },
+  };
+});
+
+addActionHandler('updateShouldSaveAttachmentsCompression', (global, actions, payload): ActionReturnType => {
+  const { shouldSave, tabId = getCurrentTabId() } = payload;
+
+  return updateTabState(global, {
+    shouldSaveAttachmentsCompression: shouldSave,
+  }, tabId);
+});
+
+addActionHandler('applyDefaultAttachmentsCompression', (global): ActionReturnType => {
+  const { defaultAttachmentCompression } = global.attachmentSettings;
+  const shouldCompress = defaultAttachmentCompression === 'compress';
+
+  return {
+    ...global,
+    attachmentSettings: {
+      ...global.attachmentSettings,
+      shouldCompress,
     },
   };
 });

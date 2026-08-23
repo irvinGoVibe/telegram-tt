@@ -181,6 +181,7 @@ export const INITIAL_GLOBAL_STATE: GlobalState = {
 
   attachmentSettings: {
     shouldCompress: true,
+    defaultAttachmentCompression: 'compress',
     shouldSendGrouped: true,
     isInvertedMedia: undefined,
     webPageMediaSize: undefined,
@@ -339,7 +340,6 @@ export const INITIAL_TAB_STATE: TabState = {
   id: 0,
   isMasterTab: false,
   isLeftColumnShown: true,
-  isChatInfoShown: false,
   isThreadAssistantShown: false,
   newChatMembersProgress: NewChatMembersProgress.Closed,
   uiReadyState: 0,
@@ -389,6 +389,10 @@ export const INITIAL_TAB_STATE: TabState = {
 
   management: {
     byChatId: {},
+  },
+
+  chatInfo: {
+    isOpen: false,
   },
 
   savedGifts: {

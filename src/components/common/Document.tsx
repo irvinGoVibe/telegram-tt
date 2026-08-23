@@ -36,7 +36,6 @@ type OwnProps = {
   isSelectable?: boolean;
   canAutoLoad?: boolean;
   uploadProgress?: number;
-  withDate?: boolean;
   datetime?: number;
   className?: string;
   sender?: string;
@@ -62,7 +61,6 @@ const Document = ({
   canAutoLoad,
   autoLoadFileMaxSizeMb,
   uploadProgress,
-  withDate,
   datetime,
   className,
   sender,
@@ -83,7 +81,7 @@ const Document = ({
   const [isFileIpDialogOpen, openFileIpDialog, closeFileIpDialog] = useFlag();
   const [shouldNotWarnAboutFiles, setShouldNotWarnAboutFiles] = useState(false);
 
-  const { fileName, size, timestamp, mimeType } = document;
+  const { fileName, size, mimeType } = document;
   const extension = getDocumentExtension(document) || '';
 
   const isIntersecting = useIsIntersecting(ref, observeIntersection);
@@ -192,7 +190,7 @@ const Document = ({
         name={fileName}
         extension={extension}
         size={size}
-        timestamp={withDate ? datetime || timestamp : undefined}
+        timestamp={datetime}
         thumbnailDataUri={thumbDataUri}
         previewData={localBlobUrl || previewData}
         smaller={smaller}

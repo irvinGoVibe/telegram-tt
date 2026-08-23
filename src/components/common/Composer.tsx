@@ -466,6 +466,8 @@ const Composer: FC<OwnProps & StateProps> = ({
     updateChatSilentPosting,
     updateInsertingPeerIdMention,
     updateDraftSuggestedPostInfo,
+    updateShouldSaveAttachmentsCompression,
+    applyDefaultAttachmentsCompression,
   } = getActions();
 
   const oldLang = useOldLang();
@@ -550,6 +552,12 @@ const Composer: FC<OwnProps & StateProps> = ({
   const [attachments, setAttachments] = useState<ApiAttachment[]>([]);
   const hasAttachments = Boolean(attachments.length);
   const [nextText, setNextText] = useState<ApiFormattedText | undefined>(undefined);
+
+  useEffect(() => {
+    if (!attachments.length || !attachments) {
+      updateShouldSaveAttachmentsCompression({ shouldSave: false });
+    }
+  }, [attachments]);
 
   const {
     canSendStickers, canSendGifs, canAttachMedia, canAttachPolls, canAttachEmbedLinks, canAttachToDoLists,
@@ -1103,7 +1111,7 @@ const Composer: FC<OwnProps & StateProps> = ({
 
     lastMessageSendTimeSeconds.current = getServerTime();
 
-    clearDraft({ chatId, isLocalOnly: true });
+    clearDraft({ chatId, threadId, isLocalOnly: true });
 
     // Wait until message animation starts
     requestMeasure(() => {
@@ -1344,6 +1352,15 @@ const Composer: FC<OwnProps & StateProps> = ({
     }
   }, [handleFileSelect, requestedDraftFiles, resetOpenChatWithDraft]);
 
+  useEffect(() => {
+    if (requestedDraftFiles?.length) {
+      updateShouldSaveAttachmentsCompression({ shouldSave: true });
+      applyDefaultAttachmentsCompression();
+    } else {
+      updateShouldSaveAttachmentsCompression({ shouldSave: false });
+    }
+  }, [requestedDraftFiles, updateShouldSaveAttachmentsCompression, applyDefaultAttachmentsCompression]);
+
   const handleCustomEmojiSelect = useLastCallback((emoji: ApiSticker, inInputId?: string) => {
     const emojiSetId = 'id' in emoji.stickerSetInfo && emoji.stickerSetInfo.id;
     if (!emoji.isFree && !isCurrentUserPremium && !isChatWithSelf && emojiSetId !== chatEmojiSetId) {
@@ -1380,6 +1397,8 @@ const Composer: FC<OwnProps & StateProps> = ({
         resetComposer(true);
       });
     }
+
+    clearDraft({ chatId, threadId, isLocalOnly: true });
   });
 
   const handleStickerSelect = useLastCallback((
@@ -1469,14 +1488,14 @@ const Composer: FC<OwnProps & StateProps> = ({
       applyIosAutoCapitalizationFix(messageInput);
     }
 
-    clearDraft({ chatId, isLocalOnly: true });
+    clearDraft({ chatId, threadId, isLocalOnly: true });
     requestMeasure(() => {
       resetComposer();
     });
   });
 
   const handleBotCommandSelect = useLastCallback(() => {
-    clearDraft({ chatId, isLocalOnly: true });
+    clearDraft({ chatId, threadId, isLocalOnly: true });
     requestMeasure(() => {
       resetComposer();
     });

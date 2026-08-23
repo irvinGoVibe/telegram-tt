@@ -94,7 +94,7 @@ const LeftSideMenuItems = ({
   const bots = useMemo(() => Object.values(attachBots).filter((bot) => bot.isForSideMenu), [attachBots]);
 
   const handleSelectMyProfile = useLastCallback(() => {
-    openChatWithInfo({ id: currentUserId, shouldReplaceHistory: true, profileTab: 'stories' });
+    openChatWithInfo({ id: currentUserId, shouldReplaceHistory: true, isOwnProfile: true });
   });
 
   const handleSelectSaved = useLastCallback(() => {

@@ -668,6 +668,8 @@ export interface Point {
 
 export type WebPageMediaSize = 'large' | 'small';
 
+export type AttachmentCompression = 'compress' | 'original';
+
 export type StarGiftCategory = number | 'all' | 'limited' | 'stock' | 'resale';
 
 export type CallSound = (

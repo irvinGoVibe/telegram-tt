@@ -101,11 +101,10 @@ export type TabState = {
   id: number;
   isBlurred?: boolean;
   isMasterTab: boolean;
-  isInactive?: boolean;
+  inactiveReason?: 'auth' | 'otherClient';
   shouldPreventComposerAnimation?: boolean;
   inviteHash?: string;
   canInstall?: boolean;
-  isChatInfoShown: boolean;
   isThreadAssistantShown?: boolean;
   isStatisticsShown?: boolean;
   isLeftColumnShown: boolean;
@@ -127,8 +126,12 @@ export type TabState = {
   };
 
   shouldCloseRightColumn?: boolean;
-  nextProfileTab?: ProfileTabType;
-  forceScrollProfileTab?: boolean;
+  chatInfo: {
+    isOpen: boolean;
+    profileTab?: ProfileTabType;
+    forceScrollProfileTab?: boolean;
+    isOwnProfile?: boolean;
+  };
   nextFoldersAction?: ReducerAction<FoldersActions>;
   shareFolderScreen?: {
     folderId: number;
@@ -833,6 +836,11 @@ export type TabState = {
     gift: ApiStarGiftUnique;
   };
 
+  lockedGiftModal?: {
+    untilDate?: number;
+    reason?: ApiFormattedText;
+  };
+
   giftResalePriceComposerModal?: {
     peerId?: string;
     gift: ApiSavedStarGift | ApiStarGift;
@@ -876,7 +884,13 @@ export type TabState = {
     errorKey?: RegularLangFnParameters;
   };
 
+  quickPreview?: {
+    chatId: string;
+    threadId?: ThreadId;
+  };
+
   isWaitingForStarGiftUpgrade?: true;
   isWaitingForStarGiftTransfer?: true;
   insertingPeerIdMention?: string;
+  shouldSaveAttachmentsCompression?: boolean;
 };

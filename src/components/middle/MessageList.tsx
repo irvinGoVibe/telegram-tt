@@ -52,7 +52,7 @@ import {
   selectUserFullInfo,
 } from '../../global/selectors';
 import { selectIsChatRestricted } from '../../global/selectors/chats';
-import { selectActiveRestrictionReasons } from '../../global/selectors/messages';
+import { selectActiveRestrictionReasons, selectCurrentMessageList } from '../../global/selectors/messages';
 import animateScroll, { isAnimatingScroll, restartCurrentScrollAnimation } from '../../util/animateScroll';
 import buildClassName from '../../util/buildClassName';
 import { isUserId } from '../../util/entities/ids';
@@ -96,9 +96,10 @@ type OwnProps = {
   withDefaultBg: boolean;
   isContactRequirePremium?: boolean;
   paidMessagesStars?: number;
-  onScrollDownToggle: BooleanToVoidFunction;
-  onNotchToggle: BooleanToVoidFunction;
-  onIntersectPinnedMessage: OnIntersectPinnedMessage;
+  isQuickPreview?: boolean;
+  onScrollDownToggle?: BooleanToVoidFunction;
+  onNotchToggle?: AnyToVoidFunction;
+  onIntersectPinnedMessage?: OnIntersectPinnedMessage;
 };
 
 type StateProps = {
@@ -142,6 +143,7 @@ type StateProps = {
   canTranslate?: boolean;
   translationLanguage?: string;
   shouldAutoTranslate?: boolean;
+  isActive?: boolean;
 };
 
 enum Content {
@@ -183,6 +185,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
   isChannelWithAvatars,
   canPost,
   isSynced,
+  isActive,
   // eslint-disable-next-line @typescript-eslint/no-shadow
   isChatMonoforum,
   isReady,
@@ -224,6 +227,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
   canTranslate,
   translationLanguage,
   shouldAutoTranslate,
+  isQuickPreview,
   onIntersectPinnedMessage,
   onScrollDownToggle,
   onNotchToggle,
@@ -379,7 +383,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
     threadId, isChatWithSelf, channelJoinInfo]);
 
   useInterval(() => {
-    if (!messageIds || !messagesById || type === 'scheduled' || isAccountFrozen) return;
+    if (!messageIds || !messagesById || type === 'scheduled' || isAccountFrozen || !isActive) return;
     if (!isChannelChat && !isGroupChat) return;
 
     const ids = messageIds.filter((id) => {
@@ -393,7 +397,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
   }, MESSAGE_REACTIONS_POLLING_INTERVAL);
 
   useInterval(() => {
-    if (!messageIds || !messagesById || type === 'scheduled') {
+    if (!messageIds || !messagesById || type === 'scheduled' || !isActive) {
       return;
     }
     const storyDataList = messageIds.map((id) => messagesById[id]?.content.storyData).filter(Boolean);
@@ -415,7 +419,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
   }, MESSAGE_STORY_POLLING_INTERVAL);
 
   useInterval(() => {
-    if (!messageIds || !messagesById || threadId !== MAIN_THREAD_ID || type === 'scheduled') {
+    if (!messageIds || !messagesById || threadId !== MAIN_THREAD_ID || type === 'scheduled' || !isActive) {
       return;
     }
     const global = getGlobal();
@@ -428,7 +432,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
   }, MESSAGE_COMMENTS_POLLING_INTERVAL, true);
 
   useInterval(() => {
-    if (!messageIds || !messagesById || threadId !== MAIN_THREAD_ID || type === 'scheduled') {
+    if (!messageIds || !messagesById || threadId !== MAIN_THREAD_ID || type === 'scheduled' || !isActive) {
       return;
     }
     const ids = messageIds.filter((id) => messagesById[id]?.factCheck?.shouldFetch);
@@ -443,7 +447,12 @@ const MessageList: FC<OwnProps & StateProps> = ({
       return undefined;
     }
 
-    return debounce(() => loadViewportMessages({ direction: LoadMoreDirection.Around }), 1000, true, false);
+    return debounce(
+      () => loadViewportMessages({ direction: LoadMoreDirection.Around, chatId, threadId }),
+      1000,
+      true,
+      false,
+    );
     // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps
   }, [loadViewportMessages, messageIds]);
 
@@ -469,7 +478,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
 
       const isFocusing = Boolean(selectTabState(global).focusedMessage?.chatId);
       if (!isFocusing) {
-        onIntersectPinnedMessage({ shouldCancelWaiting: true });
+        onIntersectPinnedMessage?.({ shouldCancelWaiting: true });
       }
 
       if (!container.parentElement) {
@@ -478,7 +487,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
 
       scrollOffsetRef.current = container.scrollHeight - container.scrollTop;
 
-      if (type === 'thread') {
+      if (type === 'thread' && !isQuickPreview) {
         setScrollOffset({ chatId, threadId, scrollOffset: scrollOffsetRef.current });
       }
     });
@@ -717,7 +726,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
   useEffect(() => {
     if (hasMessages) return;
 
-    onScrollDownToggle(false);
+    onScrollDownToggle?.(false);
   }, [hasMessages, onScrollDownToggle]);
 
   const activeKey = isRestricted ? (
@@ -790,6 +799,7 @@ const MessageList: FC<OwnProps & StateProps> = ({
         nameChangeDate={nameChangeDate}
         photoChangeDate={photoChangeDate}
         noAppearanceAnimation={!messageGroups || !shouldAnimateAppearanceRef.current}
+        isQuickPreview={isQuickPreview}
         onScrollDownToggle={onScrollDownToggle}
         onNotchToggle={onNotchToggle}
         onIntersectPinnedMessage={onIntersectPinnedMessage}
@@ -869,7 +879,12 @@ export default memo(withGlobal<OwnProps>(
     const shouldAutoTranslate = chat?.hasAutoTranslation;
     const translationLanguage = selectTranslationLanguage(global);
 
+    const currentMessageList = selectCurrentMessageList(global);
+    const isActive = currentMessageList && currentMessageList.chatId === chatId
+      && currentMessageList.threadId === threadId && currentMessageList.type === type;
+
     return {
+      isActive,
       areAdsEnabled,
       isChatLoaded: true,
       isRestricted,

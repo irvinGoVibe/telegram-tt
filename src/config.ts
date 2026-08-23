@@ -26,7 +26,7 @@ export const DEBUG = process.env.APP_ENV !== 'production';
 export const DEBUG_MORE = false;
 export const DEBUG_LOG_FILENAME = 'tt-log.json';
 export const STRICTERDOM_ENABLED = DEBUG;
-export const BOT_VERIFICATION_PEERS_LIMIT = 20;
+export const FORCE_FALLBACK_LANG = false;
 
 export const BETA_CHANGELOG_URL = 'https://telegra.ph/WebA-Beta-03-20';
 
@@ -67,6 +67,7 @@ export const AUTODOWNLOAD_FILESIZE_MB_LIMITS = [1, 5, 10, 50, 100, 500];
 export const DATA_BROADCAST_CHANNEL_PREFIX = 'tt-global';
 export const ESTABLISH_BROADCAST_CHANNEL_PREFIX = 'tt-establish';
 export const MULTITAB_LOCALSTORAGE_KEY_PREFIX = 'tt-multitab';
+export const INTERCLIENT_BROADCAST_CHANNEL = 'tgweb';
 export const DC_IDS = [1, 2, 3, 4, 5] as const;
 
 export const DOWNLOAD_WORKERS = 16;
@@ -354,16 +355,14 @@ export const PRIVACY_URL = 'https://telegram.org/privacy';
 export const MINI_APP_TOS_URL = 'https://telegram.org/tos/mini-apps';
 export const FRAGMENT_ADS_URL = 'https://fragment.com/ads';
 export const GENERAL_TOPIC_ID = 1;
-export const STORY_EXPIRE_PERIOD = 86400; // 1 day
-export const STORY_VIEWERS_EXPIRE_PERIOD = 86400; // 1 day
 export const FRESH_AUTH_PERIOD = 86400; // 1 day
 export const GIVEAWAY_BOOST_PER_PREMIUM = 4;
 export const GIVEAWAY_MAX_ADDITIONAL_CHANNELS = 10;
 export const GIVEAWAY_MAX_ADDITIONAL_USERS = 10;
 export const GIVEAWAY_MAX_ADDITIONAL_COUNTRIES = 10;
-export const BOOST_PER_SENT_GIFT = 3;
 export const FRAGMENT_PHONE_CODE = '888';
 export const FRAGMENT_PHONE_LENGTH = 11;
+export const BOT_VERIFICATION_PEERS_LIMIT = 20;
 
 export const LIGHT_THEME_BG_COLOR = '#99BA92';
 export const DARK_THEME_BG_COLOR = '#0F0F0F';

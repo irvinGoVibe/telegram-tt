@@ -520,6 +520,7 @@ export interface LangPair {
   'MemberRequestsRequestToJoinDescriptionGroup': undefined;
   'ShareYouPhoneNumberTitle': undefined;
   'AreYouSureShareMyContactInfoBot': undefined;
+  'ContactShare': undefined;
   'OK': undefined;
   'ForwardTo': undefined;
   'AttachGame': undefined;
@@ -668,7 +669,6 @@ export interface LangPair {
   'PollsStopSure': undefined;
   'PaymentTestInvoice': undefined;
   'PaymentInvoiceNotFound': undefined;
-  'AttachLiveLocation': undefined;
   'NoWordsRecognized': undefined;
   'ViaBot': undefined;
   'DiscussChannel': undefined;
@@ -860,6 +860,7 @@ export interface LangPair {
   'EventLogFilterEditedMessages': undefined;
   'EventLogFilterLeavingMembers': undefined;
   'ChannelManagementTitle': undefined;
+  'MyProfileHeader': undefined;
   'EventLogAllAdmins': undefined;
   'UserRestrictionsCanDo': undefined;
   'UserRestrictionsBlock': undefined;
@@ -968,6 +969,7 @@ export interface LangPair {
   'AttachContact': undefined;
   'AttachStory': undefined;
   'AttachLocation': undefined;
+  'AttachLiveLocation': undefined;
   'AttachGiveaway': undefined;
   'AttachGiveawayResults': undefined;
   'AttachTodo': undefined;
@@ -1104,9 +1106,11 @@ export interface LangPair {
   'SettingsPasscodeStart2': undefined;
   'CurrentPasswordPlaceholder': undefined;
   'ChangeYourProfilePicture': undefined;
-  'TooManyTabsTitle': undefined;
-  'TooManyTabsDescription': undefined;
-  'TooManyTabsReload': undefined;
+  'AppInactiveOtherClientTitle': undefined;
+  'AppInactiveOtherClientDescription': undefined;
+  'AppInactiveAuthTitle': undefined;
+  'AppInactiveAuthDescription': undefined;
+  'AppInactiveReload': undefined;
   'SlowmodeEnabled': undefined;
   'SomethingWentWrong': undefined;
   'VideoPlayerBuffering': undefined;
@@ -1805,6 +1809,8 @@ export interface LangPair {
   'ThreadAIConfigure': undefined;
   'ThreadAIModelApiNamePlaceholder': undefined;
   'ThreadAIModelCatalogUnavailable': undefined;
+  'TitleGiftLocked': undefined;
+  'QuickPreview': undefined;
 }
 
 export interface LangPairWithVariables<V = LangVariable> {
@@ -3058,6 +3064,9 @@ export interface LangPairWithVariables<V = LangVariable> {
   };
   'ThreadAIConnectionReady': {
     'model': V;
+  };
+  'GiftLockedMessage': {
+    'relativeDate': V;
   };
 }
 
