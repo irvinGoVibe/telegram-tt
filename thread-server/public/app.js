@@ -30,7 +30,7 @@ applyTheme();
 const RU = {
   "Telegram archive": "Архив Telegram",
   "Archive and filters": "Архив и фильтры",
-  "Thread — home": "Thread — главная",
+  "Telegram Tasks — home": "Telegram Tasks — главная",
   "Collapse sidebar": "Свернуть боковую панель",
   "Import archive": "Импортировать архив",
   "Search messages": "Поиск сообщений",
@@ -53,7 +53,7 @@ const RU = {
   "back into view": "в поле зрения",
   "Import a Telegram": "Импортируйте",
   "ZIP or export folder": "ZIP или папку экспорта Telegram",
-  ". Thread will rebuild the group, photos, links, and replies in one continuous timeline.": ". Thread восстановит группу, фотографии, ссылки и ответы в единой ленте.",
+  ". Telegram Tasks will rebuild the group, photos, links, and replies in one continuous timeline.": ". Telegram Tasks восстановит группу, фотографии, ссылки и ответы в единой ленте.",
   "Choose archive": "Выбрать архив",
   "Open demo": "Открыть демо",
   "ZIP or folder imports keep photos beside their messages": "При импорте ZIP или папки фотографии сохраняются рядом с сообщениями",
