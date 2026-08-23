@@ -24,6 +24,8 @@ Feel free to explore, provide feedback and contribute.
 
 ## Local setup
 
+Use Node.js 24.11+ and npm 11+.
+
 ```sh
 mv .env.example .env
 
@@ -47,7 +49,7 @@ cd thread-server && npx convex dev --once && cd ..
 npm run dev:integrated
 ```
 
-Webpack serves Telegram at `http://127.0.0.1:1234` and proxies `/api` to Thread on `http://127.0.0.1:4317`.
+Vite serves Telegram at `http://127.0.0.1:1234` and proxies `/api` to Thread on `http://127.0.0.1:4317`.
 
 For a production-style local run, build Telegram and let the Thread server serve `dist/` on the same origin:
 
@@ -57,6 +59,39 @@ npm run thread:start
 ```
 
 The build requires real `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` values in the root `.env`.
+
+## Updating from Telegram Web A
+
+The repository keeps upstream code and product changes on separate branches:
+
+- `master` is a clean mirror of `Ajaxy/telegram-tt` and tracks `upstream/master`.
+- `product/thread` is the shipped application: upstream plus the Thread UI and `thread-server/`.
+- `legacy/master-pre-migration` and `backup/legacy-2026-08-24` preserve the pre-migration repository.
+
+Pull a Telegram update into the product branch with a merge commit so both histories remain visible:
+
+```sh
+git fetch upstream --prune
+git switch master
+git merge --ff-only upstream/master
+git switch product/thread
+git merge --no-ff master
+
+npm ci
+npm --prefix thread-server ci
+npm run check:ts
+npm run check:css
+npm test
+npm run build:mocked
+npm run thread:check
+```
+
+Do not edit generated `dist/` files while resolving a merge. Resolve source conflicts first, then rebuild. When upstream
+introduces an equivalent interface feature, prefer its native component and keep only the Thread-specific behavior. For
+example, folder placement now uses Telegram's native `foldersPosition`; the migration only maps the older stored setting.
+
+Keep new product work in focused commits on `product/thread`. Small commits let Git reuse prior resolutions and make it
+clear whether a conflict belongs to Telegram upstream, the Thread overlay, or generated output.
 
 ### Invoking API from console
 
