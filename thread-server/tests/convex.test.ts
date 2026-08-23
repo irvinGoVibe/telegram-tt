@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "../convex/schema";
-import { api } from "../convex/_generated/api";
+import { api, internal } from "../convex/_generated/api";
 
 const modules = import.meta.glob("../convex/**/*.ts");
 
@@ -71,6 +71,43 @@ describe("Convex project workspace", () => {
     const projects = await t.query(api.projects.listProjects, { sessionHash });
     expect(updated).toMatchObject({ name: "Alpha 2", instructions: "Answer with source links.", responseLanguage: "en" });
     expect(projects.map((project) => project?._id)).toContain(created!._id);
+  });
+
+  test("stores the default AI model in the project and restricts edits to its owner", async () => {
+    const owner = await seedSession(t, "ai-owner");
+    const outsider = await seedSession(t, "ai-outsider");
+    const project = await t.mutation(api.projects.createProject, { sessionHash: owner.sessionHash, name: "AI project" });
+    await t.mutation(api.aiSettings.setProjectDefaultModel, {
+      sessionHash: owner.sessionHash,
+      projectId: project!._id,
+      defaultModel: "KIMI_K3",
+    });
+    const stored = await t.query(api.aiSettings.getProjectSettings, {
+      sessionHash: owner.sessionHash,
+      projectId: project!._id,
+    });
+    expect(stored).toMatchObject({ role: "owner", settings: { defaultModel: "KIMI_K3" } });
+    await expect(t.mutation(api.aiSettings.setProjectDefaultModel, {
+      sessionHash: outsider.sessionHash,
+      projectId: project!._id,
+      defaultModel: "GPT_54",
+    })).rejects.toThrow(/access/i);
+  });
+
+  test("upserts a Telegram identity without creating duplicate users", async () => {
+    const firstId = await t.mutation(internal.auth.upsertTelegramIdentity, {
+      telegramUserId: "123456789",
+      displayName: "First name",
+      username: "first",
+    });
+    const secondId = await t.mutation(internal.auth.upsertTelegramIdentity, {
+      telegramUserId: "123456789",
+      displayName: "Updated name",
+      username: "updated",
+    });
+    expect(secondId).toBe(firstId);
+    const user = await t.run((ctx) => ctx.db.get(firstId));
+    expect(user).toMatchObject({ displayName: "Updated name", username: "updated" });
   });
 
   test("adds, lists, and removes a Telegram chat", async () => {

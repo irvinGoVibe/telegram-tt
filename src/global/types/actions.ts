@@ -325,6 +325,7 @@ export interface ActionPayloads {
   } & WithTabId;
 
   toggleChatInfo: ({ force?: boolean } & WithTabId) | undefined;
+  toggleThreadAssistant: ({ force?: boolean } & WithTabId) | undefined;
   setIsUiReady: {
     uiReadyState: 0 | 1 | 2;
   } & WithTabId;

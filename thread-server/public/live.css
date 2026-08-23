@@ -392,10 +392,11 @@
 }
 
 .live-shell {
+  position: relative;
   display: grid;
   width: 100%;
   height: 100dvh;
-  grid-template-columns: 272px minmax(480px, 1fr) 420px;
+  grid-template-columns: 272px minmax(480px, 1fr);
   overflow: hidden;
 }
 
@@ -1479,10 +1480,60 @@
 }
 
 .live-assistant {
+  position: fixed;
+  z-index: 31;
+  inset: 0 auto 0 0;
   display: flex;
+  width: min(424px, calc(100vw - 24px));
   flex-direction: column;
-  border-left: 1px solid var(--archive-line);
+  border-right: 1px solid var(--archive-line-strong);
   background: var(--archive-paper);
+  box-shadow: 22px 0 54px rgba(0, 0, 0, 0.34);
+  transform: translateX(-102%);
+  visibility: hidden;
+  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1), visibility 240ms step-end;
+}
+
+.live-shell.assistant-drawer-open .live-assistant {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0ms step-start;
+}
+
+.assistant-drawer-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  border: 0;
+  background: rgba(5, 8, 10, 0.54);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 180ms ease-out, visibility 180ms step-end;
+}
+
+.live-shell.assistant-drawer-open .assistant-drawer-backdrop {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition: opacity 180ms ease-out, visibility 0ms step-start;
+}
+
+.assistant-drawer-trigger {
+  min-width: 94px;
+  border-color: rgba(51, 150, 232, 0.24);
+  background: var(--telegram-wash);
+  color: var(--telegram-blue-deep);
+}
+
+.assistant-drawer-trigger[aria-expanded="true"] {
+  border-color: var(--telegram-focus);
+  background: var(--archive-hover);
+  color: var(--archive-ink);
+}
+
+.assistant-drawer-close {
+  margin-left: 2px;
 }
 
 .assistant-live-header {
@@ -2889,10 +2940,6 @@ select.task-status:focus-visible {
   line-height: 1.45;
 }
 
-.live-mobile-nav {
-  display: none;
-}
-
 @media (max-width: 1180px) {
   .auth-gate {
     grid-template-columns: 1fr;
@@ -2908,7 +2955,7 @@ select.task-status:focus-visible {
   }
 
   .live-shell {
-    grid-template-columns: 238px minmax(430px, 1fr) 370px;
+    grid-template-columns: 238px minmax(430px, 1fr);
   }
 
   .sync-state,
@@ -2919,7 +2966,7 @@ select.task-status:focus-visible {
 
 @media (max-width: 920px) {
   .live-shell {
-    grid-template-columns: 1fr 390px;
+    grid-template-columns: 1fr;
   }
 
   .live-rail {
@@ -2956,26 +3003,26 @@ select.task-status:focus-visible {
 
   .live-shell {
     display: block;
-    padding-bottom: 54px;
   }
 
-  .live-chat-main,
+  .live-chat-main {
+    width: 100%;
+    height: 100dvh;
+  }
+
   .live-assistant {
     width: 100%;
-    height: calc(100dvh - 54px);
+    border-right: 0;
   }
 
-  .live-assistant {
+  .assistant-drawer-trigger {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+  }
+
+  .assistant-drawer-trigger span {
     display: none;
-    border-left: 0;
-  }
-
-  .live-shell[data-mobile-view="assistant"] .live-chat-main {
-    display: none;
-  }
-
-  .live-shell[data-mobile-view="assistant"] .live-assistant {
-    display: flex;
   }
 
   .live-header-actions .live-secondary {
@@ -3050,30 +3097,6 @@ select.task-status:focus-visible {
 
   .selection-bar > span {
     display: none;
-  }
-
-  .live-mobile-nav {
-    position: fixed;
-    z-index: 15;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    display: grid;
-    height: 54px;
-    grid-template-columns: 1fr 1fr;
-    border-top: 1px solid var(--archive-line);
-    background: var(--archive-tab-glass);
-  }
-
-  .live-mobile-nav button {
-    background: transparent;
-    color: var(--archive-ink-3);
-    font-size: 10px;
-    font-weight: 600;
-  }
-
-  .live-mobile-nav button.active {
-    color: var(--telegram-blue-deep);
   }
 
   .live-dialog,

@@ -59,6 +59,17 @@ addActionHandler('toggleChatInfo', (global, actions, payload): ActionReturnType 
   return global;
 });
 
+addActionHandler('toggleThreadAssistant', (global, actions, payload): ActionReturnType => {
+  const { force, tabId = getCurrentTabId() } = payload || {};
+  const tabState = selectTabState(global, tabId);
+  const isThreadAssistantShown = force !== undefined ? force : !tabState.isThreadAssistantShown;
+
+  return updateTabState(global, {
+    isThreadAssistantShown,
+    ...(isThreadAssistantShown && { isChatInfoShown: false }),
+  }, tabId);
+});
+
 addActionHandler('setLeftColumnWidth', (global, actions, payload): ActionReturnType => {
   const { leftColumnWidth } = payload;
 

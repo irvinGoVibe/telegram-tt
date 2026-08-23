@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Live Telegram project workspace with sourced AI research and tasks" />
-    <title>Thread — Live project workspace</title>
+    <title>Telegram Tasks — Live project workspace</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/live.css" />
@@ -14,45 +14,25 @@
       <section class="auth-card" aria-labelledby="authTitle">
         <div class="auth-brand">
           <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-          <div><strong>Thread</strong><small>Live project workspace</small></div>
+          <div><strong>Telegram Tasks</strong><small>Live project workspace</small></div>
         </div>
         <div class="auth-heading">
           <span class="live-kicker"><i></i> Private workspace</span>
           <h1 id="authTitle">Turn live conversations<br />into accountable work.</h1>
           <p>Connect your Telegram account, collect the chats that belong to a project, and keep every task linked to its source.</p>
         </div>
-        <div class="auth-mode-switch" role="tablist" aria-label="Account access">
-          <button id="authLoginTab" type="button" role="tab" aria-selected="true">Sign in</button>
-          <button id="authSignupTab" type="button" role="tab" aria-selected="false">Create account</button>
-        </div>
-        <form class="auth-form" id="authForm">
-          <label id="authNameLabel" for="authName" hidden>
-            <span>Name</span>
-            <input id="authName" name="name" type="text" autocomplete="name" maxlength="120" placeholder="Your name" hidden />
-          </label>
-          <label id="authEmailLabel" for="authEmail">
-            <span>Email</span>
-            <input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="you@company.com" />
-          </label>
-          <label id="authPasswordLabel" for="authPassword">
-            <span>Password</span>
-            <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="8" required placeholder="At least 8 characters" />
-          </label>
-          <label id="authConfirmLabel" for="authConfirmPassword" hidden>
-            <span>Confirm password</span>
-            <input id="authConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Repeat your password" hidden />
-          </label>
+        <div class="auth-form">
           <p class="form-error" id="authError" role="alert" hidden></p>
-          <button class="live-primary wide" id="authSubmit" type="submit">Sign in</button>
-        </form>
-        <p class="auth-footnote">Telegram is connected separately. Your phone code and 2FA password are never stored.</p>
+          <button class="live-primary wide" id="authSubmit" type="button">Continue with Telegram</button>
+        </div>
+        <p class="auth-footnote">Telegram verifies your identity. Access to chat synchronization is granted separately.</p>
       </section>
       <aside class="auth-context" aria-label="Product overview">
         <div class="context-thread">
           <span class="context-line"></span>
           <article><small>CLIENT CHAT · 09:42</small><p>Can we move the rollout to Thursday and keep the current analytics events?</p></article>
           <article class="context-answer"><small>PROJECT TASK</small><strong>Confirm Thursday rollout</strong><p>Linked to 3 original messages</p></article>
-          <article><small>THREAD AI</small><p>The client confirmed the date but the analytics naming still needs approval.</p></article>
+          <article><small>TELEGRAM TASKS AI</small><p>The client confirmed the date but the analytics naming still needs approval.</p></article>
         </div>
       </aside>
     </main>
@@ -60,9 +40,9 @@
     <div class="live-shell" id="liveApp" hidden>
       <aside class="live-rail" aria-label="Projects and chats">
         <header class="live-brand-row">
-          <a class="brand" href="/" aria-label="Thread home">
+          <a class="brand" href="/" aria-label="Telegram Tasks home">
             <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-            <span class="brand-copy"><strong>Thread</strong><small><i class="status-dot"></i> Live workspace</small></span>
+            <span class="brand-copy"><strong>Telegram Tasks</strong><small><i class="status-dot"></i> Live workspace</small></span>
           </a>
         </header>
 
@@ -115,6 +95,17 @@
             <div><h1 id="liveChatTitle">Choose a project</h1><p id="liveChatMeta">Connect Telegram and add a chat</p></div>
           </div>
           <div class="live-header-actions">
+            <button
+              class="live-secondary assistant-drawer-trigger"
+              id="openAssistantDrawerButton"
+              type="button"
+              aria-label="Open AI chat"
+              aria-controls="assistantDrawer"
+              aria-expanded="false"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 13.7 8.3 19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z" /><path d="m18.5 15 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" /></svg>
+              <span>AI chat</span>
+            </button>
             <span class="sync-state" id="syncState"><i></i> Waiting</span>
             <button class="live-secondary" id="refreshMessagesButton" type="button" disabled>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 8.5A7 7 0 0 1 18.8 10M17.9 15.5A7 7 0 0 1 5.2 14" /></svg>
@@ -181,7 +172,16 @@
         </form>
       </main>
 
-      <aside class="live-assistant" aria-label="Project assistant">
+      <button
+        class="assistant-drawer-backdrop"
+        id="assistantDrawerBackdrop"
+        type="button"
+        tabindex="-1"
+        aria-label="Close AI chat"
+        aria-hidden="true"
+      ></button>
+
+      <aside class="live-assistant" id="assistantDrawer" aria-label="Project assistant" aria-hidden="true" inert>
         <header class="assistant-live-header">
           <div>
             <span class="assistant-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -197,6 +197,9 @@
             </button>
             <button class="live-icon-button" id="newAssistantThreadButton" type="button" aria-label="New AI chat" title="New AI chat" disabled>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+            <button class="live-icon-button assistant-drawer-close" id="closeAssistantDrawerButton" type="button" aria-label="Close AI chat" title="Close AI chat">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
             </button>
           </nav>
         </header>
@@ -237,10 +240,6 @@
         </section>
       </aside>
 
-      <nav class="live-mobile-nav" aria-label="Mobile views">
-        <button class="active" type="button" data-live-mobile-view="chat">Chat</button>
-        <button type="button" data-live-mobile-view="assistant">Researcher</button>
-      </nav>
     </div>
 
     <dialog class="live-dialog" id="createProjectDialog">
@@ -256,7 +255,7 @@
       <form method="dialog" id="telegramForm">
         <header><div><span class="live-kicker">Secure connection</span><h2>Connect Telegram</h2></div><button class="live-icon-button" value="cancel" formnovalidate aria-label="Close">×</button></header>
         <div class="telegram-step" id="telegramPhoneStep">
-          <p>Thread uses Telegram’s user authorization to read only the chats you add to projects.</p>
+          <p>Telegram Tasks uses Telegram’s user authorization to read only the chats you add to projects.</p>
           <label><span>Phone number</span><input id="telegramPhoneInput" type="tel" autocomplete="tel" placeholder="+1 202 555 0123" required /></label>
         </div>
         <div class="telegram-step" id="telegramCodeStep" hidden>

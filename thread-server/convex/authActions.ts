@@ -26,6 +26,15 @@ function passwordMatches(password: string, encoded: string) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+function serverSecretMatches(value: string) {
+  const expected = String(process.env.THREAD_SERVER_SECRET || "");
+  const actual = String(value || "");
+  const expectedBytes = Buffer.from(expected);
+  const actualBytes = Buffer.from(actual);
+  if (expectedBytes.length < 32 || actualBytes.length !== expectedBytes.length) return false;
+  return timingSafeEqual(actualBytes, expectedBytes);
+}
+
 async function issueSession(ctx: any, userId: any) {
   const sessionToken = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(sessionToken).digest("hex");
@@ -58,5 +67,27 @@ export const signIn = action({
     const credential = await ctx.runQuery(internal.auth.credentialByEmail, { email: normalizedEmail(args.email) });
     if (!credential || !passwordMatches(args.password, credential.passwordHash)) throw new Error("Invalid email or password.");
     return await issueSession(ctx, credential.user._id);
+  },
+});
+
+export const signInWithTelegram = action({
+  args: {
+    serverSecret: v.string(),
+    telegramUserId: v.string(),
+    displayName: v.string(),
+    username: v.optional(v.string()),
+    avatarUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!serverSecretMatches(args.serverSecret)) throw new Error("Telegram sign-in is not authorized.");
+    const telegramUserId = args.telegramUserId.trim();
+    if (!/^\d{1,24}$/.test(telegramUserId)) throw new Error("Telegram returned an invalid user identifier.");
+    const userId = await ctx.runMutation(internal.auth.upsertTelegramIdentity, {
+      telegramUserId,
+      displayName: args.displayName.trim().slice(0, 120) || "Telegram user",
+      username: args.username?.trim().replace(/^@/, "").slice(0, 120) || undefined,
+      avatarUrl: args.avatarUrl?.trim().slice(0, 2_000) || undefined,
+    });
+    return await issueSession(ctx, userId);
   },
 });

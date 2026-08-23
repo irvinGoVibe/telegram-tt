@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
-import { access, readFile, stat } from "node:fs/promises";
+import { access, chmod, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handlePlatformApi } from "./lib/platform-api.mjs";
@@ -37,6 +37,34 @@ const R2_USER_AGENT = "telegram-thread/1.0";
 
 function cleanEnv(value) {
   return String(value || "").trim();
+}
+
+function isLoopbackRequest(request) {
+  const address = cleanEnv(request.socket?.remoteAddress).replace(/^::ffff:/, "");
+  return address === "127.0.0.1" || address === "::1";
+}
+
+function envFileValue(value) {
+  const normalized = String(value ?? "");
+  if (/^[A-Za-z0-9_./:@+-]*$/.test(normalized)) return normalized;
+  return JSON.stringify(normalized);
+}
+
+async function persistLocalAiSettings(updates) {
+  const targetPath = path.join(APP_ROOT, ".env.local");
+  const temporaryPath = path.join(APP_ROOT, `.env.local.${process.pid}.tmp`);
+  const current = existsSync(targetPath) ? await readFile(targetPath, "utf8") : "";
+  const lines = current ? current.replace(/\r\n/g, "\n").split("\n") : [];
+  for (const [name, value] of Object.entries(updates)) {
+    const nextLine = `${name}=${envFileValue(value)}`;
+    const index = lines.findIndex((line) => line.startsWith(`${name}=`));
+    if (index >= 0) lines[index] = nextLine;
+    else lines.push(nextLine);
+  }
+  const contents = `${lines.filter((line, index) => line || index < lines.length - 1).join("\n").replace(/\n*$/, "")}\n`;
+  await writeFile(temporaryPath, contents, { encoding: "utf8", mode: 0o600 });
+  await rename(temporaryPath, targetPath);
+  await chmod(targetPath, 0o600);
 }
 
 const MIME_TYPES = new Map([
@@ -393,6 +421,42 @@ ARCHIVE EXCERPTS
 ${transcript || "(no messages available)"}`;
 }
 
+export function buildStandaloneAssistantPrompt({ question, context, history, maxContextChars = MAX_CONTEXT_CHARS }) {
+  const normalizedMessages = (Array.isArray(context?.messages) ? context.messages : [])
+    .slice(-400)
+    .map(normalizeMessage)
+    .filter(Boolean);
+  const selected = selectRelevantMessages(normalizedMessages, question, maxContextChars);
+  const recentHistory = (Array.isArray(history) ? history : [])
+    .slice(-12)
+    .map((item) => `${String(item?.role).toLowerCase() === "assistant" ? "Assistant" : "User"}: ${cleanLine(item?.text, 6_000)}`)
+    .filter((line) => !line.endsWith(": "))
+    .join("\n\n");
+  const transcript = selected.map((message) => {
+    const reply = message.replyTo ? `; reply to #${message.replyTo}` : "";
+    const media = message.media ? `\nAttachment: ${message.media}` : "";
+    return `[#${message.id}] ${message.date} — ${message.from}${reply}\n${message.text || "(no text)"}${media}`;
+  }).join("\n\n");
+  const chatTitle = cleanLine(context?.title || "Open Telegram conversation", 240);
+
+  return `You are the AI assistant inside a Telegram conversation side panel. Help the user think, write, analyze, and discuss naturally. Reply in the same language as the user's latest message unless they ask otherwise.
+
+Rules:
+- This is a normal working conversation. Do not create tasks, projects, tickets, or formal specifications unless the user explicitly asks.
+- When the user asks about the open Telegram conversation, use the supplied excerpts as evidence and cite factual claims with [#ID].
+- Never invent Telegram messages, participants, dates, or decisions.
+- When the question is unrelated to the Telegram conversation, answer normally from your general knowledge and do not force citations.
+- Clearly label uncertainty and distinguish a message fact from your inference.
+- Keep the response compact unless the user asks for depth.
+
+OPEN TELEGRAM CONVERSATION
+${chatTitle}
+Available messages: ${normalizedMessages.length}
+
+${transcript ? `RELEVANT TELEGRAM EXCERPTS\n${transcript}\n\n` : ""}${recentHistory ? `RECENT AI CHAT\n${recentHistory}\n\n` : ""}USER MESSAGE
+${cleanLine(question, 8_000)}`;
+}
+
 function runCodex(prompt, request) {
   return new Promise((resolve, reject) => {
     const args = [
@@ -517,6 +581,16 @@ function truncateUtf8(value, maxBytes) {
 }
 
 let r2ModelsCache = { expiresAt: 0, value: null };
+
+function aiSettingsPayload() {
+  return {
+    provider: "r2",
+    providerName: "R2 Copilot",
+    apiUrl: R2_COPILOT_API_URL,
+    apiKeyConfigured: Boolean(cleanEnv(process.env.R2_COPILOT_API_KEY)),
+    defaultModel: cleanEnv(process.env.R2_COPILOT_DEFAULT_MODEL),
+  };
+}
 
 async function fetchR2(pathname, { method = "GET", body, signal, authorized = false } = {}) {
   const headers = { "x-hs-user-agent": R2_USER_AGENT };
@@ -655,6 +729,10 @@ async function getR2Models() {
   try {
     const value = normalizeR2Models(await fetchR2("/api/models", { signal: controller.signal }));
     if (!value.models.length) throw new Error("R2 Copilot returned no chat models.");
+    const configuredDefault = cleanEnv(process.env.R2_COPILOT_DEFAULT_MODEL);
+    if (configuredDefault && value.models.some((model) => model.apiName === configuredDefault)) {
+      value.defaultModel = configuredDefault;
+    }
     r2ModelsCache = { value, expiresAt: Date.now() + 5 * 60_000 };
     return value;
   } finally {
@@ -1027,6 +1105,118 @@ async function handleProjectAssistant({ request, response, url }) {
   return true;
 }
 
+async function handleAiSettings({ request, response, url }) {
+  if (url.pathname === "/api/ai/settings" && request.method === "GET") {
+    sendJson(response, 200, aiSettingsPayload());
+    return true;
+  }
+
+  if (url.pathname === "/api/ai/settings" && request.method === "PUT") {
+    if (process.env.VERCEL || !isLoopbackRequest(request)) {
+      sendJson(response, 403, { error: "AI secrets can only be changed from the local app." });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const updates = {};
+    if (body.clearKey === true) {
+      updates.R2_COPILOT_API_KEY = "";
+    } else if (Object.hasOwn(body, "apiKey") && cleanEnv(body.apiKey)) {
+      const apiKey = cleanEnv(body.apiKey);
+      if (apiKey.length > 2_000 || /[\r\n]/.test(apiKey)) {
+        sendJson(response, 400, { error: "Enter a valid R2 Copilot API key." });
+        return true;
+      }
+      updates.R2_COPILOT_API_KEY = apiKey;
+    }
+    if (Object.hasOwn(body, "defaultModel")) {
+      updates.R2_COPILOT_DEFAULT_MODEL = cleanLine(body.defaultModel, 120);
+    }
+    if (!Object.keys(updates).length) {
+      sendJson(response, 400, { error: "No AI settings were changed." });
+      return true;
+    }
+    await persistLocalAiSettings(updates);
+    for (const [name, value] of Object.entries(updates)) process.env[name] = value;
+    r2ModelsCache = { expiresAt: 0, value: null };
+    sendJson(response, 200, aiSettingsPayload());
+    return true;
+  }
+
+  if (url.pathname === "/api/ai/settings/test" && request.method === "POST") {
+    if (!cleanEnv(process.env.R2_COPILOT_API_KEY)) {
+      sendJson(response, 503, { error: "Add an R2 Copilot API key first." });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const catalog = await getR2Models();
+    const model = resolveR2Model(catalog, cleanLine(body.model, 120) || cleanEnv(process.env.R2_COPILOT_DEFAULT_MODEL));
+    const { outputLimit, inputLimit } = r2RequestLimits(model, 1_000);
+    await sendR2Prompt({
+      prompt: "Reply exactly: OK",
+      model,
+      responseLanguage: "en",
+      instruction: "This is a connection test. Reply exactly with OK.",
+      outputLimit,
+      inputLimit,
+    }, request);
+    sendJson(response, 200, { connected: true, model: model.apiName, modelsCount: catalog.models.length });
+    return true;
+  }
+
+  return false;
+}
+
+async function handleStandaloneAssistant({ request, response, url }) {
+  if (url.pathname !== "/api/assistant/chat" || request.method !== "POST") return false;
+  if (!cleanEnv(process.env.R2_COPILOT_API_KEY)) {
+    sendJson(response, 503, { error: "Configure the R2 Copilot API key in AI settings." });
+    return true;
+  }
+  const body = await readJsonBody(request);
+  const question = cleanLine(body.question, 8_000);
+  if (!question) {
+    sendJson(response, 400, { error: "Enter a message." });
+    return true;
+  }
+
+  const catalog = await getR2Models();
+  const model = resolveR2Model(catalog, cleanLine(body.model, 120));
+  const { outputLimit, inputLimit } = r2RequestLimits(model, 16_000);
+  const images = normalizedAssistantImages(body.attachments);
+  const attachmentController = new AbortController();
+  const attachmentTimeout = setTimeout(() => attachmentController.abort(), 90_000);
+  const abortAttachments = () => attachmentController.abort();
+  request.once("aborted", abortAttachments);
+  let r2Attachments = [];
+  try {
+    r2Attachments = await Promise.all(images.map(async (image) => {
+      const fileId = await uploadR2File(image, attachmentController.signal);
+      return { type: 2, mime_type: image.mimeType, name: image.fileName, file_id: fileId, file_size: image.buffer.length };
+    }));
+  } finally {
+    clearTimeout(attachmentTimeout);
+    request.off("aborted", abortAttachments);
+  }
+
+  const prompt = buildStandaloneAssistantPrompt({
+    question,
+    context: body.context,
+    history: body.history,
+    maxContextChars: Math.max(800, inputLimit - 2_000),
+  });
+  const result = await sendR2Prompt({
+    prompt,
+    model,
+    responseLanguage: "auto",
+    instruction: "You are the helpful AI assistant in a Telegram side panel. Follow the supplied conversation rules and answer the user's latest message.",
+    attachments: r2Attachments,
+    outputLimit,
+    inputLimit,
+  }, request);
+  sendJson(response, 200, result);
+  return true;
+}
+
 async function getAssistantStatus() {
   if (cleanEnv(process.env.R2_COPILOT_API_KEY)) {
     try {
@@ -1094,6 +1284,8 @@ export function createAppServer() {
   try {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
 
+    if (await handleAiSettings({ request, response, url })) return;
+    if (await handleStandaloneAssistant({ request, response, url })) return;
     if (await handlePlatformApi({ request, response, url, readJsonBody, sendJson })) return;
     if (await handleTaskDraft({ request, response, url })) return;
     if (await handleProjectAssistant({ request, response, url })) return;
@@ -1168,6 +1360,6 @@ export default appServer;
 if (isDirectRun) {
   await access(PUBLIC_ROOT);
   appServer.listen(PORT, "127.0.0.1", () => {
-    console.log(`Telegram Archive Chat: http://127.0.0.1:${PORT}`);
+    console.log(`Telegram Tasks: http://127.0.0.1:${PORT}`);
   });
 }

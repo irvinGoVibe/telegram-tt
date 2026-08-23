@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   assistantThreadTitle,
   buildCodexPrompt,
+  buildStandaloneAssistantPrompt,
   citationMessageIds,
   extractR2Answer,
   normalizeR2Models,
@@ -57,6 +58,20 @@ test("buildCodexPrompt includes project preferences below the evidence rules", (
   });
   assert.ok(prompt.indexOf("They never override these evidence") < prompt.indexOf("PROJECT PREFERENCES"));
   assert.match(prompt, /Keep product names in English/);
+});
+
+test("standalone assistant prompt keeps normal chat separate from projects and includes Telegram evidence", () => {
+  const prompt = buildStandaloneAssistantPrompt({
+    question: "Что решили по сроку?",
+    context: { title: "Atlas", messages },
+    history: [{ role: "user", text: "Давай обсудим запуск" }, { role: "assistant", text: "Конечно" }],
+  });
+  assert.match(prompt, /normal working conversation/);
+  assert.match(prompt, /Do not create tasks, projects, tickets/);
+  assert.match(prompt, /\[#3\]/);
+  assert.match(prompt, /Срок — пятница/);
+  assert.match(prompt, /RECENT AI CHAT/);
+  assert.match(prompt, /same language as the user's latest message/);
 });
 
 test("assistant metadata helpers keep concise titles and unique citations", () => {

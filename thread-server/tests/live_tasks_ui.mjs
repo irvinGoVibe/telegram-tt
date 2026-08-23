@@ -136,6 +136,18 @@ try {
 
   await page.goto(`${baseUrl}/live.html`);
   await page.waitForLoadState("networkidle");
+  assert.equal(await page.locator("#assistantDrawer").getAttribute("aria-hidden"), "true", "AI drawer should start closed");
+  await page.getByRole("button", { name: "Open AI chat" }).click();
+  await page.waitForTimeout(260);
+  assert.equal(await page.locator("#assistantDrawer").getAttribute("aria-hidden"), "false", "AI drawer did not open");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(260);
+  assert.equal(await page.locator("#assistantDrawer").getAttribute("aria-hidden"), "true", "Escape did not close the AI drawer");
+  assert.equal(await page.getByRole("button", { name: "Open AI chat" }).getAttribute("aria-expanded"), "false", "Drawer trigger state stayed expanded");
+  await page.getByRole("button", { name: "Open AI chat" }).click();
+  await page.waitForTimeout(260);
+  assert.equal(await page.locator("#assistantChatSurface").isVisible(), true, "AI chat surface is not visible inside the drawer");
+  assert.equal(await page.locator("#assistantLiveInput").isEnabled(), true, "AI chat composer is not available inside the drawer");
   await page.getByRole("button", { name: "Project tasks" }).click();
 
   const card = page.locator(".live-task-card");
@@ -154,6 +166,9 @@ try {
   await page.locator('[data-telegram-message-id="42"]').waitFor();
   assert.equal(page.url(), appUrl, "Source citation navigated away from Thread");
   assert.deepEqual(sourceNavigationRequests, [{ chatId: "chat-1", sourceId: "message-1" }], "Source citation did not load the cited message in its project chat");
+  assert.equal(await page.locator("#assistantDrawer").getAttribute("aria-hidden"), "true", "AI drawer stayed open over the cited message");
+  await page.getByRole("button", { name: "Open AI chat" }).click();
+  await page.waitForTimeout(260);
   await page.getByRole("button", { name: /Collapse task/ }).click();
   assert.equal(await page.locator(".task-card-details").isVisible(), false, "Task reopened after collapsing");
 
@@ -163,6 +178,7 @@ try {
   const descriptionInput = page.locator(".task-inline-editor textarea");
   await titleInput.fill("Reviewed source-linked release");
   await descriptionInput.fill("## Objective\n\nShip the reviewed scope [#42]\n\n## Approval checklist\n\n- Product owner approved");
+  assert.equal(await titleInput.inputValue(), "Reviewed source-linked release", "Description editing leaked into the task title");
 
   await page.getByRole("button", { name: /Collapse task/ }).click();
   await page.getByRole("button", { name: /Expand task/ }).click();
@@ -171,9 +187,8 @@ try {
   assert.equal(await page.getByText("Save changes before publishing").count(), 1, "Publish guard is missing while editing");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('[data-live-mobile-view="assistant"]').click();
   await page.waitForTimeout(260);
-  assert.equal(await page.locator(".assistant-task-surface").isVisible(), true, "Task editor is not visible in the mobile assistant view");
+  assert.equal(await page.locator(".assistant-task-surface").isVisible(), true, "Task editor is not visible in the mobile AI drawer");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "Task editor overflows the mobile viewport");
   const mobileSurface = await page.locator(".assistant-task-surface").evaluate((element) => ({
     clientWidth: element.clientWidth,
@@ -181,11 +196,16 @@ try {
     scrollLeft: element.scrollLeft,
   }));
   assert.equal(mobileSurface.scrollWidth <= mobileSurface.clientWidth, true, `Task surface overflows horizontally: ${JSON.stringify(mobileSurface)}`);
+  await page.getByRole("button", { name: "Close AI chat" }).last().click();
+  await page.waitForTimeout(260);
+  assert.equal(await page.locator("#assistantDrawer").getAttribute("aria-hidden"), "true", "AI drawer did not close on mobile");
   const mobileRail = await page.locator(".live-rail").evaluate((element) => {
     const rect = element.getBoundingClientRect();
     return { left: rect.left, right: rect.right, transform: getComputedStyle(element).transform };
   });
   assert.equal(mobileRail.right <= 0, true, `Closed project rail remains visible: ${JSON.stringify(mobileRail)}`);
+  await page.getByRole("button", { name: "Open AI chat" }).click();
+  await page.waitForTimeout(260);
   await page.screenshot({ path: "/tmp/thread-task-editor-mobile.png", fullPage: true });
   await page.setViewportSize({ width: 1440, height: 920 });
 
@@ -206,7 +226,7 @@ try {
   await page.screenshot({ path: "/tmp/thread-task-reviewed-desktop.png", fullPage: true });
 
   assert.deepEqual(browserErrors, [], `Browser errors:\n${browserErrors.join("\n")}`);
-  console.log("Live task UI checks passed: internal source navigation, collapse, draft persistence, editing, save, responsive layout");
+  console.log("Live task UI checks passed: AI drawer, internal source navigation, editing, save, responsive layout");
 } finally {
   await browser.close();
 }

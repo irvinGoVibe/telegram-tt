@@ -1709,6 +1709,75 @@ export interface LangPair {
   'GiftValueForSaleOnFragment': undefined;
   'GiftValueForSaleOnTelegram': undefined;
   'EmbeddedMessageNoCaption': undefined;
+  'ThreadAI': undefined;
+  'ThreadAIDrawerTitle': undefined;
+  'ThreadAIChatNotConnected': undefined;
+  'ThreadAIChat': undefined;
+  'ThreadAITasks': undefined;
+  'ThreadAIProject': undefined;
+  'ThreadAIProjectChat': undefined;
+  'ThreadAIModel': undefined;
+  'ThreadAINewChat': undefined;
+  'ThreadAIChats': undefined;
+  'ThreadAIAskPlaceholder': undefined;
+  'ThreadAIChooseChat': undefined;
+  'ThreadAIUnavailable': undefined;
+  'ThreadAINoChats': undefined;
+  'ThreadAIEmptyTitle': undefined;
+  'ThreadAIEmptyText': undefined;
+  'ThreadAINoChatTitle': undefined;
+  'ThreadAINoChatText': undefined;
+  'ThreadAIConnectCurrentChat': undefined;
+  'ThreadAIResearcher': undefined;
+  'ThreadAIThinking': undefined;
+  'ThreadAIDownload': undefined;
+  'ThreadAICopied': undefined;
+  'ThreadAIAttachImage': undefined;
+  'ThreadAIRemoveImage': undefined;
+  'ThreadAIImagePrompt': undefined;
+  'ThreadAIImageCountError': undefined;
+  'ThreadAIImageTypeError': undefined;
+  'ThreadAIImageTotalError': undefined;
+  'ThreadAITasksTitle': undefined;
+  'ThreadAITasksText': undefined;
+  'ThreadAIDraft': undefined;
+  'ThreadAINoTasks': undefined;
+  'ThreadAIProjectsLinear': undefined;
+  'ThreadAINoProjectTitle': undefined;
+  'ThreadAINoProjectText': undefined;
+  'ThreadAICreateProject': undefined;
+  'ThreadAILoading': undefined;
+  'ThreadAISignInTitle': undefined;
+  'ThreadAISignInText': undefined;
+  'ThreadAISignIn': undefined;
+  'ThreadAISignUp': undefined;
+  'ThreadAIName': undefined;
+  'ThreadAIEmail': undefined;
+  'ThreadAIPassword': undefined;
+  'ThreadAISettings': undefined;
+  'ThreadAISettingsTitle': undefined;
+  'ThreadAISettingsText': undefined;
+  'ThreadAIProvider': undefined;
+  'ThreadAIApiUrl': undefined;
+  'ThreadAIApiKey': undefined;
+  'ThreadAIApiKeyConfigured': undefined;
+  'ThreadAIApiKeyMissing': undefined;
+  'ThreadAIApiKeyPlaceholder': undefined;
+  'ThreadAIApiKeyReplacePlaceholder': undefined;
+  'ThreadAIApiKeyHint': undefined;
+  'ThreadAIDefaultModel': undefined;
+  'ThreadAISaveSettings': undefined;
+  'ThreadAITestConnection': undefined;
+  'ThreadAITestingConnection': undefined;
+  'ThreadAIRemoveKey': undefined;
+  'ThreadAISettingsSaved': undefined;
+  'ThreadAISettingsNotSaved': undefined;
+  'ThreadAIProjectRequired': undefined;
+  'ThreadAIProjectOwnerOnly': undefined;
+  'ThreadAIKeyRemoved': undefined;
+  'ThreadAIConfigure': undefined;
+  'ThreadAIModelApiNamePlaceholder': undefined;
+  'ThreadAIModelCatalogUnavailable': undefined;
 }
 
 export interface LangPairWithVariables<V = LangVariable> {
@@ -2931,6 +3000,15 @@ export interface LangPairWithVariables<V = LangVariable> {
   };
   'RatingLevel': {
     'level': V;
+  };
+  'ThreadAIContextMessages': {
+    'count': V;
+  };
+  'ThreadAIOpenCitation': {
+    'id': V;
+  };
+  'ThreadAIConnectionReady': {
+    'model': V;
   };
 }
 
