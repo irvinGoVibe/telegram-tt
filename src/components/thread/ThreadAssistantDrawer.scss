@@ -12,6 +12,9 @@
 }
 
 .ThreadAssistantDrawer-toolbar {
+  position: relative;
+  z-index: 2;
+
   display: flex;
   flex: 0 0 auto;
   gap: 0.5rem;
@@ -23,15 +26,12 @@
 }
 
 .ThreadAssistantDrawer-context {
-  overflow: hidden;
   display: flex;
   gap: 0.625rem;
   align-items: center;
-
   min-width: 0;
 
   > span:last-child {
-    overflow: hidden;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -55,6 +55,184 @@
     line-height: 1.125rem;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+.ThreadAssistantDrawer-contextCopy {
+  position: relative;
+
+  > button {
+    overflow: hidden;
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+
+    color: var(--color-text-secondary);
+    text-align: left;
+
+    background: transparent;
+
+    &:hover,
+    &.active {
+      color: var(--color-primary);
+    }
+
+    em {
+      color: inherit;
+    }
+
+    i {
+      flex: 0 0 auto;
+      font-size: 0.625rem;
+    }
+  }
+}
+
+.ThreadAssistantDrawer-contextMenu {
+  position: absolute;
+  top: calc(100% + 0.625rem);
+  left: 0;
+
+  overflow-y: auto;
+
+  width: min(20rem, calc(100vw - 5rem));
+  max-height: min(32rem, calc(100vh - 7rem));
+  padding: 0.5rem;
+  border: 1px solid var(--color-borders);
+  border-radius: 0.75rem;
+
+  color: var(--color-text);
+
+  background: var(--color-background);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 18%);
+
+  > button:not(.ThreadAssistantDrawer-contextApply) {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+
+    width: 100%;
+    min-height: 3.25rem;
+    padding: 0.5rem 0.625rem;
+    border: 0;
+    border-radius: 0.5rem;
+
+    color: var(--color-text);
+    text-align: left;
+
+    background: transparent;
+
+    &:hover,
+    &.active {
+      background: var(--color-chat-hover);
+    }
+
+    > span {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    strong {
+      font-size: 0.8125rem;
+      line-height: 1.125rem;
+    }
+
+    em {
+      font-size: 0.6875rem;
+      font-style: normal;
+      line-height: 1rem;
+      color: var(--color-text-secondary);
+      white-space: normal;
+    }
+
+    > i {
+      flex: 0 0 auto;
+      color: var(--color-primary);
+    }
+  }
+
+  > p {
+    margin: 0.5rem 0.625rem;
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    color: var(--color-text-secondary);
+  }
+}
+
+.ThreadAssistantDrawer-contextMenuHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.375rem 0.625rem 0.625rem;
+
+  strong {
+    font-size: 0.875rem;
+  }
+
+  span {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    color: var(--color-text-secondary);
+  }
+}
+
+.ThreadAssistantDrawer-calendarModes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.125rem;
+
+  padding: 0.1875rem;
+  border-radius: 0.625rem;
+
+  background: var(--color-background-secondary);
+
+  button {
+    height: 2.25rem;
+    padding: 0 0.375rem;
+    border: 0;
+    border-radius: 0.4375rem;
+
+    font-size: 0.75rem;
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+
+    background: transparent;
+
+    &:hover {
+      color: var(--color-text);
+    }
+
+    &.active {
+      color: var(--color-text);
+      background: var(--color-background);
+      box-shadow: 0 0.0625rem 0.1875rem rgb(0 0 0 / 14%);
+    }
+  }
+}
+
+.ThreadAssistantDrawer-contextMenu > .ThreadAssistantDrawer-contextApply {
+  width: calc(100% - 1.25rem);
+  min-height: 2.375rem;
+  margin: 0.5rem 0.625rem 0.375rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+
+  font-size: 0.8125rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-white);
+
+  background: var(--color-primary);
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.45;
   }
 }
 

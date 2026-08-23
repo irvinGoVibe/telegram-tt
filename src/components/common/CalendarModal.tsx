@@ -1,4 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
+import type { FC, TeactNode } from '../../lib/teact/teact';
 import type React from '../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo, useState,
@@ -8,7 +8,9 @@ import type { OldLangFn } from '../../hooks/useOldLang';
 
 import { MAX_INT_32 } from '../../config';
 import buildClassName from '../../util/buildClassName';
-import { formatDateToString, formatTime, getDayStart } from '../../util/dates/dateFormat';
+import {
+  formatDateToString, formatTime, getDayStart, getDayStartAt,
+} from '../../util/dates/dateFormat';
 
 import useFlag from '../../hooks/useFlag';
 import useOldLang from '../../hooks/useOldLang';
@@ -25,17 +27,22 @@ const MIN_SAFE_DATE = 0;
 
 export type OwnProps = {
   selectedAt?: number;
+  rangeStartAt?: number;
+  rangeEndAt?: number;
   minAt?: number;
   maxAt?: number;
   isFutureMode?: boolean;
   isPastMode?: boolean;
+  isRangeMode?: boolean;
   isOpen: boolean;
   withTimePicker?: boolean;
   submitButtonLabel?: string;
   secondButtonLabel?: string;
   description?: string;
+  topContent?: TeactNode;
   onClose: () => void;
   onSubmit: (date: Date) => void;
+  onRangeSubmit?: (startDate: Date, endDate: Date) => void;
   onDateChange?: (date: Date) => void;
   onSecondButtonClick?: NoneToVoidFunction;
 };
@@ -52,17 +59,22 @@ const WEEKDAY_LETTERS = [
 
 const CalendarModal: FC<OwnProps> = ({
   selectedAt,
+  rangeStartAt,
+  rangeEndAt,
   minAt,
   maxAt,
   isFutureMode,
   isPastMode,
+  isRangeMode,
   isOpen,
   withTimePicker,
   submitButtonLabel,
   secondButtonLabel,
   description,
+  topContent,
   onClose,
   onSubmit,
+  onRangeSubmit,
   onDateChange,
   onSecondButtonClick,
 }) => {
@@ -79,10 +91,19 @@ const CalendarModal: FC<OwnProps> = ({
   }, [isPastMode, maxAt]);
 
   const passedSelectedDate = useMemo(() => (selectedAt ? new Date(selectedAt) : new Date()), [selectedAt]);
+  const passedRangeStartDate = useMemo(() => (
+    rangeStartAt ? new Date(rangeStartAt) : undefined
+  ), [rangeStartAt]);
+  const passedRangeEndDate = useMemo(() => (
+    rangeEndAt ? new Date(rangeEndAt) : undefined
+  ), [rangeEndAt]);
   const prevIsOpen = usePreviousDeprecated(isOpen);
   const [isTimeInputFocused, markTimeInputAsFocused] = useFlag(false);
 
   const [selectedDate, setSelectedDate] = useState<Date>(passedSelectedDate);
+  const [rangeStartDate, setRangeStartDate] = useState<Date | undefined>(passedRangeStartDate);
+  const [rangeEndDate, setRangeEndDate] = useState<Date | undefined>(passedRangeEndDate);
+  const [isSelectingRangeEnd, setIsSelectingRangeEnd] = useState(false);
   const [currentMonthAndYear, setCurrentMonthAndYear] = useState<Date>(
     new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
   );
@@ -103,13 +124,16 @@ const CalendarModal: FC<OwnProps> = ({
   useEffect(() => {
     if (!prevIsOpen && isOpen) {
       setSelectedDate(passedSelectedDate);
+      setRangeStartDate(passedRangeStartDate);
+      setRangeEndDate(passedRangeEndDate);
+      setIsSelectingRangeEnd(false);
       setCurrentMonthAndYear(new Date(passedSelectedDate.getFullYear(), passedSelectedDate.getMonth(), 1));
       if (withTimePicker) {
         setSelectedHours(formatInputTime(passedSelectedDate.getHours()));
         setSelectedMinutes(formatInputTime(passedSelectedDate.getMinutes()));
       }
     }
-  }, [passedSelectedDate, isOpen, prevIsOpen, withTimePicker]);
+  }, [passedRangeEndDate, passedRangeStartDate, passedSelectedDate, isOpen, prevIsOpen, withTimePicker]);
 
   useEffect(() => {
     if (isFutureMode && !isTimeInputFocused && selectedDate.getTime() < minDate.getTime()) {
@@ -135,6 +159,13 @@ const CalendarModal: FC<OwnProps> = ({
       setSelectedMinutes(formatInputTime(newSelectedDate.getMinutes()));
     }
   }, [selectedAt]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setRangeStartDate(passedRangeStartDate);
+    setRangeEndDate(passedRangeEndDate);
+    setIsSelectingRangeEnd(false);
+  }, [isOpen, isRangeMode, passedRangeEndDate, passedRangeStartDate]);
 
   const shouldDisableNextMonth = (isPastMode && currentYear >= now.getFullYear() && currentMonth >= now.getMonth())
     || (maxDate && currentYear >= maxDate.getFullYear() && currentMonth >= maxDate.getMonth());
@@ -167,6 +198,20 @@ const CalendarModal: FC<OwnProps> = ({
   }
 
   function handleDateSelect(date: number) {
+    if (isRangeMode) {
+      const nextDate = new Date(currentYear, currentMonth, date, 12);
+      if (!isSelectingRangeEnd || !rangeStartDate) {
+        setRangeStartDate(nextDate);
+        setRangeEndDate(undefined);
+        setIsSelectingRangeEnd(true);
+      } else {
+        setRangeStartDate(nextDate < rangeStartDate ? nextDate : rangeStartDate);
+        setRangeEndDate(nextDate < rangeStartDate ? rangeStartDate : nextDate);
+        setIsSelectingRangeEnd(false);
+      }
+      return;
+    }
+
     setSelectedDate((d) => {
       const dateCopy = new Date(d);
       dateCopy.setDate(date);
@@ -179,6 +224,10 @@ const CalendarModal: FC<OwnProps> = ({
   }
 
   const handleSubmit = useCallback(() => {
+    if (isRangeMode) {
+      if (rangeStartDate && rangeEndDate) onRangeSubmit?.(rangeStartDate, rangeEndDate);
+      return;
+    }
     if (isFutureMode && selectedDate < minDate) {
       onSubmit(minDate);
     } else if (isPastMode && selectedDate > maxDate) {
@@ -186,7 +235,10 @@ const CalendarModal: FC<OwnProps> = ({
     } else {
       onSubmit(selectedDate);
     }
-  }, [isFutureMode, isPastMode, minDate, maxDate, onSubmit, selectedDate]);
+  }, [
+    isFutureMode, isPastMode, isRangeMode, minDate, maxDate, onRangeSubmit, onSubmit,
+    rangeEndDate, rangeStartDate, selectedDate,
+  ]);
 
   const handleChangeHours = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/[^\d]+/g, '');
@@ -298,6 +350,8 @@ const CalendarModal: FC<OwnProps> = ({
         </div>
       </div>
 
+      {Boolean(topContent) && <div className="CalendarModal-topContent">{topContent}</div>}
+
       <div className="calendar-wrapper">
         <div className="calendar-grid">
           {WEEKDAY_LETTERS.map((day) => (
@@ -308,27 +362,36 @@ const CalendarModal: FC<OwnProps> = ({
           {prevMonthGrid.map((gridDate) => (
             <div className="day-button disabled"><span>{gridDate}</span></div>
           ))}
-          {currentMonthGrid.map((gridDate) => (
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => handleDateSelect(gridDate)}
-              className={buildClassName(
-                'day-button',
-                'div-button',
-                isDisabledDay(
-                  currentYear, currentMonth, gridDate, minDate, maxDate,
-                )
-                  ? 'disabled'
-                  : gridDate ? 'clickable' : '',
-                selectedDay === formatDay(currentYear, currentMonth, gridDate) && 'selected',
-              )}
-            >
-              {Boolean(gridDate) && (
-                <span>{gridDate}</span>
-              )}
-            </div>
-          ))}
+          {currentMonthGrid.map((gridDate) => {
+            const gridDay = getDayStartAt(new Date(currentYear, currentMonth, gridDate));
+            const rangeStartDay = rangeStartDate ? getDayStartAt(rangeStartDate) : undefined;
+            const rangeEndDay = rangeEndDate ? getDayStartAt(rangeEndDate) : undefined;
+            return (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => handleDateSelect(gridDate)}
+                className={buildClassName(
+                  'day-button',
+                  'div-button',
+                  isDisabledDay(
+                    currentYear, currentMonth, gridDate, minDate, maxDate,
+                  )
+                    ? 'disabled'
+                    : gridDate ? 'clickable' : '',
+                  !isRangeMode && selectedDay === formatDay(currentYear, currentMonth, gridDate) && 'selected',
+                  isRangeMode && gridDay === rangeStartDay && 'range-start',
+                  isRangeMode && gridDay === rangeEndDay && 'range-end',
+                  isRangeMode && rangeStartDay !== undefined && rangeEndDay !== undefined
+                  && gridDay > rangeStartDay && gridDay < rangeEndDay && 'in-range',
+                )}
+              >
+                {Boolean(gridDate) && (
+                  <span>{gridDate}</span>
+                )}
+              </div>
+            );
+          })}
           {nextMonthGrid.map((gridDate) => (
             <div className="day-button disabled"><span>{gridDate}</span></div>
           ))}
@@ -346,7 +409,7 @@ const CalendarModal: FC<OwnProps> = ({
         <div className="footer">
           <Button
             onClick={handleSubmit}
-            disabled={isDisabled}
+            disabled={isDisabled || Boolean(isRangeMode && (!rangeStartDate || !rangeEndDate))}
           >
             {submitLabel}
           </Button>

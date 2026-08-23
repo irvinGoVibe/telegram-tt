@@ -72,6 +72,10 @@
     }
   }
 
+  &-topContent {
+    margin: 0.75rem 0 0.25rem;
+  }
+
   .day-button {
     position: relative;
 
@@ -103,6 +107,19 @@
       &.selected {
         color: white;
         background-color: var(--color-primary);
+      }
+
+      &.range-start,
+      &.range-end {
+        z-index: 1;
+        color: white;
+        background-color: var(--color-primary);
+      }
+
+      &.in-range {
+        border-radius: 0;
+        color: var(--color-primary);
+        background-color: var(--color-interactive-element-hover);
       }
     }
 
@@ -137,7 +154,7 @@
     justify-content: center;
 
     min-height: 17rem;
-    margin: 1.5rem -0.5rem 0.5rem;
+    margin: 0.75rem -0.5rem 0.5rem;
   }
 
   .calendar-grid {
