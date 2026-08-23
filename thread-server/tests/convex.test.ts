@@ -51,26 +51,24 @@ async function seedProjectChat(t: ReturnType<typeof convexTest>) {
   return { owner, project: project!, account: account!, chat: chat! };
 }
 
-describe("Convex project workspace", () => {
+describe("Convex chat workspace", () => {
   let t: ReturnType<typeof convexTest>;
 
   beforeEach(() => {
     t = convexTest(schema, modules);
   });
 
-  test("creates, updates, and lists a project for its member", async () => {
-    const { sessionHash } = await seedSession(t, "project-owner");
-    const created = await t.mutation(api.projects.createProject, { sessionHash, name: "Alpha" });
-    const updated = await t.mutation(api.projects.updateProject, {
-      sessionHash,
-      projectId: created!._id,
-      name: "Alpha 2",
-      instructions: "Answer with source links.",
-      responseLanguage: "en",
-    });
-    const projects = await t.query(api.projects.listProjects, { sessionHash });
-    expect(updated).toMatchObject({ name: "Alpha 2", instructions: "Answer with source links.", responseLanguage: "en" });
-    expect(projects.map((project) => project?._id)).toContain(created!._id);
+  test("creates one internal account workspace without member or invite records", async () => {
+    const { sessionHash } = await seedSession(t, "workspace-owner");
+    const first = await t.mutation(api.projects.getOrCreateAccountWorkspace, { sessionHash });
+    const second = await t.mutation(api.projects.getOrCreateAccountWorkspace, { sessionHash });
+    const relatedRows = await t.run(async (ctx) => ({
+      members: await ctx.db.query("projectMembers").collect(),
+      invites: await ctx.db.query("projectInvites").collect(),
+    }));
+    expect(second?._id).toBe(first?._id);
+    expect(first).toMatchObject({ workspaceKind: "account", name: "Telegram chats" });
+    expect(relatedRows).toEqual({ members: [], invites: [] });
   });
 
   test("stores the default AI model in the project and restricts edits to its owner", async () => {
@@ -92,6 +90,32 @@ describe("Convex project workspace", () => {
       projectId: project!._id,
       defaultModel: "GPT_54",
     })).rejects.toThrow(/access/i);
+  });
+
+  test("stores only Telegram citation IDs with assistant answers", async () => {
+    const { owner, project } = await seedProjectChat(t);
+    const thread = await t.mutation(api.assistant.createThread, {
+      sessionHash: owner.sessionHash,
+      projectId: project._id,
+      title: "Privacy review",
+    });
+    await t.mutation(api.assistant.saveAssistantAnswer, {
+      sessionHash: owner.sessionHash,
+      projectId: project._id,
+      threadId: thread!._id,
+      content: "Decision confirmed [#77]",
+      model: "KIMI_K3",
+      citationTelegramMessageIds: [77, 77],
+    });
+    const messages = await t.query(api.assistant.listMessages, {
+      sessionHash: owner.sessionHash,
+      threadId: thread!._id,
+    });
+    expect(messages[0]).toMatchObject({
+      content: "Decision confirmed [#77]",
+      citationTelegramMessageIds: [77],
+      citations: [{ telegramMessageId: 77, ordinal: 0 }],
+    });
   });
 
   test("upserts a Telegram identity without creating duplicate users", async () => {

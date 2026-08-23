@@ -9,61 +9,6 @@ export type ThreadUser = {
   avatarUrl?: string;
 };
 
-export type ThreadProject = {
-  id: string;
-  name: string;
-  description: string;
-  response_language?: 'auto' | 'en' | 'ru';
-};
-
-export type ThreadTelegramChat = {
-  id: string;
-  telegram_chat_id: string;
-  title: string;
-  kind: string;
-  username?: string | null;
-};
-
-export type ThreadProjectChat = {
-  id: string;
-  telegram_chat_id: string;
-  telegram_chats: ThreadTelegramChat;
-};
-
-export type ThreadAssistantThread = {
-  id: string;
-  project_id: string;
-  title: string;
-  model?: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type ThreadAssistantCitation = {
-  telegram_message_id: number;
-  ordinal: number;
-};
-
-export type ThreadAssistantAttachment = {
-  id?: string;
-  kind?: string;
-  mime_type?: string;
-  file_name: string;
-  byte_size?: number | null;
-  signed_url: string;
-};
-
-export type ThreadAssistantMessage = {
-  id: string;
-  thread_id: string;
-  author_kind: 'assistant' | 'user';
-  content: string;
-  model?: string | null;
-  created_at: string;
-  assistant_citations: ThreadAssistantCitation[];
-  assistant_message_attachments: ThreadAssistantAttachment[];
-};
-
 export type ThreadModel = {
   apiName: string;
   displayName: string;
@@ -80,7 +25,7 @@ export type ThreadAiSettings = {
   apiUrl: string;
   apiKeyConfigured: boolean;
   defaultModel: string;
-  scope?: 'server' | 'project';
+  scope?: 'server';
   canEdit?: boolean;
 };
 
@@ -127,12 +72,14 @@ export type ThreadTask = {
   external_id?: string | null;
   external_url?: string | null;
   created_at: string;
+  client_sources?: {
+    telegram_chat_id: string;
+    telegram_message_id: number;
+    chat_title: string;
+  }[];
 };
 
 export type ThreadWorkspacePayload = {
-  project: ThreadProject;
-  chats?: ThreadProjectChat[];
-  threads?: ThreadAssistantThread[];
   tasks: ThreadTask[];
   integrations: ThreadIntegration[];
 };
@@ -199,33 +146,20 @@ export async function signOutFromThread() {
   return request<{ signedOut: boolean }>('/api/auth/signout', { method: 'POST' });
 }
 
-export async function listThreadProjects() {
-  return request<{ projects: ThreadProject[] }>('/api/projects');
-}
-
-export async function createThreadProject(name: string, description: string) {
-  return request<{ project: ThreadProject }>('/api/projects', {
-    method: 'POST', body: JSON.stringify({ name, description }),
-  });
-}
-
-export async function getThreadWorkspace(projectId: string) {
-  return request<ThreadWorkspacePayload>(`/api/projects/${encodeURIComponent(projectId)}/workspace`);
+export async function getThreadWorkspace() {
+  return request<ThreadWorkspacePayload>('/api/workspace');
 }
 
 export async function getThreadModels() {
   return request<ThreadModelCatalog>('/api/models');
 }
 
-export async function getThreadAiSettings(projectId?: string) {
-  const path = projectId
-    ? `/api/projects/${encodeURIComponent(projectId)}/ai/settings`
-    : '/api/ai/settings';
-  return request<ThreadAiSettings>(path, { cache: 'no-store' });
+export async function getThreadAiSettings() {
+  return request<ThreadAiSettings>('/api/ai/settings', { cache: 'no-store' });
 }
 
-export async function updateThreadAiSettings(projectId: string, payload: { defaultModel: string }) {
-  return request<ThreadAiSettings>(`/api/projects/${encodeURIComponent(projectId)}/ai/settings`, {
+export async function updateThreadAiSettings(payload: { defaultModel: string }) {
+  return request<ThreadAiSettings>('/api/ai/settings', {
     method: 'PUT', body: JSON.stringify(payload),
   });
 }
@@ -248,43 +182,12 @@ export async function askStandaloneThreadAssistant(payload: {
   });
 }
 
-export async function createThreadAssistantThread(projectId: string, model: string) {
-  return request<{ thread: ThreadAssistantThread }>(
-    `/api/projects/${encodeURIComponent(projectId)}/threads`,
-    { method: 'POST', body: JSON.stringify({ title: 'New chat', model }) },
-  );
-}
-
-export async function getThreadAssistantMessages(projectId: string, threadId: string) {
-  return request<{ messages: ThreadAssistantMessage[] }>(
-    `/api/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}/messages`,
-  );
-}
-
-export async function askThreadAssistant(
-  projectId: string,
-  threadId: string,
-  payload: {
-    question: string;
-    model: string;
-    chatId: string;
-    responseLanguage?: string;
-    attachments?: { name: string; mimeType: string; data: string }[];
-  },
-) {
-  return request<{ answer: string; model: string; messageId: string; threadTitle?: string }>(
-    `/api/projects/${encodeURIComponent(projectId)}/threads/${encodeURIComponent(threadId)}/ask`,
-    { method: 'POST', body: JSON.stringify(payload) },
-  );
-}
-
 export async function createClientTask(
-  projectId: string,
   title: string,
   description: string,
   sources: ThreadSource[],
 ) {
-  return request<{ task: ThreadTask }>(`/api/projects/${encodeURIComponent(projectId)}/client-tasks`, {
+  return request<{ task: ThreadTask }>('/api/tasks', {
     method: 'POST', body: JSON.stringify({ title, description, sources: sources.slice(0, 20) }),
   });
 }
@@ -296,23 +199,23 @@ export async function publishTaskToLinear(taskId: string) {
   );
 }
 
-export async function beginLinearConnection(projectId: string) {
+export async function beginLinearConnection() {
   return request<{ authorizeUrl: string }>(
-    `/api/projects/${encodeURIComponent(projectId)}/integrations/linear/connect`,
+    '/api/integrations/linear/connect',
     { method: 'POST' },
   );
 }
 
-export async function getLinearCatalog(projectId: string) {
+export async function getLinearCatalog() {
   const result = await request<{ catalog: LinearCatalog }>(
-    `/api/projects/${encodeURIComponent(projectId)}/integrations/linear/catalog`,
+    '/api/integrations/linear/catalog',
   );
   return result.catalog;
 }
 
-export async function setLinearDestination(projectId: string, teamId: string, linearProjectId: string) {
+export async function setLinearDestination(teamId: string, linearProjectId: string) {
   return request<{ integration: ThreadIntegration }>(
-    `/api/projects/${encodeURIComponent(projectId)}/integrations/linear`,
+    '/api/integrations/linear',
     { method: 'PATCH', body: JSON.stringify({ teamId, projectId: linearProjectId }) },
   );
 }

@@ -1,37 +1,32 @@
 # Telegram Tasks — live Telegram project workspace
 
-Telegram Tasks turns selected Telegram chats into private project workspaces. Each project keeps its chats, messages, files, AI research threads, members, instructions, and source-linked tasks together.
+Telegram Tasks turns every Telegram chat into its own task stream without creating a server-side archive of the conversation. AI and Linear settings are shared for the signed-in account; tasks keep only the source snapshots explicitly selected by the user.
 
-Inside the integrated Telegram Web A client, the existing Telegram session supplies the message source. The server accepts a bounded source snapshot, stores its Telegram link when available, and publishes the reviewed task through the same project-scoped Linear connection. The standalone archive/live interfaces remain available for migration and research workflows.
+Inside the integrated Telegram Web A client, the existing Telegram session supplies the message source. The server accepts a bounded source snapshot, stores its Telegram link when available, and publishes the reviewed task through the account's Linear connection.
 
-The original Telegram Desktop archive viewer remains available at `/index.html`. When Convex is configured, `/` opens the live workspace.
+When `../dist` is present, `/` opens the integrated Telegram client. The old standalone project interface is no longer part of the default product path.
 
 ## Current product flow
 
-1. Sign in with Telegram and create a project. Telegram Tasks uses the verified Telegram user ID as the account identity.
-2. When server-side chat sync is needed, connect a Telegram user account with a phone number, login code, and optional 2FA password. This data permission is separate from product sign-in.
-3. Add only the Telegram chats needed by the project.
-4. Press **Refresh** to fetch messages newer than the last saved Telegram message ID.
-5. Ask questions in parallel AI threads and attach images when needed.
-6. Select one or more Telegram messages as topic anchors. Telegram Tasks loads up to 10 days of prior conversation, drafts a technical task with validated Telegram citations, and lets you edit it before creation.
-7. Invite a teammate as a viewer or editor. Project access never exposes the owner's Telegram session.
-8. Optionally import tasks previously stored by the archive-only interface in this browser. The import is explicit and idempotent.
-9. In the integrated client, create a task directly from a Telegram message without connecting the same Telegram account to the server a second time.
+1. Sign in with Telegram. Telegram Tasks uses the verified Telegram user ID as the account identity.
+2. Open any Telegram chat. That chat is the workspace and task history boundary.
+3. Ask questions against the bounded context currently loaded in the browser.
+4. Create a task from one or more Telegram messages, review its title and description, and send it to Linear.
+5. Configure the AI model and Linear destination once; both settings are shared across chats.
 
 There is intentionally no permanent worker or socket process in this version. Telegram synchronization runs only after a user presses **Refresh**.
 
 ## Architecture
 
 - `server.mjs` — web/API server and R2 Copilot proxy.
-- `convex/schema.ts` — projects, members, Telegram accounts, chats, messages, attachments, tasks, assistant threads, and cookie sessions.
+- `convex/schema.ts` — account identity, Telegram connection metadata, tasks, integrations, AI settings, and cookie sessions. Legacy project/member tables remain temporarily as a non-user-facing compatibility layer and receive no new membership or invite writes.
 - `convex/*.ts` — access-checked queries, mutations, and auth actions.
 - `lib/telegram-service.mjs` — Telegram MTProto authorization. The Telegram session is encrypted before being written to Convex and is never returned to the browser.
-- `lib/telegram-sync.mjs` — bounded manual synchronization, 10-day task-context history loading, and Convex Storage uploads.
-- `public/live.html` — authenticated live workspace.
-- `public/index.html` — standalone JSON/HTML/ZIP archive viewer.
+- `lib/telegram-sync.mjs` — bounded on-demand Telegram reads returned directly to the requesting browser; it does not persist message bodies or Telegram media.
+- `public/*` — legacy migration interfaces, served only when explicitly selected as `THREAD_WEB_ROOT`.
 - `convex/tasks.ts#createTaskFromClientMessages` — access-checked source capture from Telegram Web A.
 
-The browser starts sign-in through Telegram OIDC with PKCE, state, and nonce verification. After Telegram returns a verified identity, Telegram Tasks issues a same-origin HttpOnly cookie. Only a SHA-256 hash of the opaque session token is stored in Convex. Every project, chat, message, task, and file function checks project membership before returning data. The previous email/password endpoints remain temporarily available for migration, but are not exposed in the integrated product UI.
+The browser starts sign-in through Telegram OIDC with PKCE, state, and nonce verification. After Telegram returns a verified identity, Telegram Tasks issues a same-origin HttpOnly cookie. Only a SHA-256 hash of the opaque session token is stored in Convex. Product access is account-owned; the integrated UI has no project creation, invitations, roles, or member management.
 
 ## Environment
 
@@ -47,7 +42,7 @@ For local development, `npx convex dev` creates `.env.local` with the developmen
 - `R2_COPILOT_API_URL` — optional, defaults to `https://api-chat.r2copilot.ai`.
 - `R2_COPILOT_DEFAULT_MODEL` — optional development/bootstrap fallback. Each project's selected default is stored in Convex.
 
-The shared R2 key is managed only as a server secret and is never returned to or editable from the browser. Project owners choose a default model in the AI drawer; that choice is stored in `projectAiSettings` in Convex.
+The shared R2 key is managed only as a server secret and is never returned to the browser. The default AI model is a common server/account setting. Telegram context and attached images pass through the backend only for the active AI request and are not written to Convex Storage.
 
 Register the production origin and callback URL under **BotFather → Login Widget**. Telegram sign-in stays disabled until all OIDC values, `SESSION_ENCRYPTION_KEY`, and `THREAD_SERVER_SECRET` are configured. Also set `THREAD_SERVER_SECRET` in the matching Convex deployment with `npx convex env set`.
 
@@ -85,4 +80,4 @@ The test suite covers project creation/update/listing, chat add/remove/listing, 
 
 ## Telegram data boundaries
 
-Only chats explicitly added to a project are synchronized and supplied to the assistant. Project instructions are treated as preferences, never as permission to bypass evidence rules. Before production use, review Telegram's current API terms and the organization's consent, retention, and AI-processing requirements for invited users and client conversations.
+Conversation bodies remain in Telegram and the current browser session; the backend sends only the selected bounded context to R2 Copilot without storing it in Convex. A created task may retain the small source snapshots explicitly selected by the user so that its evidence remains reviewable. Before production use, review Telegram's current API terms and the organization's consent and AI-processing requirements for client conversations.

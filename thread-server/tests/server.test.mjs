@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   assistantThreadTitle,
   buildCodexPrompt,
   buildStandaloneAssistantPrompt,
   citationMessageIds,
   extractR2Answer,
+  ephemeralTelegramMessages,
   normalizeR2Models,
   normalizedAssistantImages,
   parseTaskDraftResponse,
@@ -19,6 +21,15 @@ const messages = [
   { id: 2, from: "Илья", date: "2026-01-01 10:02", text: "Документация здесь", links: ["https://example.com/atlas"] },
   { id: 3, from: "Анна", date: "2026-01-02 09:00", text: "Срок — пятница", links: [] },
 ];
+
+const platformApiSource = await readFile(new URL("../lib/platform-api.mjs", import.meta.url), "utf8");
+
+test("the product API exposes chats without project creation or invitations", () => {
+  assert.match(platformApiSource, /url\.pathname === "\/api\/workspace"/);
+  assert.doesNotMatch(platformApiSource, /url\.pathname === "\/api\/projects"/);
+  assert.doesNotMatch(platformApiSource, /\/api\/invites\/accept/);
+  assert.doesNotMatch(platformApiSource, /\/invites\$\/\)/);
+});
 
 test("selectRelevantMessages keeps relevant messages and their neighbors", () => {
   const selected = selectRelevantMessages(messages, "Где документация Atlas?", 20_000);
@@ -72,6 +83,28 @@ test("standalone assistant prompt keeps normal chat separate from projects and i
   assert.match(prompt, /Срок — пятница/);
   assert.match(prompt, /RECENT AI CHAT/);
   assert.match(prompt, /same language as the user's latest message/);
+});
+
+test("ephemeral Telegram context accepts browser payloads without database identifiers", () => {
+  const context = ephemeralTelegramMessages([{
+    id: "telegram:-10042:77",
+    telegram_message_id: 77,
+    sender_name: "Irvin",
+    sent_at: "2026-08-24T01:00:00.000Z",
+    text: "Do not persist this conversation",
+    telegram_url: "https://t.me/c/42/77",
+  }]);
+  assert.deepEqual(context, [{
+    _id: "telegram:-10042:77",
+    telegramMessageId: 77,
+    senderName: "Irvin",
+    text: "Do not persist this conversation",
+    sentAt: Date.parse("2026-08-24T01:00:00.000Z"),
+    replyToMessageId: undefined,
+    telegramUrl: "https://t.me/c/42/77",
+    links: [],
+    media: "",
+  }]);
 });
 
 test("assistant metadata helpers keep concise titles and unique citations", () => {
