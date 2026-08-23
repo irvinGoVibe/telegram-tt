@@ -33,6 +33,7 @@ type OwnProps = {
   clickArg?: number;
   contextActions?: MenuItemContextAction[];
   contextRootElementSelector?: string;
+  shouldAnimatePlatform?: boolean;
 };
 
 const classNames = {
@@ -52,17 +53,22 @@ const Tab: FC<OwnProps> = ({
   clickArg,
   contextActions,
   contextRootElementSelector,
+  shouldAnimatePlatform = true,
 }) => {
   const tabRef = useRef<HTMLDivElement>();
 
   useLayoutEffect(() => {
+    if (!shouldAnimatePlatform) return;
+
     // Set initial active state
     if (isActive && previousActiveTab === undefined && tabRef.current) {
       tabRef.current.classList.add(classNames.active);
     }
-  }, [isActive, previousActiveTab]);
+  }, [isActive, previousActiveTab, shouldAnimatePlatform]);
 
   useEffect(() => {
+    if (!shouldAnimatePlatform) return;
+
     if (!isActive || previousActiveTab === undefined) {
       return;
     }
@@ -103,7 +109,7 @@ const Tab: FC<OwnProps> = ({
         };
       });
     });
-  }, [isActive, previousActiveTab]);
+  }, [isActive, previousActiveTab, shouldAnimatePlatform]);
 
   const {
     contextMenuAnchor, handleContextMenu, handleBeforeContextMenu, handleContextMenuClose,
@@ -133,7 +139,12 @@ const Tab: FC<OwnProps> = ({
 
   return (
     <div
-      className={buildClassName('Tab', onClick && 'Tab--interactive', className)}
+      className={buildClassName(
+        'Tab',
+        onClick && 'Tab--interactive',
+        !shouldAnimatePlatform && isActive && classNames.active,
+        className,
+      )}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}

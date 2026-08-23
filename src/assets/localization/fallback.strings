@@ -378,6 +378,10 @@
 "CreateNewFilterInfo" = "Create folders for different groups of chats and quickly switch between them.";
 "CreateNewFilter" = "Create New Folder";
 "Filters" = "Chat Folders";
+"ChatFoldersLayout" = "Folder layout";
+"ChatFoldersLayoutTabs" = "Tabs at top";
+"ChatFoldersLayoutSidebar" = "Sidebar on desktop";
+"ChatFoldersLayoutSidebarHint" = "Shows folders in a vertical column when there is enough screen space.";
 "FilterRecommended" = "Recommended Folders";
 "Add" = "Add";
 "EnterNewPasscode" = "Enter new passcode";

@@ -80,6 +80,7 @@ export const INITIAL_SHARED_STATE: SharedState = {
       : (IS_MAC_OS ? MACOS_DEFAULT_MESSAGE_TEXT_SIZE_PX : DEFAULT_MESSAGE_TEXT_SIZE_PX),
     animationLevel: ANIMATION_LEVEL_DEFAULT,
     messageSendKeyCombo: 'enter',
+    chatFolderLayout: 'sidebar',
     performance: INITIAL_PERFORMANCE_STATE_MAX,
     shouldSkipWebAppCloseConfirmation: false,
     language: 'en',

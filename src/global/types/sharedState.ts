@@ -17,6 +17,7 @@ export interface SharedSettings {
   // This can be deleted after September 2025, along with the corresponding migration
   wasAnimationLevelSetManually?: boolean;
   messageSendKeyCombo: 'enter' | 'ctrl-enter';
+  chatFolderLayout: 'tabs' | 'sidebar';
   miniAppsCachedPosition?: Point;
   miniAppsCachedSize?: Size;
   timeFormat: TimeFormat;

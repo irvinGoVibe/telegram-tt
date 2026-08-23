@@ -334,6 +334,10 @@ export interface LangPair {
   'CreateNewFilterInfo': undefined;
   'CreateNewFilter': undefined;
   'Filters': undefined;
+  'ChatFoldersLayout': undefined;
+  'ChatFoldersLayoutTabs': undefined;
+  'ChatFoldersLayoutSidebar': undefined;
+  'ChatFoldersLayoutSidebarHint': undefined;
   'FilterRecommended': undefined;
   'Add': undefined;
   'EnterNewPasscode': undefined;

@@ -5,11 +5,14 @@ import {
 import { getActions, withGlobal } from '../../../../global';
 
 import type { ApiChatFolder } from '../../../../api/types';
+import type { SharedSettings } from '../../../../global/types';
+import type { IRadioOption } from '../../../ui/RadioGroup';
 
 import { ALL_FOLDER_ID, STICKER_SIZE_FOLDER_SETTINGS } from '../../../../config';
 import { getFolderDescriptionText } from '../../../../global/helpers';
 import { selectIsCurrentUserPremium } from '../../../../global/selectors';
 import { selectCurrentLimit } from '../../../../global/selectors/limits';
+import { selectSharedSettings } from '../../../../global/selectors/sharedState';
 import buildClassName from '../../../../util/buildClassName';
 import { isBetween } from '../../../../util/math';
 import { MEMO_EMPTY_ARRAY } from '../../../../util/memo';
@@ -30,6 +33,7 @@ import Checkbox from '../../../ui/Checkbox';
 import Draggable from '../../../ui/Draggable';
 import ListItem from '../../../ui/ListItem';
 import Loading from '../../../ui/Loading';
+import RadioGroup from '../../../ui/RadioGroup';
 
 type OwnProps = {
   isActive?: boolean;
@@ -45,6 +49,7 @@ type StateProps = {
   maxFolders: number;
   isPremium?: boolean;
   areTagsEnabled?: boolean;
+  chatFolderLayout: SharedSettings['chatFolderLayout'];
 };
 
 type SortState = {
@@ -67,6 +72,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
   recommendedChatFolders,
   maxFolders,
   areTagsEnabled,
+  chatFolderLayout,
 }) => {
   const {
     loadRecommendedChatFolders,
@@ -76,6 +82,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
     sortChatFolders,
     toggleDialogFilterTags,
     openPremiumModal,
+    setSharedSettingOption,
   } = getActions();
 
   const [state, setState] = useState<SortState>({
@@ -118,6 +125,19 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
   }, [foldersById, maxFolders, onCreateFolder, openLimitReachedModal]);
 
   const lang = useLang();
+
+  const folderLayoutOptions: IRadioOption[] = [{
+    label: lang('ChatFoldersLayoutTabs'),
+    value: 'tabs',
+  }, {
+    label: lang('ChatFoldersLayoutSidebar'),
+    subLabel: lang('ChatFoldersLayoutSidebarHint'),
+    value: 'sidebar',
+  }];
+
+  const handleFolderLayoutChange = useCallback((value: string) => {
+    setSharedSettingOption({ chatFolderLayout: value as SharedSettings['chatFolderLayout'] });
+  }, [setSharedSettingOption]);
 
   useHistoryBack({
     isActive,
@@ -238,6 +258,18 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
             {lang('CreateNewFilter')}
           </Button>
         )}
+      </div>
+
+      <div className="settings-item pt-3">
+        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
+          {lang('ChatFoldersLayout')}
+        </h4>
+        <RadioGroup
+          name="chat-folder-layout"
+          options={folderLayoutOptions}
+          selected={chatFolderLayout}
+          onChange={handleFolderLayoutChange}
+        />
       </div>
 
       <div className="settings-item pt-3">
@@ -431,6 +463,7 @@ export default memo(withGlobal<OwnProps>(
       recommendedChatFolders,
       maxFolders: selectCurrentLimit(global, 'dialogFilters'),
       areTagsEnabled,
+      chatFolderLayout: selectSharedSettings(global).chatFolderLayout,
     };
   },
 )(SettingsFoldersMain));
