@@ -177,7 +177,7 @@ const STATIC_INTERFACE_COPY = {
   ".auth-heading .live-kicker": ["Private workspace", "Приватное пространство"],
   ".auth-heading > p": ["Connect your Telegram account, collect the chats that belong to a project, and keep every task linked to its source.", "Подключите Telegram, соберите нужные чаты в проекте и сохраняйте связь каждой задачи с сообщением-источником."],
   "#authSubmit": ["Continue with Telegram", "Продолжить через Telegram"],
-  ".auth-footnote": ["Telegram verifies your identity. Access to chat synchronization is granted separately.", "Telegram подтверждает личность. Доступ к синхронизации чатов предоставляется отдельно."],
+  ".auth-footnote": ["Telegram verifies your identity. Chat content is loaded only for the active session and is not stored by Telegram Tasks.", "Telegram подтверждает личность. Содержимое чатов загружается только для активной сессии и не сохраняется в Telegram Tasks."],
   ".brand-copy small": ["Live workspace", "Рабочее пространство"],
   "#newProjectButton": ["New project", "Новый проект"],
   "#projectsHeading": ["Projects", "Проекты"],
@@ -187,7 +187,7 @@ const STATIC_INTERFACE_COPY = {
   "#refreshMessagesButton": ["Refresh", "Обновить"],
   "#syncState": ["Waiting", "Ожидание"],
   "#selectionBar > strong": ["selected", "выбрано"],
-  "#selectionBar > span": ["Selected messages anchor a 10-day conversation analysis.", "Выбранные сообщения задают тему анализа переписки за 10 дней."],
+  "#selectionBar > span": ["Selected messages anchor analysis of the context loaded for this session.", "Выбранные сообщения задают тему анализа контекста, загруженного для этой сессии."],
   "#clearSelectionButton": ["Clear", "Очистить"],
   "#createTaskFromSelectionButton": ["Draft task", "Собрать задачу"],
   "#liveMessagesEmpty .live-kicker": ["Source-linked workspace", "Работа с источниками"],
@@ -225,7 +225,7 @@ const STATIC_INTERFACE_COPY = {
   "#taskDescriptionLabel > span": ["Technical specification", "Техническое задание"],
   "#taskDescriptionLabel small": ["editable Markdown", "редактируемый Markdown"],
   "#taskDraftLoading strong": ["Reconstructing the discussion", "Восстанавливаем контекст обсуждения"],
-  "#taskDraftLoading p": ["Loading 10 days of Telegram history, tracing related replies, and drafting requirements with source links.", "Загружаем 10 дней истории Telegram, связываем ответы и формируем требования со ссылками на источники."],
+  "#taskDraftLoading p": ["Analyzing the session-only Telegram context and drafting requirements with source links.", "Анализируем временный Telegram-контекст и формируем требования со ссылками на источники."],
   ".task-evidence-heading .live-kicker": ["Evidence window", "Окно источников"],
   "#createTaskDialog footer .live-secondary": ["Cancel", "Отмена"],
   "#createTaskSubmit": ["Create task", "Создать задачу"],
@@ -618,6 +618,7 @@ async function selectProjectChat(projectChatId, { sourceId = "" } = {}) {
   }
   clearTelegramReply();
   state.activeProjectChatId = projectChatId;
+  state.messages = [];
   state.selectedMessageIds.clear();
   state.messageSyncError = "";
   renderProjectChats();
@@ -626,13 +627,13 @@ async function selectProjectChat(projectChatId, { sourceId = "" } = {}) {
   const chat = projectChat.telegram_chats;
   elements.liveChatAvatar.textContent = initials(chat.title, "TG");
   elements.liveChatTitle.textContent = chat.title;
-  elements.liveChatMeta.textContent = `${chat.kind.replace("_", " ")} · ${projectChat.live_sync_enabled ? interfaceText("live monitoring", "онлайн-мониторинг") : interfaceText("manual refresh", "ручное обновление")}`;
+  elements.liveChatMeta.textContent = `${chat.kind.replace("_", " ")} · ${interfaceText("session-only context", "контекст только на эту сессию")}`;
   elements.refreshMessagesButton.disabled = !canManageActiveTelegramChat();
   elements.telegramMessageInput.innerHTML = state.telegramDrafts.get(projectChatId) || "";
   updateTelegramComposerAvailability();
   await subscribeToProjectChat();
   await loadMessages({ sourceId });
-  if (state.activeProjectChatId === projectChatId && !state.messages.length && !projectChat.initial_sync_completed_at && canManageActiveTelegramChat()) {
+  if (state.activeProjectChatId === projectChatId && !state.messages.length && canManageActiveTelegramChat()) {
     await refreshMessages({ quiet: true });
   }
 }
@@ -646,9 +647,6 @@ async function loadMessages({ quiet = false, sourceId = "" } = {}) {
     elements.liveMessagesEmpty.hidden = true;
   }
   try {
-    const sourceQuery = sourceId ? `&sourceId=${encodeURIComponent(sourceId)}` : "";
-    const result = await api(`/api/projects/${state.activeProjectId}/messages?chatId=${encodeURIComponent(projectChat.telegram_chats.id)}&limit=250${sourceQuery}`);
-    state.messages = result.messages || [];
     renderMessages();
   } finally {
     elements.messageLoading.hidden = true;
@@ -702,10 +700,10 @@ function renderMessageEmptyState() {
     kicker.textContent = interfaceText("Telegram conversation", "Чат Telegram");
     heading.textContent = interfaceText("No messages loaded yet.", "Сообщения ещё не загружены.");
     description.textContent = state.messageSyncError || interfaceText(
-      `Sync ${projectChat.telegram_chats.title} to load its recent conversation.`,
-      `Синхронизируйте ${projectChat.telegram_chats.title}, чтобы загрузить последние сообщения.`,
+      `Load ${projectChat.telegram_chats.title} for this session. Telegram Tasks will not store the conversation.`,
+      `Загрузите ${projectChat.telegram_chats.title} для этой сессии. Telegram Tasks не сохранит переписку.`,
     );
-    elements.emptyConnectButton.textContent = interfaceText("Sync messages", "Загрузить сообщения");
+    elements.emptyConnectButton.textContent = interfaceText("Load messages", "Загрузить сообщения");
     return;
   }
   if (state.activeProjectId) {
@@ -1013,7 +1011,7 @@ async function subscribeToProjectChat() {
   const projectChat = activeProjectChat();
   if (!projectChat) return;
   elements.syncState.className = "sync-state";
-  elements.syncState.lastChild.textContent = interfaceText(" Manual sync", " Ручная синхронизация");
+  elements.syncState.lastChild.textContent = interfaceText(" Session only", " Только сессия");
 }
 
 async function loadConnections() {
@@ -1190,16 +1188,16 @@ async function refreshWorkspace({ preserveChat = false, preferredProjectChatId }
   if (current && workspace.chats.some((chat) => chat.id === current)) {
     state.activeProjectChatId = current;
     renderProjectChats();
-    await loadMessages({ quiet: true });
+    renderMessages();
   } else if (workspace.chats[0]) await selectProjectChat(workspace.chats[0].id);
 }
 
 async function refreshMessages({ quiet = false } = {}) {
   const projectChat = activeProjectChat();
   if (!state.activeProjectId || !projectChat) return false;
-  setLoading(elements.refreshMessagesButton, true, interfaceText("Syncing…", "Синхронизация…"));
+  setLoading(elements.refreshMessagesButton, true, interfaceText("Loading…", "Загрузка…"));
   elements.syncState.className = "sync-state syncing";
-  elements.syncState.lastChild.textContent = interfaceText(" Syncing", " Синхронизация");
+  elements.syncState.lastChild.textContent = interfaceText(" Loading", " Загрузка");
   try {
     const result = await api(`/api/projects/${state.activeProjectId}/refresh`, {
       method: "POST",
@@ -1208,20 +1206,21 @@ async function refreshMessages({ quiet = false } = {}) {
     const failed = (result.results || []).filter((item) => !item.ok).length;
     if (failed) {
       const failure = result.results.find((item) => !item.ok);
-      throw new Error(failure?.error || interfaceText("Telegram sync failed.", "Не удалось синхронизировать Telegram."));
+      throw new Error(failure?.error || interfaceText("Telegram context could not be loaded.", "Не удалось загрузить Telegram-контекст."));
     }
     state.messageSyncError = "";
-    if (!quiet) showToast(interfaceText("Conversation synced.", "Чат синхронизирован."));
-    await refreshWorkspace({ preserveChat: true });
+    const refreshed = (result.results || []).find((item) => item.ok && String(item.chatId) === String(projectChat.telegram_chats.id));
+    state.messages = refreshed?.messages || [];
+    renderMessages();
+    if (!quiet) showToast(interfaceText("Conversation loaded for this session.", "Чат загружен только для этой сессии."));
     elements.syncState.className = "sync-state";
-    elements.syncState.lastChild.textContent = interfaceText(" Manual sync", " Ручная синхронизация");
+    elements.syncState.lastChild.textContent = interfaceText(" Session only", " Только сессия");
     return true;
   } catch (error) {
     state.messageSyncError = errorMessage(error);
     elements.syncState.className = "sync-state error";
     elements.syncState.lastChild.textContent = interfaceText(" Error", " Ошибка");
     showToast(errorMessage(error));
-    await refreshWorkspace({ preserveChat: true }).catch(() => {});
     renderMessages();
     return false;
   } finally {
@@ -1426,9 +1425,12 @@ async function handleCreateProject(event) {
 }
 
 function localTaskSources(ids) {
+  const projectChat = activeProjectChat();
   return state.messages.filter((message) => ids.includes(message.id)).map((message) => ({
     id: message.id,
+    telegramChatId: projectChat?.telegram_chats?.telegram_chat_id || String(projectChat?.telegram_chats?.id || ""),
     telegramMessageId: message.telegram_message_id,
+    chatTitle: projectChat?.telegram_chats?.title || "Telegram chat",
     senderName: message.sender_name,
     text: message.text,
     sentAt: message.sent_at,
@@ -1520,6 +1522,7 @@ async function openTaskDialog({ sourceMessageIds, title, description, sourceLabe
         projectId: state.activeProjectId,
         chatId: activeProjectChat().telegram_chats.id,
         anchorMessageIds: ids,
+        messages: state.messages,
         model: elements.liveModelSelect.value,
         responseLanguage: state.workspace?.project?.response_language || "auto",
       },
@@ -1554,15 +1557,13 @@ async function handleCreateTask(event) {
   setLoading(elements.createTaskSubmit, true, interfaceText("Creating…", "Создаём…"));
   try {
     const sourceMessageIds = state.taskDraftSourceIds || [...state.selectedMessageIds];
-    const result = await api(`/api/projects/${state.activeProjectId}/tasks`, {
+    const sourceSnapshots = localTaskSources(sourceMessageIds);
+    const result = await api(`/api/projects/${state.activeProjectId}/client-tasks`, {
       method: "POST",
       body: {
         title: elements.taskTitleInput.value,
         description: elements.taskDescriptionInput.value,
-        sourceMessageIds,
-        anchorMessageIds: state.taskDraftAnchorIds || undefined,
-        contextWindowDays: state.taskDraftMeta?.rangeDays,
-        generationModel: state.taskDraftMeta?.model,
+        sources: sourceSnapshots,
       },
     });
     elements.createTaskDialog.close();
@@ -2329,10 +2330,14 @@ function assistantMessageActions(message) {
     showToast(interfaceText("Answer copied.", "Ответ скопирован."));
   });
   addAction(interfaceText("Download .md", "Скачать .md"), () => downloadAssistantMarkdown(message));
-  const sourceIds = (message.assistant_citations || [])
+  const citedTelegramIds = (message.assistant_citations || [])
     .sort((left, right) => left.ordinal - right.ordinal)
     .map((citation) => citation.telegram_message_id)
     .filter(Boolean);
+  const citedSet = new Set(citedTelegramIds.map(Number));
+  const sourceIds = state.messages
+    .filter((candidate) => citedSet.has(Number(candidate.telegram_message_id)))
+    .map((candidate) => candidate.id);
   if (canEditProject() && sourceIds.length) {
     addAction(interfaceText("Create task", "Создать задачу"), () => openTaskDialog({
       sourceMessageIds: sourceIds,
@@ -2450,6 +2455,7 @@ async function handleAssistantSubmit(event) {
         model: elements.liveModelSelect.value,
         chatId: projectChat.telegram_chats.id,
         responseLanguage: state.workspace.project.response_language,
+        context: { messages: state.messages },
         attachments: pendingImages.map((image) => ({ name: image.name, mimeType: image.mimeType, data: image.data })),
       },
     });
