@@ -5,8 +5,11 @@ import { requireProjectAccess } from "./lib/access";
 const editableRoles = ["owner", "editor"];
 
 async function messageWithDetails(ctx: any, message: any) {
-  const citations = await ctx.db.query("assistantCitations")
+  const legacyCitations = await ctx.db.query("assistantCitations")
     .withIndex("by_assistant_message", (q: any) => q.eq("assistantMessageId", message._id)).collect();
+  const citations = message.citationTelegramMessageIds?.length
+    ? message.citationTelegramMessageIds.map((telegramMessageId: number, ordinal: number) => ({ telegramMessageId, ordinal }))
+    : legacyCitations;
   const attachments = await ctx.db.query("assistantAttachments")
     .withIndex("by_assistant_message", (q: any) => q.eq("assistantMessageId", message._id)).collect();
   return { ...message, citations, attachments };
@@ -87,7 +90,7 @@ export const saveAssistantAttachment = mutation({
   },
 });
 
-export const context = query({
+export const scope = query({
   args: { sessionHash: v.string(), projectId: v.id("projects"), threadId: v.id("assistantThreads"), chatId: v.id("chats") },
   handler: async (ctx, args) => {
     const { project } = await requireProjectAccess(ctx, args.sessionHash, args.projectId, editableRoles);
@@ -96,9 +99,8 @@ export const context = query({
     const link = await ctx.db.query("projectChats").withIndex("by_project_chat", (q) => q.eq("projectId", args.projectId).eq("chatId", args.chatId)).unique();
     const chat = link ? await ctx.db.get(args.chatId) : null;
     if (!chat) throw new Error("Project chat not found.");
-    const messages = (await ctx.db.query("messages").withIndex("by_chat_sent_at", (q) => q.eq("chatId", args.chatId)).order("desc").take(2_000)).reverse();
     const history = (await ctx.db.query("assistantMessages").withIndex("by_thread", (q) => q.eq("threadId", args.threadId)).order("desc").take(8)).reverse();
-    return { project, thread, chat, messages, history };
+    return { project, thread, chat, history };
   },
 });
 
@@ -107,7 +109,6 @@ export const saveAssistantAnswer = mutation({
     sessionHash: v.string(),
     projectId: v.id("projects"),
     threadId: v.id("assistantThreads"),
-    chatId: v.id("chats"),
     content: v.string(),
     model: v.string(),
     citationTelegramMessageIds: v.array(v.number()),
@@ -122,14 +123,9 @@ export const saveAssistantAnswer = mutation({
       authorKind: "assistant",
       content: args.content,
       model: args.model,
+      citationTelegramMessageIds: [...new Set(args.citationTelegramMessageIds)].slice(0, 250),
       createdAt: Date.now(),
     });
-    let ordinal = 0;
-    for (const telegramMessageId of [...new Set(args.citationTelegramMessageIds)].slice(0, 250)) {
-      const message = await ctx.db.query("messages")
-        .withIndex("by_chat_message", (q) => q.eq("chatId", args.chatId).eq("telegramMessageId", telegramMessageId)).unique();
-      if (message) await ctx.db.insert("assistantCitations", { assistantMessageId: id, telegramMessageId: message._id, ordinal: ordinal++ });
-    }
     await ctx.db.patch(args.threadId, {
       title: args.title?.trim().slice(0, 160) || thread.title,
       model: args.model,

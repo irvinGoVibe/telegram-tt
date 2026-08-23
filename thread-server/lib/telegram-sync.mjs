@@ -2,14 +2,7 @@ import { Api } from "teleproto";
 import { api, convexClient } from "./convex.mjs";
 import { createAuthorizedTelegramClient, loadSession } from "./telegram-service.mjs";
 
-const DEFAULT_MEDIA_BYTES = 15 * 1024 * 1024;
-const DEFAULT_MEDIA_PER_SYNC = 200;
 const TASK_HISTORY_LIMIT = 10_000;
-const UPSERT_BATCH_SIZE = 500;
-const ALLOWED_MEDIA_TYPES = new Set([
-  "image/jpeg", "image/png", "image/webp", "image/gif",
-  "video/mp4", "audio/mpeg", "audio/ogg", "application/pdf",
-]);
 const ALLOWED_MESSAGE_ENTITY_TYPES = new Set(["bold", "italic", "underline", "strike", "code", "pre"]);
 
 function clean(value, max = 10_000) {
@@ -169,25 +162,6 @@ export async function normalizeTelegramMessage(chat, message) {
   };
 }
 
-async function uploadMedia({ sessionHash, projectId, telegram, normalized, budget }) {
-  if (!normalized.media || budget.remaining <= 0) return null;
-  const { media } = normalized;
-  if (!ALLOWED_MEDIA_TYPES.has(media.mimeType) || (media.size && media.size > budget.maxBytes)) return null;
-  budget.remaining -= 1;
-  const downloaded = await telegram.downloadMedia(normalized.source, {});
-  if (!Buffer.isBuffer(downloaded) || !downloaded.length || downloaded.length > budget.maxBytes) return null;
-  const uploadUrl = await convexClient().mutation(api.storage.generateUploadUrl, { sessionHash, projectId });
-  const uploaded = await fetch(uploadUrl, {
-    method: "POST",
-    headers: { "content-type": media.mimeType },
-    body: downloaded,
-  });
-  if (!uploaded.ok) throw new Error(`Convex Storage returned ${uploaded.status}.`);
-  const result = await uploaded.json();
-  if (!result.storageId) throw new Error("Convex Storage did not return a storage ID.");
-  return { ...media, size: downloaded.length, storageId: result.storageId };
-}
-
 async function projectTelegramContext({ sessionHash, projectId, chatId }) {
   const context = await convexClient().query(api.telegram.syncContext, { sessionHash, projectId, chatId });
   const telegram = createAuthorizedTelegramClient(await loadSession(sessionHash, context.accountId));
@@ -206,54 +180,22 @@ async function projectTelegramContext({ sessionHash, projectId, chatId }) {
 export async function syncProjectChat({ sessionHash, projectId, chatId }) {
   const { context, dialog, telegram } = await projectTelegramContext({ sessionHash, projectId, chatId });
   try {
-    const minId = positiveInteger(context.chat.lastMessageId, 0);
-    const messages = await telegram.getMessages(dialog.inputEntity, { limit: 500, minId });
-    const fresh = messages.filter((message) => Number(message.id) > minId).sort((left, right) => Number(left.id) - Number(right.id));
+    const messages = await telegram.getMessages(dialog.inputEntity, { limit: 500 });
+    const fresh = [...messages].sort((left, right) => Number(left.id) - Number(right.id));
     const normalized = [];
     for (const message of fresh) normalized.push(await normalizeTelegramMessage(context.chat, message));
-    const syncedAt = Date.now();
-    const persisted = await convexClient().mutation(api.telegram.upsertMessages, {
-      sessionHash,
-      projectId,
-      chatId,
-      messages: normalized.map((item) => item.row),
-      lastMessageId: normalized.at(-1)?.row.telegramMessageId || minId || undefined,
-      syncedAt,
-    });
-    const messageIds = new Map(persisted.map((item) => [item.telegramMessageId, item.messageId]));
-    const budget = {
-      maxBytes: positiveInteger(process.env.TELEGRAM_MEDIA_MAX_BYTES, DEFAULT_MEDIA_BYTES),
-      remaining: positiveInteger(process.env.TELEGRAM_MEDIA_PER_SYNC, DEFAULT_MEDIA_PER_SYNC),
+    return {
+      messageCount: normalized.length,
+      messages: normalized.map(({ row }) => ({
+        _id: `telegram:${context.chat.telegramChatId}:${row.telegramMessageId}`,
+        chatId,
+        ...row,
+        attachments: [],
+      })),
+      attachments: 0,
+      lastMessageId: normalized.at(-1)?.row.telegramMessageId,
+      ephemeral: true,
     };
-    let attachments = 0;
-    let attachmentErrors = 0;
-    for (const item of normalized) {
-      try {
-        const uploaded = await uploadMedia({ sessionHash, projectId, telegram, normalized: item, budget });
-        if (!uploaded) continue;
-        const messageId = messageIds.get(item.row.telegramMessageId);
-        if (!messageId) continue;
-        await convexClient().mutation(api.storage.saveAttachmentMetadata, {
-          sessionHash,
-          projectId,
-          messageId,
-          storageId: uploaded.storageId,
-          type: uploaded.type,
-          fileName: uploaded.fileName,
-          mimeType: uploaded.mimeType,
-          size: uploaded.size,
-        });
-        attachments += 1;
-      } catch (error) {
-        attachmentErrors += 1;
-        console.warn("Telegram attachment sync skipped", {
-          chatId: String(chatId),
-          telegramMessageId: item.row.telegramMessageId,
-          error: clean(error?.errorMessage || error?.message || "Attachment sync failed.", 500),
-        });
-      }
-    }
-    return { messages: persisted.length, attachments, attachmentErrors, lastMessageId: normalized.at(-1)?.row.telegramMessageId || minId };
   } finally {
     await telegram.disconnect().catch(() => {});
   }
@@ -284,26 +226,18 @@ export async function syncProjectChatWindow({ sessionHash, projectId, chatId, st
     for (const message of matching) normalized.push(await normalizeTelegramMessage(context.chat, message));
     normalized.sort((left, right) => left.row.telegramMessageId - right.row.telegramMessageId);
 
-    const syncedAt = Date.now();
-    let persisted = 0;
-    for (let offset = 0; offset < normalized.length; offset += UPSERT_BATCH_SIZE) {
-      const batch = normalized.slice(offset, offset + UPSERT_BATCH_SIZE);
-      const rows = await convexClient().mutation(api.telegram.upsertMessages, {
-        sessionHash,
-        projectId,
-        chatId,
-        messages: batch.map((item) => item.row),
-        lastMessageId: batch.at(-1)?.row.telegramMessageId,
-        syncedAt,
-      });
-      persisted += rows.length;
-    }
     return {
       fetched: matching.length,
-      persisted,
+      messages: normalized.map(({ row }) => ({
+        _id: `telegram:${context.chat.telegramChatId}:${row.telegramMessageId}`,
+        chatId,
+        ...row,
+        attachments: [],
+      })),
       truncated: history.length > TASK_HISTORY_LIMIT,
       startAt: from,
       endAt: through,
+      ephemeral: true,
     };
   } finally {
     await telegram.disconnect().catch(() => {});
@@ -325,17 +259,8 @@ export async function sendProjectChatMessage({ sessionHash, projectId, chatId, t
     const normalized = await normalizeTelegramMessage(context.chat, sent);
     normalized.row.senderTelegramId ||= bigIntegerString(self?.id) || undefined;
     normalized.row.senderName = entityName(self, normalized.row.senderName);
-    const syncedAt = Date.now();
-    const [persisted] = await convexClient().mutation(api.telegram.upsertMessages, {
-      sessionHash,
-      projectId,
-      chatId,
-      messages: [normalized.row],
-      lastMessageId: normalized.row.telegramMessageId,
-      syncedAt,
-    });
     return {
-      _id: persisted.messageId,
+      _id: `telegram:${context.chat.telegramChatId}:${normalized.row.telegramMessageId}`,
       chatId,
       ...normalized.row,
       attachments: [],

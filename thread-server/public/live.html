@@ -25,7 +25,7 @@
           <p class="form-error" id="authError" role="alert" hidden></p>
           <button class="live-primary wide" id="authSubmit" type="button">Continue with Telegram</button>
         </div>
-        <p class="auth-footnote">Telegram verifies your identity. Access to chat synchronization is granted separately.</p>
+          <p class="auth-footnote">Telegram verifies your identity. Chat content is loaded only for the active session and is not stored by Telegram Tasks.</p>
       </section>
       <aside class="auth-context" aria-label="Product overview">
         <div class="context-thread">
@@ -119,7 +119,7 @@
 
         <section class="selection-bar" id="selectionBar" hidden>
           <strong><span id="selectedMessageCount">0</span> selected</strong>
-          <span>Selected messages anchor a 10-day conversation analysis.</span>
+          <span>Selected messages anchor analysis of the context loaded for this session.</span>
           <button class="live-secondary" id="clearSelectionButton" type="button">Clear</button>
           <button class="live-primary" id="createTaskFromSelectionButton" type="button">Draft task</button>
         </section>
@@ -286,7 +286,7 @@
         <header><div><span class="live-kicker">Evidence-linked draft</span><h2>Review technical task</h2></div><button class="live-icon-button" value="cancel" formnovalidate aria-label="Close">×</button></header>
         <section class="task-draft-loading" id="taskDraftLoading" hidden>
           <div class="task-draft-pulse" aria-hidden="true"><i></i><i></i><i></i></div>
-          <div><strong>Reconstructing the discussion</strong><p>Loading 10 days of Telegram history, tracing related replies, and drafting requirements with source links.</p></div>
+          <div><strong>Reconstructing the discussion</strong><p>Analyzing the session-only Telegram context and drafting requirements with source links.</p></div>
         </section>
         <p class="form-error" id="taskDraftError" role="alert" hidden></p>
         <section class="task-draft-workspace" id="taskDraftWorkspace">
