@@ -6,7 +6,7 @@ import { getActions, withGlobal } from '../../global';
 
 import type { IAnchorPosition, MessageListType, ThreadId } from '../../types';
 import { MAIN_THREAD_ID } from '../../api/types';
-import { ManagementScreens } from '../../types';
+import { ManagementScreens, RightColumnContent } from '../../types';
 
 import { requestMeasure, requestNextMutation } from '../../lib/fasterdom/fasterdom';
 import {
@@ -30,6 +30,7 @@ import {
   selectIsUserBlocked,
   selectLanguageCode,
   selectRequestedChatTranslationLanguage,
+  selectRightColumnContentKey,
   selectTranslationLanguage,
   selectUserFullInfo,
 } from '../../global/selectors';
@@ -61,6 +62,7 @@ interface StateProps {
   noMenu?: boolean;
   isChannel?: boolean;
   isRightColumnShown?: boolean;
+  isThreadAssistantShown?: boolean;
   canStartBot?: boolean;
   canRestartBot?: boolean;
   canUnblock?: boolean;
@@ -115,6 +117,7 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
   channelMonoforumId,
   pendingJoinRequests,
   isRightColumnShown,
+  isThreadAssistantShown,
   isForForum,
   canExpandActions,
   shouldJoinToSend,
@@ -145,6 +148,7 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
     unblockUser,
     setViewForumAsMessages,
     openFrozenAccountModal,
+    toggleThreadAssistant,
   } = getActions();
   const menuButtonRef = useRef<HTMLButtonElement>();
   const lang = useOldLang();
@@ -180,6 +184,10 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
 
   const handleRestartBot = useLastCallback(() => {
     restartBot({ chatId });
+  });
+
+  const handleThreadAssistantClick = useLastCallback(() => {
+    toggleThreadAssistant();
   });
 
   const handleUnblock = useLastCallback(() => {
@@ -385,6 +393,19 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
               ripple={isRightColumnShown}
               color="translucent"
               size="smaller"
+              className={isThreadAssistantShown ? 'active' : undefined}
+              onClick={handleThreadAssistantClick}
+              ariaLabel={lang('ThreadAIDrawerTitle')}
+            >
+              <Icon name="bot-command" />
+            </Button>
+          )}
+          {canSearch && (
+            <Button
+              round
+              ripple={isRightColumnShown}
+              color="translucent"
+              size="smaller"
               onClick={handleSearchClick}
               ariaLabel={lang('Conversation.SearchPlaceholder')}
             >
@@ -496,6 +517,8 @@ export default memo(withGlobal<OwnProps>(
     const isMainThread = messageListType === 'thread' && threadId === MAIN_THREAD_ID;
     const isDiscussionThread = messageListType === 'thread' && threadId !== MAIN_THREAD_ID;
     const isRightColumnShown = selectIsRightColumnShown(global, isMobile);
+    const isThreadAssistantShown = selectRightColumnContentKey(global, isMobile)
+      === RightColumnContent.ThreadAssistant;
 
     const isSavedDialog = getIsSavedDialog(chatId, threadId, global.currentUserId);
 
@@ -534,6 +557,7 @@ export default memo(withGlobal<OwnProps>(
       noMenu: false,
       isChannel,
       isRightColumnShown,
+      isThreadAssistantShown,
       canStartBot,
       canRestartBot,
       canSubscribe,

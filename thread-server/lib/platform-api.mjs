@@ -26,6 +26,12 @@ import {
   publishTaskToLinear,
   setLinearDestination,
 } from "./linear-service.mjs";
+import {
+  beginTelegramOidc,
+  clearTelegramOidcCookie,
+  completeTelegramOidc,
+  telegramOidcConfig,
+} from "./telegram-oidc.mjs";
 
 function clean(value, max = 10_000) {
   return String(value ?? "").trim().slice(0, max);
@@ -222,6 +228,18 @@ function mapIntegration(integration) {
   };
 }
 
+function projectAiSettingsPayload(settings, role) {
+  return {
+    provider: "r2",
+    providerName: "R2 Copilot",
+    apiUrl: clean(process.env.R2_COPILOT_API_URL, 1_000) || "https://api-chat.r2copilot.ai",
+    apiKeyConfigured: Boolean(clean(process.env.R2_COPILOT_API_KEY, 2_000)),
+    defaultModel: settings?.defaultModel || clean(process.env.R2_COPILOT_DEFAULT_MODEL, 120),
+    scope: "project",
+    canEdit: role === "owner",
+  };
+}
+
 function mapAssistantMessage(message) {
   return {
     id: message._id,
@@ -256,14 +274,27 @@ async function workspacePayload(client, sessionHash, projectId) {
   };
 }
 
-function sendRedirect(response, url) {
+function sendRedirect(response, url, headers = {}) {
   if (!url) {
     response.writeHead(404, { "cache-control": "no-store" });
     response.end();
     return;
   }
-  response.writeHead(302, { location: url, "cache-control": "private, no-store", "referrer-policy": "no-referrer" });
+  response.writeHead(302, {
+    location: url,
+    "cache-control": "private, no-store",
+    "referrer-policy": "no-referrer",
+    ...headers,
+  });
   response.end();
+}
+
+function authReturnPath(pathname, values) {
+  const parsed = new URL(pathname || "/", "http://thread.local");
+  for (const [name, value] of Object.entries(values)) {
+    if (value) parsed.searchParams.set(name, value);
+  }
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
 function linearReturnPath(params) {
@@ -279,6 +310,7 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
       enabled: convexConfig().enabled,
       provider: "convex",
       telegramEnabled: Boolean(process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH && process.env.SESSION_ENCRYPTION_KEY),
+      telegramAuthEnabled: telegramOidcConfig(request).enabled,
       linearEnabled: linearConfig().enabled,
       linearMcpUrl: linearConfig().mcpUrl,
     });
@@ -288,6 +320,44 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
   const candidateRoute = ["/api/auth/", "/api/platform/", "/api/projects", "/api/telegram/", "/api/invites/", "/api/tasks/", "/api/assistant/", "/api/integrations/"].some((prefix) => url.pathname.startsWith(prefix));
   if (!candidateRoute) return false;
   const client = convexClient();
+
+  if (url.pathname === "/api/auth/telegram/config" && request.method === "GET") {
+    sendJson(response, 200, { enabled: telegramOidcConfig(request).enabled });
+    return true;
+  }
+
+  if (url.pathname === "/api/auth/telegram/start" && request.method === "GET") {
+    const pending = beginTelegramOidc(request, url.searchParams.get("returnTo"));
+    sendRedirect(response, pending.authorizeUrl, { "set-cookie": pending.stateCookie });
+    return true;
+  }
+
+  if (url.pathname === "/api/auth/telegram/callback" && request.method === "GET") {
+    const fallback = clean(process.env.THREAD_CLIENT_REDIRECT_PATH, 500) || "/";
+    const providerError = clean(url.searchParams.get("error_description") || url.searchParams.get("error"), 1_000);
+    if (providerError) {
+      sendRedirect(response, authReturnPath(fallback, { telegramAuth: "error", message: providerError }), {
+        "set-cookie": clearTelegramOidcCookie(),
+      });
+      return true;
+    }
+    try {
+      const completed = await completeTelegramOidc(request, url);
+      const result = await client.action(api.authActions.signInWithTelegram, {
+        serverSecret: String(process.env.THREAD_SERVER_SECRET || ""),
+        ...completed.identity,
+      });
+      sendRedirect(response, authReturnPath(completed.returnTo, { telegramAuth: "success" }), {
+        "set-cookie": [completed.clearStateCookie, sessionCookie(result.sessionToken, result.expiresAt)],
+      });
+    } catch (error) {
+      sendRedirect(response, authReturnPath(fallback, {
+        telegramAuth: "error",
+        message: clean(error.message, 1_000) || "Telegram sign-in failed.",
+      }), { "set-cookie": clearTelegramOidcCookie() });
+    }
+    return true;
+  }
 
   if (url.pathname === "/api/auth/signup" && request.method === "POST") {
     const body = await readJsonBody(request);
@@ -336,6 +406,29 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
       user: { id: user.id, email: user.email || "" },
       profile: { id: user.id, email: user.email || "", display_name: user.displayName, avatar_url: user.avatarUrl || null },
     });
+    return true;
+  }
+
+  const projectAiSettingsMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/ai\/settings$/);
+  if (projectAiSettingsMatch && request.method === "GET") {
+    const result = await client.query(api.aiSettings.getProjectSettings, {
+      sessionHash,
+      projectId: asId(projectAiSettingsMatch[1], "project"),
+    });
+    sendJson(response, 200, projectAiSettingsPayload(result.settings, result.role));
+    return true;
+  }
+
+  if (projectAiSettingsMatch && request.method === "PUT") {
+    const body = await readJsonBody(request);
+    const projectId = asId(projectAiSettingsMatch[1], "project");
+    await client.mutation(api.aiSettings.setProjectDefaultModel, {
+      sessionHash,
+      projectId,
+      defaultModel: clean(body.defaultModel, 120),
+    });
+    const result = await client.query(api.aiSettings.getProjectSettings, { sessionHash, projectId });
+    sendJson(response, 200, projectAiSettingsPayload(result.settings, result.role));
     return true;
   }
 

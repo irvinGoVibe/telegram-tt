@@ -340,6 +340,7 @@ export const INITIAL_TAB_STATE: TabState = {
   isMasterTab: false,
   isLeftColumnShown: true,
   isChatInfoShown: false,
+  isThreadAssistantShown: false,
   newChatMembersProgress: NewChatMembersProgress.Closed,
   uiReadyState: 0,
   shouldInit: true,

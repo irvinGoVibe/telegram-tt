@@ -25,6 +25,7 @@ import useLayoutEffectWithPrevDeps from '../../hooks/useLayoutEffectWithPrevDeps
 import useScrollNotch from '../../hooks/useScrollNotch.ts';
 import useWindowSize from '../../hooks/window/useWindowSize';
 
+import ThreadAssistantDrawer from '../thread/ThreadAssistantDrawer';
 import Transition from '../ui/Transition';
 import AddChatMembers from './AddChatMembers';
 import CreateTopic from './CreateTopic.async';
@@ -64,6 +65,10 @@ type StateProps = {
 const ANIMATION_DURATION = 450 + ANIMATION_END_DELAY;
 const MAIN_SCREENS_COUNT = Object.keys(RightColumnContent).length / 2;
 const MANAGEMENT_SCREENS_COUNT = Object.keys(ManagementScreens).length / 2;
+const ASSISTANT_WIDTH_STORAGE_KEY = 'telegram-thread.assistant-width';
+const MIN_ASSISTANT_WIDTH = 320;
+const MAX_ASSISTANT_WIDTH = 720;
+const MIN_MIDDLE_COLUMN_WIDTH = 480;
 
 function blurSearchInput() {
   const searchInput = document.querySelector('.RightHeader .SearchInput input') as HTMLInputElement;
@@ -106,9 +111,12 @@ const RightColumn: FC<OwnProps & StateProps> = ({
     closeBoostStatistics,
     setShouldCloseRightColumn,
     closeMonetizationStatistics,
+    toggleThreadAssistant,
   } = getActions();
 
   const containerRef = useRef<HTMLDivElement>();
+  const assistantResizeStartXRef = useRef(0);
+  const assistantResizeStartWidthRef = useRef(0);
 
   const { width: windowWidth } = useWindowSize();
   const [profileState, setProfileState] = useState<ProfileState>(
@@ -120,6 +128,7 @@ const RightColumn: FC<OwnProps & StateProps> = ({
   const isScrolledDown = profileState !== ProfileState.Profile;
 
   const isOpen = contentKey !== undefined;
+  const isThreadAssistant = contentKey === RightColumnContent.ThreadAssistant;
   const isProfile = contentKey === RightColumnContent.ChatInfo;
   const isManagement = contentKey === RightColumnContent.Management;
   const isStatistics = contentKey === RightColumnContent.Statistics;
@@ -135,6 +144,58 @@ const RightColumn: FC<OwnProps & StateProps> = ({
   const isEditingTopic = contentKey === RightColumnContent.EditTopic;
   const isOverlaying = windowWidth <= MIN_SCREEN_WIDTH_FOR_STATIC_RIGHT_COLUMN;
 
+  const getAssistantWidthBounds = useLastCallback(() => {
+    const leftColumnWidth = document.querySelector<HTMLElement>('#LeftColumn')?.offsetWidth || 0;
+    const availableWidth = window.innerWidth - leftColumnWidth - MIN_MIDDLE_COLUMN_WIDTH;
+
+    return {
+      min: MIN_ASSISTANT_WIDTH,
+      max: Math.max(MIN_ASSISTANT_WIDTH, Math.min(MAX_ASSISTANT_WIDTH, availableWidth)),
+    };
+  });
+
+  const setAssistantWidth = useLastCallback((width: number) => {
+    const { min, max } = getAssistantWidthBounds();
+    const nextWidth = Math.max(min, Math.min(max, width));
+    document.documentElement.style.setProperty('--right-column-width', `${nextWidth}px`);
+
+    return nextWidth;
+  });
+
+  const stopAssistantResize = useLastCallback(() => {
+    document.body.classList.remove('cursor-ew-resize');
+    document.removeEventListener('mousemove', handleAssistantResize);
+    document.removeEventListener('mouseup', stopAssistantResize);
+    window.removeEventListener('blur', stopAssistantResize);
+
+    const currentWidth = document.querySelector<HTMLElement>('#RightColumn')?.offsetWidth;
+    if (currentWidth) {
+      localStorage.setItem(ASSISTANT_WIDTH_STORAGE_KEY, String(currentWidth));
+    }
+  });
+
+  const handleAssistantResize = useLastCallback((event: MouseEvent) => {
+    event.preventDefault();
+    const delta = assistantResizeStartXRef.current - event.clientX;
+    setAssistantWidth(assistantResizeStartWidthRef.current + delta);
+  });
+
+  const startAssistantResize = useLastCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    assistantResizeStartXRef.current = event.clientX;
+    assistantResizeStartWidthRef.current = document.querySelector<HTMLElement>('#RightColumn')!.offsetWidth;
+    document.body.classList.add('cursor-ew-resize');
+    document.addEventListener('mousemove', handleAssistantResize);
+    document.addEventListener('mouseup', stopAssistantResize);
+    window.addEventListener('blur', stopAssistantResize);
+  });
+
+  const resetAssistantWidth = useLastCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    localStorage.removeItem(ASSISTANT_WIDTH_STORAGE_KEY);
+    document.documentElement.style.removeProperty('--right-column-width');
+  });
+
   const [shouldSkipTransition, setShouldSkipTransition] = useState(!isOpen);
 
   const renderingContentKey = useCurrentOrPrev(contentKey, true, !isChatSelected) ?? -1;
@@ -146,6 +207,9 @@ const RightColumn: FC<OwnProps & StateProps> = ({
 
   const close = useLastCallback((shouldScrollUp = true) => {
     switch (contentKey) {
+      case RightColumnContent.ThreadAssistant:
+        toggleThreadAssistant({ force: false });
+        break;
       case RightColumnContent.AddingMembers:
         setNewChatMembersDialogState({ newChatMembersProgress: NewChatMembersProgress.Closed });
         break;
@@ -254,6 +318,23 @@ const RightColumn: FC<OwnProps & StateProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isThreadAssistant || isOverlaying) {
+      document.documentElement.style.removeProperty('--right-column-width');
+      return undefined;
+    }
+
+    const storedWidth = Number(localStorage.getItem(ASSISTANT_WIDTH_STORAGE_KEY));
+    if (storedWidth) {
+      setAssistantWidth(storedWidth);
+    }
+
+    return () => {
+      stopAssistantResize();
+      document.documentElement.style.removeProperty('--right-column-width');
+    };
+  }, [isOverlaying, isThreadAssistant, setAssistantWidth, stopAssistantResize]);
+
+  useEffect(() => {
     if (nextManagementScreen) {
       setManagementScreen(nextManagementScreen);
       requestNextManagementScreen(undefined);
@@ -293,7 +374,8 @@ const RightColumn: FC<OwnProps & StateProps> = ({
 
   useHistoryBack({
     isActive: isChatSelected && (
-      contentKey === RightColumnContent.ChatInfo
+      contentKey === RightColumnContent.ThreadAssistant
+      || contentKey === RightColumnContent.ChatInfo
       || contentKey === RightColumnContent.Management
       || contentKey === RightColumnContent.AddingMembers
       || contentKey === RightColumnContent.CreateTopic
@@ -307,6 +389,15 @@ const RightColumn: FC<OwnProps & StateProps> = ({
     }
 
     switch (renderingContentKey) {
+      case RightColumnContent.ThreadAssistant:
+        return (
+          <ThreadAssistantDrawer
+            key={`thread_assistant_${chatId!}`}
+            currentChatId={chatId}
+            isActive={isOpen && isActive}
+            onClose={close}
+          />
+        );
       case RightColumnContent.AddingMembers:
         return (
           <AddChatMembers
@@ -378,28 +469,39 @@ const RightColumn: FC<OwnProps & StateProps> = ({
         <div className="overlay-backdrop" onClick={close} />
       )}
       <div id="RightColumn">
-        <RightHeader
-          chatId={chatId}
-          threadId={threadId}
-          isColumnOpen={isOpen}
-          isProfile={isProfile}
-          isManagement={isManagement}
-          isStatistics={isStatistics}
-          isBoostStatistics={isBoostStatistics}
-          isMonetizationStatistics={isMonetizationStatistics}
-          isMessageStatistics={isMessageStatistics}
-          isStoryStatistics={isStoryStatistics}
-          isStickerSearch={isStickerSearch}
-          isGifSearch={isGifSearch}
-          isPollResults={isPollResults}
-          isCreatingTopic={isCreatingTopic}
-          isEditingTopic={isEditingTopic}
-          isAddingChatMembers={isAddingChatMembers}
-          profileState={profileState}
-          managementScreen={managementScreen}
-          onClose={close}
-          onScreenSelect={setManagementScreen}
-        />
+        {isThreadAssistant && !isOverlaying && (
+          <button
+            type="button"
+            className="RightColumn-resizeHandle"
+            aria-label="Resize AI panel"
+            onMouseDown={startAssistantResize}
+            onDoubleClick={resetAssistantWidth}
+          />
+        )}
+        {!isThreadAssistant && (
+          <RightHeader
+            chatId={chatId}
+            threadId={threadId}
+            isColumnOpen={isOpen}
+            isProfile={isProfile}
+            isManagement={isManagement}
+            isStatistics={isStatistics}
+            isBoostStatistics={isBoostStatistics}
+            isMonetizationStatistics={isMonetizationStatistics}
+            isMessageStatistics={isMessageStatistics}
+            isStoryStatistics={isStoryStatistics}
+            isStickerSearch={isStickerSearch}
+            isGifSearch={isGifSearch}
+            isPollResults={isPollResults}
+            isCreatingTopic={isCreatingTopic}
+            isEditingTopic={isEditingTopic}
+            isAddingChatMembers={isAddingChatMembers}
+            profileState={profileState}
+            managementScreen={managementScreen}
+            onClose={close}
+            onScreenSelect={setManagementScreen}
+          />
+        )}
         <Transition
           ref={containerRef}
           name={resolveTransitionName('layers', animationLevel, shouldSkipTransition || shouldSkipHistoryAnimations)}

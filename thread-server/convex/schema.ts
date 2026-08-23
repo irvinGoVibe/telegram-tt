@@ -96,6 +96,14 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_project_provider", ["projectId", "provider"]),
 
+  projectAiSettings: defineTable({
+    projectId: v.id("projects"),
+    defaultModel: v.string(),
+    updatedBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_project", ["projectId"]),
+
   integrationOAuthStates: defineTable({
     projectId: v.id("projects"),
     provider: v.string(),

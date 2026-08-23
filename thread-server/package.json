@@ -1,13 +1,13 @@
 {
-  "name": "telegram-archive-chat",
+  "name": "telegram-tasks-server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Live Telegram project workspace with R2 Copilot research and tasks",
+  "description": "Telegram Tasks project workspace with R2 Copilot research and source-linked tasks",
   "scripts": {
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
-    "check": "node --check server.mjs && node --check public/app.js && node --check public/live-app.js && node --check lib/crypto.mjs && node --check lib/convex.mjs && node --check lib/platform-api.mjs && node --check lib/linear-service.mjs && node --check lib/telegram-service.mjs && node --check lib/telegram-sync.mjs",
+    "check": "node --check server.mjs && node --check public/app.js && node --check public/live-app.js && node --check lib/crypto.mjs && node --check lib/convex.mjs && node --check lib/platform-api.mjs && node --check lib/telegram-oidc.mjs && node --check lib/linear-service.mjs && node --check lib/telegram-service.mjs && node --check lib/telegram-sync.mjs",
     "build:app": "node scripts/capture-convex-url.mjs && npm run check",
     "build": "npm run build:app",
     "test:unit": "node --test tests/*.test.mjs",
@@ -23,6 +23,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "convex": "^1.44.0",
     "fflate": "^0.8.2",
+    "jose": "^6.2.9",
     "teleproto": "^1.228.5"
   },
   "devDependencies": {

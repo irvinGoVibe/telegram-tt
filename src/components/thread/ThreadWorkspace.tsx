@@ -15,17 +15,17 @@ import type { ThreadSource } from '../../thread/events';
 
 import {
   beginLinearConnection,
+  beginThreadTelegramSignIn,
   createClientTask,
   createThreadProject,
   getLinearCatalog,
   getThreadSession,
+  getThreadTelegramAuthConfig,
   getThreadWorkspace,
   listThreadProjects,
   publishTaskToLinear,
   setLinearDestination,
-  signInToThread,
   signOutFromThread,
-  signUpForThread,
 } from '../../thread/api';
 import { buildThreadTaskDescription, buildThreadTaskTitle } from '../../thread/draft';
 import { THREAD_WORKSPACE_EVENT } from '../../thread/events';
@@ -41,8 +41,6 @@ import TextArea from '../ui/TextArea';
 import './ThreadWorkspace.scss';
 
 const ACTIVE_PROJECT_KEY = 'telegram-thread.active-project';
-
-type AuthMode = 'signin' | 'signup';
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong.';
@@ -60,10 +58,7 @@ const ThreadWorkspace: FC = () => {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [createdTask, setCreatedTask] = useState<ThreadTask>();
-  const [authMode, setAuthMode] = useState<AuthMode>('signin');
-  const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [isTelegramAuthEnabled, setIsTelegramAuthEnabled] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
@@ -102,7 +97,11 @@ const ThreadWorkspace: FC = () => {
     setIsLoading(true);
     setError('');
     try {
-      const session = await getThreadSession();
+      const [session, authConfig] = await Promise.all([
+        getThreadSession(),
+        getThreadTelegramAuthConfig().catch(() => ({ enabled: false })),
+      ]);
+      setIsTelegramAuthEnabled(authConfig.enabled);
       setUser(session.user || undefined);
       if (session.user) {
         const callbackProject = new URLSearchParams(window.location.search).get('project') || undefined;
@@ -131,11 +130,13 @@ const ThreadWorkspace: FC = () => {
     window.addEventListener(THREAD_WORKSPACE_EVENT, handleOpen);
 
     const params = new URLSearchParams(window.location.search);
-    if (params.has('linear')) {
+    if (params.has('linear') || params.has('telegramAuth')) {
       setIsOpen(true);
       if (params.get('linear') === 'error') setError(params.get('message') || 'Linear connection failed.');
+      if (params.get('telegramAuth') === 'error') setError(params.get('message') || 'Telegram sign-in failed.');
       void bootstrap();
       params.delete('linear');
+      params.delete('telegramAuth');
       params.delete('message');
       params.delete('project');
       const query = params.toString();
@@ -148,30 +149,11 @@ const ThreadWorkspace: FC = () => {
 
   const close = useLastCallback(() => setIsOpen(false));
 
-  const submitAuth = useLastCallback(async () => {
-    if (isLoading) return;
-    if (!email.trim() || password.length < 8 || (authMode === 'signup' && !displayName.trim())) {
-      setError('Enter a valid email, an 8-character password, and your name.');
-      return;
-    }
+  const handleTelegramSignIn = useLastCallback(() => {
+    if (!isTelegramAuthEnabled || isLoading) return;
     setIsLoading(true);
     setError('');
-    try {
-      const result = authMode === 'signup'
-        ? await signUpForThread(displayName, email, password)
-        : await signInToThread(email, password);
-      setUser(result.user);
-      await loadProjects();
-    } catch (nextError) {
-      setError(errorMessage(nextError));
-    } finally {
-      setIsLoading(false);
-    }
-  });
-
-  const handleAuth = useLastCallback((event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void submitAuth();
+    beginThreadTelegramSignIn();
   });
 
   const handleProjectChange = useLastCallback(async (event: ChangeEvent<HTMLSelectElement>) => {
@@ -308,63 +290,22 @@ const ThreadWorkspace: FC = () => {
   });
 
   const renderAuth = () => (
-    <form action="" className="ThreadWorkspace-auth" onSubmit={handleAuth}>
-      <div className="ThreadWorkspace-heroIcon"><Icon name="check" /></div>
-      <h3>{authMode === 'signup' ? 'Create your Thread workspace' : 'Sign in to Thread'}</h3>
-      <p>Projects and Linear access stay separate from your Telegram session.</p>
-      <div className="ThreadWorkspace-authSwitch" role="tablist" aria-label="Thread account access">
-        <button
-          type="button"
-          className={authMode === 'signin' ? 'active' : ''}
-          onClick={() => setAuthMode('signin')}
-        >
-          Sign in
-        </button>
-        <button
-          type="button"
-          className={authMode === 'signup' ? 'active' : ''}
-          onClick={() => setAuthMode('signup')}
-        >
-          Create account
-        </button>
-      </div>
-      {authMode === 'signup' && (
-        <label className="input-group touched with-label">
-          <input
-            className="form-control"
-            value={displayName}
-            required
-            maxLength={120}
-            onChange={(event) => setDisplayName(event.currentTarget.value)}
-          />
-          <span>Name</span>
-        </label>
+    <div className="ThreadWorkspace-auth">
+      <div className="ThreadWorkspace-heroIcon"><Icon name="user" /></div>
+      <h3>Continue with Telegram</h3>
+      <p>Your Telegram identity opens the workspace. Chat access remains a separate permission.</p>
+      <Button
+        fluid
+        isLoading={isLoading}
+        disabled={!isTelegramAuthEnabled}
+        onClick={handleTelegramSignIn}
+      >
+        Sign in with Telegram
+      </Button>
+      {!isTelegramAuthEnabled && (
+        <small className="ThreadWorkspace-authHint">Telegram sign-in is not configured on this server yet.</small>
       )}
-      <label className="input-group touched with-label">
-        <input
-          className="form-control"
-          type="email"
-          value={email}
-          required
-          autoComplete="email"
-          onChange={(event) => setEmail(event.currentTarget.value)}
-        />
-        <span>Email</span>
-      </label>
-      <label className="input-group touched with-label">
-        <input
-          className="form-control"
-          type="password"
-          value={password}
-          minLength={8}
-          required
-          autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
-          onChange={(event) => setPassword(event.currentTarget.value)}
-        />
-        <span>Password</span>
-      </label>
-      <Button fluid isLoading={isLoading} onClick={() => void submitAuth()}>Continue</Button>
-    </form>
+    </div>
   );
 
   const renderProjectCreator = () => (
@@ -549,7 +490,7 @@ const ThreadWorkspace: FC = () => {
           </span>
           <div>
             <strong>{task.title}</strong>
-            <small>{task.external_id || 'Thread draft'}</small>
+            <small>{task.external_id || 'Telegram Tasks draft'}</small>
           </div>
           {task.external_url && <Icon name="arrow-right" />}
         </a>
@@ -589,7 +530,7 @@ const ThreadWorkspace: FC = () => {
         {renderLinear()}
         {renderTasks()}
         <button className="ThreadWorkspace-signOut" type="button" onClick={handleSignOut}>
-          Sign out of Thread
+          Sign out of Telegram Tasks
         </button>
       </div>
     );
@@ -607,7 +548,7 @@ const ThreadWorkspace: FC = () => {
     >
       {error && <div className="ThreadWorkspace-error" role="alert">{error}</div>}
       {user === undefined && isLoading
-        ? <div className="ThreadWorkspace-loading">Loading Thread…</div>
+        ? <div className="ThreadWorkspace-loading">Loading Telegram Tasks…</div>
         : (user ? renderWorkspace() : renderAuth())}
     </Modal>
   );

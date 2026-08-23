@@ -32,6 +32,39 @@ export const createIdentity = internalMutation({
   },
 });
 
+export const upsertTelegramIdentity = internalMutation({
+  args: {
+    telegramUserId: v.string(),
+    displayName: v.string(),
+    username: v.optional(v.string()),
+    avatarUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_telegram_user_id", (q) => q.eq("telegramUserId", args.telegramUserId))
+      .unique();
+    const now = Date.now();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        displayName: args.displayName || existing.displayName,
+        username: args.username,
+        avatarUrl: args.avatarUrl,
+        updatedAt: now,
+      });
+      return existing._id;
+    }
+    return await ctx.db.insert("users", {
+      telegramUserId: args.telegramUserId,
+      displayName: args.displayName,
+      username: args.username,
+      avatarUrl: args.avatarUrl,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
 export const createSession = internalMutation({
   args: { userId: v.id("users"), tokenHash: v.string(), expiresAt: v.number() },
   handler: async (ctx, args) => {

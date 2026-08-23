@@ -83,6 +83,43 @@
   }
 }
 
+.RightColumn-resizeHandle {
+  cursor: ew-resize;
+
+  position: absolute;
+  z-index: var(--z-resize-handle);
+  top: 0;
+  bottom: 0;
+  left: -0.25rem;
+
+  width: 0.5rem;
+  padding: 0;
+  border: 0;
+
+  background: transparent;
+
+  &::after {
+    content: '';
+
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0.1875rem;
+
+    width: 0.125rem;
+
+    opacity: 0;
+    background: var(--color-primary);
+
+    transition: opacity 150ms ease-out;
+  }
+
+  &:hover::after,
+  body.cursor-ew-resize &::after {
+    opacity: 0.7;
+  }
+}
+
 #RightColumn-wrapper {
   pointer-events: none;
 

@@ -4,14 +4,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const elements = {
   authGate: $("#authGate"),
   authTitle: $("#authTitle"),
-  authForm: $("#authForm"),
-  authName: $("#authName"),
-  authEmail: $("#authEmail"),
-  authPassword: $("#authPassword"),
-  authConfirmPassword: $("#authConfirmPassword"),
   authSubmit: $("#authSubmit"),
-  authLoginTab: $("#authLoginTab"),
-  authSignupTab: $("#authSignupTab"),
   authError: $("#authError"),
   liveApp: $("#liveApp"),
   newProjectButton: $("#newProjectButton"),
@@ -28,6 +21,10 @@ const elements = {
   liveUserEmail: $("#liveUserEmail"),
   signOutButton: $("#signOutButton"),
   mobileRailButton: $("#mobileRailButton"),
+  openAssistantDrawerButton: $("#openAssistantDrawerButton"),
+  closeAssistantDrawerButton: $("#closeAssistantDrawerButton"),
+  assistantDrawer: $("#assistantDrawer"),
+  assistantDrawerBackdrop: $("#assistantDrawerBackdrop"),
   liveChatAvatar: $("#liveChatAvatar"),
   liveChatTitle: $("#liveChatTitle"),
   liveChatMeta: $("#liveChatMeta"),
@@ -142,7 +139,6 @@ const state = {
   config: null,
   user: null,
   profile: null,
-  authMode: "login",
   projects: [],
   workspace: null,
   activeProjectId: "",
@@ -180,13 +176,8 @@ const STATIC_INTERFACE_COPY = {
   ".auth-brand small": ["Live project workspace", "Рабочее пространство проекта"],
   ".auth-heading .live-kicker": ["Private workspace", "Приватное пространство"],
   ".auth-heading > p": ["Connect your Telegram account, collect the chats that belong to a project, and keep every task linked to its source.", "Подключите Telegram, соберите нужные чаты в проекте и сохраняйте связь каждой задачи с сообщением-источником."],
-  "#authNameLabel > span": ["Name", "Имя"],
-  "#authEmailLabel > span": ["Email", "Почта"],
-  "#authPasswordLabel > span": ["Password", "Пароль"],
-  "#authConfirmLabel > span": ["Confirm password", "Подтвердите пароль"],
-  "#authLoginTab": ["Sign in", "Войти"],
-  "#authSignupTab": ["Create account", "Регистрация"],
-  ".auth-footnote": ["Telegram is connected separately. Your phone code and 2FA password are never stored.", "Telegram подключается отдельно. Код входа и пароль 2FA не сохраняются."],
+  "#authSubmit": ["Continue with Telegram", "Продолжить через Telegram"],
+  ".auth-footnote": ["Telegram verifies your identity. Access to chat synchronization is granted separately.", "Telegram подтверждает личность. Доступ к синхронизации чатов предоставляется отдельно."],
   ".brand-copy small": ["Live workspace", "Рабочее пространство"],
   "#newProjectButton": ["New project", "Новый проект"],
   "#projectsHeading": ["Projects", "Проекты"],
@@ -202,14 +193,13 @@ const STATIC_INTERFACE_COPY = {
   "#liveMessagesEmpty .live-kicker": ["Source-linked workspace", "Работа с источниками"],
   "#liveMessagesEmpty > p": ["Connect Telegram, create a project, and attach only the chats your team needs to follow.", "Подключите Telegram, создайте проект и добавьте только нужные команде чаты."],
   "#emptyConnectButton": ["Connect Telegram", "Подключить Telegram"],
+  "#openAssistantDrawerButton span": ["AI chat", "AI-чат"],
   "#assistantLiveEmpty p": ["Answers use the open project chat and keep citations connected to source messages.", "Ответы используют открытый чат проекта и сохраняют ссылки на сообщения-источники."],
   ".task-surface-heading .live-kicker": ["Project folder", "Папка проекта"],
   ".task-surface-heading h2": ["Tasks with sources", "Задачи с источниками"],
   ".task-surface-heading p": ["Tasks created from messages and AI answers stay traceable.", "Задачи из сообщений и ответов AI остаются проверяемыми."],
   "#liveTasksEmpty h3": ["No tasks yet", "Задач пока нет"],
   "#liveTasksEmpty p": ["Select messages in the chat and create the first task.", "Выберите сообщения в чате и создайте первую задачу."],
-  "[data-live-mobile-view='chat']": ["Chat", "Чат"],
-  "[data-live-mobile-view='assistant']": ["Researcher", "Исследователь"],
   "#createProjectDialog .live-kicker": ["New workspace", "Новое пространство"],
   "#createProjectDialog header h2": ["Create project", "Создать проект"],
   "#createProjectDialog label:nth-of-type(1) > span": ["Project name", "Название проекта"],
@@ -219,7 +209,7 @@ const STATIC_INTERFACE_COPY = {
   "#createProjectSubmit": ["Create project", "Создать проект"],
   "#telegramDialog .live-kicker": ["Secure connection", "Безопасное подключение"],
   "#telegramDialog header h2": ["Connect Telegram", "Подключить Telegram"],
-  "#telegramPhoneStep > p": ["Thread uses Telegram’s user authorization to read only the chats you add to projects.", "Thread использует авторизацию пользователя Telegram и читает только добавленные в проекты чаты."],
+  "#telegramPhoneStep > p": ["Telegram Tasks uses Telegram’s user authorization to read only the chats you add to projects.", "Telegram Tasks использует авторизацию пользователя Telegram и читает только добавленные в проекты чаты."],
   "#telegramPhoneStep label > span": ["Phone number", "Номер телефона"],
   "#telegramCodeStep label > span": ["Login code", "Код входа"],
   "#telegramPasswordStep > p": ["This account has Telegram two-step verification enabled.", "Для этого аккаунта включена двухэтапная проверка Telegram."],
@@ -282,7 +272,7 @@ function applyPreferences() {
   const russian = state.preferences.interfaceLanguage === "ru";
   document.documentElement.lang = russian ? "ru" : "en";
   document.documentElement.dataset.theme = state.preferences.theme;
-  document.title = russian ? "Thread — рабочее пространство проекта" : "Thread — Live project workspace";
+  document.title = russian ? "Telegram Tasks — рабочее пространство проекта" : "Telegram Tasks — Live project workspace";
   for (const [selector, copy] of Object.entries(STATIC_INTERFACE_COPY)) {
     document.querySelectorAll(selector).forEach((element) => setDirectText(element, copy[russian ? 1 : 0]));
   }
@@ -301,15 +291,16 @@ function applyPreferences() {
     document.createElement("br"),
     document.createTextNode(russian ? "а не свою память." : "not your memory."),
   );
-  elements.authName.placeholder = russian ? "Ваше имя" : "Your name";
-  elements.authPassword.placeholder = russian ? "Минимум 8 символов" : "At least 8 characters";
-  elements.authConfirmPassword.placeholder = russian ? "Повторите пароль" : "Repeat your password";
   elements.projectNameInput.placeholder = russian ? "Запуск для клиента" : "Client launch";
   elements.projectDescriptionInput.placeholder = russian ? "За что отвечает этот проект" : "What this project is responsible for";
   elements.addChatSearch.placeholder = russian ? "Поиск по чатам Telegram" : "Search your Telegram chats";
   elements.taskTitleInput.placeholder = russian ? "Что нужно сделать?" : "What needs to happen?";
   elements.taskDescriptionInput.placeholder = russian ? "Здесь появится сгенерированное техническое задание." : "The generated specification will appear here.";
   elements.assistantLiveInput.placeholder = russian ? "Спросите по чату проекта…" : "Ask about this project chat…";
+  elements.openAssistantDrawerButton.setAttribute("aria-label", russian ? "Открыть AI-чат" : "Open AI chat");
+  elements.closeAssistantDrawerButton.setAttribute("aria-label", russian ? "Закрыть AI-чат" : "Close AI chat");
+  elements.closeAssistantDrawerButton.title = russian ? "Закрыть AI-чат" : "Close AI chat";
+  elements.assistantDrawerBackdrop.setAttribute("aria-label", russian ? "Закрыть AI-чат" : "Close AI chat");
   elements.telegramMessageInput.dataset.placeholder = russian ? "Напишите в этот чат Telegram…" : "Write to this Telegram chat…";
   elements.projectInstructionsInput.placeholder = russian ? "Термины продукта, ограничения, критерии готовности…" : "Product vocabulary, constraints, definition of done…";
   elements.projectResponseLanguage.options[0].textContent = russian ? "Как в вопросе" : "Match the question";
@@ -317,7 +308,6 @@ function applyPreferences() {
   elements.themeSelect.options[1].textContent = russian ? "Светлая" : "Light";
   elements.projectInviteRole.options[0].textContent = russian ? "Наблюдатель" : "Viewer";
   elements.projectInviteRole.options[1].textContent = russian ? "Редактор" : "Editor";
-  setAuthMode(state.authMode);
   renderMessageEmptyState();
   updateTelegramComposerAvailability();
 }
@@ -408,27 +398,10 @@ async function api(path, options = {}) {
   return payload;
 }
 
-function setAuthMode(mode) {
-  state.authMode = mode === "signup" ? "signup" : "login";
-  const signup = state.authMode === "signup";
-  elements.authName.closest("label").hidden = !signup;
-  elements.authName.hidden = !signup;
-  elements.authName.required = signup;
-  elements.authConfirmPassword.closest("label").hidden = !signup;
-  elements.authConfirmPassword.hidden = !signup;
-  elements.authConfirmPassword.required = signup;
-  if (!signup) elements.authConfirmPassword.value = "";
-  elements.authPassword.autocomplete = signup ? "new-password" : "current-password";
-  elements.authSubmit.textContent = signup ? interfaceText("Create account", "Создать аккаунт") : interfaceText("Sign in", "Войти");
-  elements.authLoginTab.setAttribute("aria-selected", String(!signup));
-  elements.authSignupTab.setAttribute("aria-selected", String(signup));
-  showFormError(elements.authError, "");
-}
-
 function showAuth() {
+  setAssistantDrawerOpen(false, { restoreFocus: false });
   elements.liveApp.hidden = true;
   elements.authGate.hidden = false;
-  setAuthMode(state.authMode);
 }
 
 function showApp() {
@@ -436,31 +409,37 @@ function showApp() {
   elements.liveApp.hidden = false;
 }
 
+let assistantDrawerReturnFocus;
+
+function setAssistantDrawerOpen(open, { restoreFocus = true } = {}) {
+  if (!elements.assistantDrawer) return;
+  if (open) assistantDrawerReturnFocus = document.activeElement;
+  elements.liveApp.classList.toggle("assistant-drawer-open", open);
+  elements.openAssistantDrawerButton.setAttribute("aria-expanded", String(open));
+  elements.assistantDrawer.setAttribute("aria-hidden", String(!open));
+  elements.assistantDrawer.inert = !open;
+  elements.assistantDrawerBackdrop.setAttribute("aria-hidden", String(!open));
+  if (open) {
+    elements.liveApp.classList.remove("rail-open");
+    requestAnimationFrame(() => {
+      if (!elements.assistantLiveInput.disabled) elements.assistantLiveInput.focus();
+      else elements.closeAssistantDrawerButton.focus();
+    });
+  } else if (restoreFocus && assistantDrawerReturnFocus?.isConnected) {
+    assistantDrawerReturnFocus.focus();
+  }
+}
+
 async function handleAuthSubmit(event) {
   event.preventDefault();
   showFormError(elements.authError, "");
-  setLoading(elements.authSubmit, true, state.authMode === "signup" ? interfaceText("Creating…", "Создаём…") : interfaceText("Signing in…", "Входим…"));
-  try {
-    const email = elements.authEmail.value.trim();
-    const password = elements.authPassword.value;
-    if (state.authMode === "signup" && password !== elements.authConfirmPassword.value) {
-      showFormError(elements.authError, interfaceText("Passwords do not match.", "Пароли не совпадают."));
-      elements.authConfirmPassword.focus();
-      return;
-    }
-    const result = await api(state.authMode === "signup" ? "/api/auth/signup" : "/api/auth/signin", {
-      method: "POST",
-      body: { email, password, displayName: elements.authName.value.trim() },
-    });
-    state.user = result.user;
-    await enterWorkspace();
-    elements.authForm.reset();
-    setAuthMode("login");
-  } catch (error) {
-    showFormError(elements.authError, errorMessage(error));
-  } finally {
-    setLoading(elements.authSubmit, false);
+  if (!state.config?.telegramAuthEnabled) {
+    showFormError(elements.authError, interfaceText("Telegram sign-in is not configured on this server.", "Вход через Telegram ещё не настроен на сервере."));
+    return;
   }
+  setLoading(elements.authSubmit, true, interfaceText("Opening Telegram…", "Открываем Telegram…"));
+  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.assign(`/api/auth/telegram/start?returnTo=${encodeURIComponent(returnTo)}`);
 }
 
 async function enterWorkspace() {
@@ -562,6 +541,7 @@ async function selectProject(projectId) {
   if (state.activeProjectId !== projectId) return;
   state.workspace = workspace;
   state.activeThreadId = workspace.threads?.[0]?.id || "";
+  await loadModels();
   elements.assistantProjectLabel.textContent = workspace.project.name;
   elements.addChatButton.disabled = !canEditProject() || !state.connections.some((connection) => connection.status === "connected");
   elements.projectSettingsButton.disabled = false;
@@ -1988,8 +1968,7 @@ async function openTaskSource(message) {
     showToast(interfaceText("The source chat is no longer attached to this project.", "Чат-источник больше не подключён к проекту."));
     return;
   }
-  elements.liveApp.dataset.mobileView = "chat";
-  $$('[data-live-mobile-view]').forEach((button) => button.classList.toggle("active", button.dataset.liveMobileView === "chat"));
+  setAssistantDrawerOpen(false, { restoreFocus: false });
   await selectProjectChat(projectChat.id, { sourceId: message.id });
   requestAnimationFrame(() => focusTelegramMessage(message.telegram_message_id));
 }
@@ -2078,7 +2057,7 @@ async function loadLinearCatalog() {
     if (state.activeProjectId !== projectId) return;
     populateLinearCatalog(result.catalog);
     elements.linearIntegrationStatus.textContent = linearDestinationReady(integration)
-      ? interfaceText("This destination is used whenever a task is published from Thread.", "Это назначение используется при каждой публикации задачи из Thread.")
+      ? interfaceText("This destination is used whenever a task is published from Telegram Tasks.", "Это назначение используется при каждой публикации задачи из Telegram Tasks.")
       : interfaceText("Connected. Choose the exact team and project for task delivery.", "Подключено. Выберите точную команду и проект для публикации задач.");
   } catch (error) {
     elements.linearIntegrationStatus.textContent = errorMessage(error);
@@ -2110,15 +2089,19 @@ function setAssistantView(view) {
 
 async function loadModels() {
   try {
-    const catalog = await fetch("/api/models").then((response) => response.json());
+    const [catalog, projectSettings] = await Promise.all([
+      fetch("/api/models").then((response) => response.json()),
+      state.activeProjectId ? api(`/api/projects/${state.activeProjectId}/ai/settings`) : Promise.resolve(null),
+    ]);
     if (catalog.error) throw new Error(catalog.error);
     state.models = catalog.models || [];
     elements.liveModelSelect.replaceChildren();
+    const defaultModel = projectSettings?.defaultModel || catalog.defaultModel;
     for (const model of state.models) {
       const option = document.createElement("option");
       option.value = model.apiName;
       option.textContent = model.displayName;
-      if (model.apiName === catalog.defaultModel) option.selected = true;
+      if (model.apiName === defaultModel) option.selected = true;
       elements.liveModelSelect.append(option);
     }
     elements.liveModelSelect.disabled = state.models.length === 0;
@@ -2313,7 +2296,7 @@ function assistantTaskTitle(content) {
 function downloadAssistantMarkdown(message) {
   const thread = state.workspace?.threads?.find((item) => item.id === message.thread_id);
   const markdown = [
-    `# ${thread?.title || "Thread research"}`,
+    `# ${thread?.title || "Telegram Tasks research"}`,
     `- Project: ${state.workspace?.project?.name || ""}`,
     `- Chat: ${activeProjectChat()?.telegram_chats?.title || ""}`,
     `- Model: ${message.model || "AI"}`,
@@ -2527,10 +2510,10 @@ function populateProjectSettings() {
   if (integration?.status === "connected") {
     elements.linearIntegrationStatus.textContent = interfaceText(
       linearDestinationReady(integration)
-        ? "This destination is used whenever a task is published from Thread."
+        ? "This destination is used whenever a task is published from Telegram Tasks."
         : `Connected to ${integration.external_workspace_name || "Linear"}. Choose a destination.`,
       linearDestinationReady(integration)
-        ? "Это назначение используется при каждой публикации задачи из Thread."
+        ? "Это назначение используется при каждой публикации задачи из Telegram Tasks."
         : `Подключено к ${integration.external_workspace_name || "Linear"}. Выберите назначение.`,
     );
     elements.linearDestination.hidden = false;
@@ -2661,22 +2644,26 @@ async function initialize() {
     }
     const session = await api("/api/auth/session").catch((error) => error.status === 401 ? null : Promise.reject(error));
     state.user = session?.user || null;
-    if (state.user) await enterWorkspace(); else showAuth();
+    if (state.user) {
+      await enterWorkspace();
+    } else {
+      showAuth();
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("telegramAuth") === "error") {
+        showFormError(elements.authError, params.get("message") || "Telegram sign-in failed.");
+      }
+    }
   } catch (error) {
     showAuth();
-    showFormError(elements.authError, interfaceText(`Thread could not start: ${errorMessage(error)}`, `Не удалось запустить Thread: ${errorMessage(error)}`));
+    showFormError(elements.authError, interfaceText(`Telegram Tasks could not start: ${errorMessage(error)}`, `Не удалось запустить Telegram Tasks: ${errorMessage(error)}`));
   }
 }
 
-elements.authForm.addEventListener("submit", handleAuthSubmit);
-elements.authLoginTab.addEventListener("click", () => setAuthMode("login"));
-elements.authSignupTab.addEventListener("click", () => setAuthMode("signup"));
+elements.authSubmit.addEventListener("click", handleAuthSubmit);
 elements.signOutButton.addEventListener("click", async () => {
   await api("/api/auth/signout", { method: "POST" });
   state.user = null;
   resetProjectView();
-  elements.authForm.reset();
-  setAuthMode("login");
   showAuth();
 });
 elements.newProjectButton.addEventListener("click", () => {
@@ -2780,10 +2767,17 @@ elements.connectLinearButton.addEventListener("click", async () => {
 elements.linearTeamSelect.addEventListener("change", () => populateLinearProjectOptions());
 elements.linearProjectSelect.addEventListener("change", () => renderLinearDestinationPath(linearIntegration(), true));
 elements.mobileRailButton.addEventListener("click", () => elements.liveApp.classList.toggle("rail-open"));
-$$('[data-live-mobile-view]').forEach((button) => button.addEventListener("click", () => {
-  elements.liveApp.dataset.mobileView = button.dataset.liveMobileView;
-  $$('[data-live-mobile-view]').forEach((candidate) => candidate.classList.toggle("active", candidate === button));
-}));
+elements.openAssistantDrawerButton.addEventListener("click", () => {
+  setAssistantDrawerOpen(!elements.liveApp.classList.contains("assistant-drawer-open"));
+});
+elements.closeAssistantDrawerButton.addEventListener("click", () => setAssistantDrawerOpen(false));
+elements.assistantDrawerBackdrop.addEventListener("click", () => setAssistantDrawerOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements.liveApp.classList.contains("assistant-drawer-open")) {
+    event.preventDefault();
+    setAssistantDrawerOpen(false);
+  }
+});
 
 loadPreferences();
 initialize();
