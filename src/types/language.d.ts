@@ -1711,6 +1711,33 @@ export interface LangPair {
   'EmbeddedMessageNoCaption': undefined;
   'ThreadAI': undefined;
   'ThreadAIDrawerTitle': undefined;
+  'ThreadAIContextTitle': undefined;
+  'ThreadAIContextDescription': undefined;
+  'ThreadAIContextRecentOption': undefined;
+  'ThreadAIContextRecentHint': undefined;
+  'ThreadAIContextByDateOption': undefined;
+  'ThreadAIContextByDateHint': undefined;
+  'ThreadAIContextSinceOption': undefined;
+  'ThreadAIContextSinceHint': undefined;
+  'ThreadAIContextUntilOption': undefined;
+  'ThreadAIContextUntilHint': undefined;
+  'ThreadAIContextRangeOption': undefined;
+  'ThreadAIContextRangeHint': undefined;
+  'ThreadAIContextEntireOption': undefined;
+  'ThreadAIContextEntireHint': undefined;
+  'ThreadAIContextStartDate': undefined;
+  'ThreadAIContextEndDate': undefined;
+  'ThreadAIContextChooseDate': undefined;
+  'ThreadAIContextSelectDate': undefined;
+  'ThreadAIContextSelectRange': undefined;
+  'ThreadAIContextChooseRange': undefined;
+  'ThreadAIContextSinceTab': undefined;
+  'ThreadAIContextUntilTab': undefined;
+  'ThreadAIContextRangeTab': undefined;
+  'ThreadAIContextFrom': undefined;
+  'ThreadAIContextTo': undefined;
+  'ThreadAIContextApply': undefined;
+  'ThreadAIContextLoading': undefined;
   'ThreadAIChatNotConnected': undefined;
   'ThreadAIChat': undefined;
   'ThreadAITasks': undefined;
@@ -3002,6 +3029,28 @@ export interface LangPairWithVariables<V = LangVariable> {
     'level': V;
   };
   'ThreadAIContextMessages': {
+    'count': V;
+  };
+  'ThreadAIContextRecent': {
+    'count': V;
+  };
+  'ThreadAIContextSinceSummary': {
+    'count': V;
+    'date': V;
+  };
+  'ThreadAIContextUntilSummary': {
+    'count': V;
+    'date': V;
+  };
+  'ThreadAIContextRangeSummary': {
+    'count': V;
+    'from': V;
+    'to': V;
+  };
+  'ThreadAIContextEntireSummary': {
+    'count': V;
+  };
+  'ThreadAIContextLimited': {
     'count': V;
   };
   'ThreadAIOpenCitation': {
