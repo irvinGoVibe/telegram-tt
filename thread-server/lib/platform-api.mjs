@@ -566,7 +566,30 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
   if (messagesMatch && request.method === "GET") {
     const projectId = asId(messagesMatch[1], "project");
     const chatId = asId(url.searchParams.get("chatId"), "project chat");
-    const rows = await client.query(api.telegram.listMessages, { sessionHash, projectId, chatId, limit: clampInteger(url.searchParams.get("limit"), 1, 1_000, 250) });
+    const sourceId = clean(url.searchParams.get("sourceId"), 100);
+    const rows = await client.query(api.telegram.listMessages, {
+      sessionHash,
+      projectId,
+      chatId,
+      limit: clampInteger(url.searchParams.get("limit"), 1, 1_000, 250),
+      sourceId: sourceId ? asId(sourceId, "source message") : undefined,
+    });
+    sendJson(response, 200, { messages: rows.map((row) => mapMessage(row, projectId)) });
+    return true;
+  }
+
+  const messageSearchMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/messages\/search$/);
+  if (messageSearchMatch && request.method === "GET") {
+    const projectId = asId(messageSearchMatch[1], "project");
+    const chatId = asId(url.searchParams.get("chatId"), "project chat");
+    const search = clean(url.searchParams.get("q"), 200);
+    const rows = search ? await client.query(api.telegram.searchMessages, {
+      sessionHash,
+      projectId,
+      chatId,
+      search,
+      limit: clampInteger(url.searchParams.get("limit"), 1, 100, 50),
+    }) : [];
     sendJson(response, 200, { messages: rows.map((row) => mapMessage(row, projectId)) });
     return true;
   }

@@ -156,7 +156,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_chat_message", ["chatId", "telegramMessageId"])
-    .index("by_chat_sent_at", ["chatId", "sentAt"]),
+    .index("by_chat_sent_at", ["chatId", "sentAt"])
+    .searchIndex("search_text", { searchField: "text", filterFields: ["chatId"] }),
 
   attachments: defineTable({
     messageId: v.id("messages"),

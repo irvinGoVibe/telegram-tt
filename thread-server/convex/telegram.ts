@@ -266,14 +266,63 @@ export const upsertMessages = mutation({
 });
 
 export const listMessages = query({
-  args: { sessionHash: v.string(), projectId: v.id("projects"), chatId: v.id("chats"), limit: v.optional(v.number()) },
+  args: {
+    sessionHash: v.string(),
+    projectId: v.id("projects"),
+    chatId: v.id("chats"),
+    limit: v.optional(v.number()),
+    sourceId: v.optional(v.id("messages")),
+  },
   handler: async (ctx, args) => {
     await requireProjectChatAccess(ctx, args.sessionHash, args.projectId, args.chatId);
     const limit = Math.min(Math.max(args.limit || 250, 1), 1_000);
-    const messages = (await ctx.db.query("messages").withIndex("by_chat_sent_at", (q) => q.eq("chatId", args.chatId)).order("desc").take(limit)).reverse();
+    let messages;
+    if (args.sourceId) {
+      const source = await ctx.db.get(args.sourceId);
+      if (!source || source.chatId !== args.chatId) throw new Error("Source message is not available in this project chat.");
+      const beforeLimit = Math.max(1, Math.floor(limit / 2));
+      const before = (await ctx.db.query("messages")
+        .withIndex("by_chat_sent_at", (q) => q.eq("chatId", args.chatId).lte("sentAt", source.sentAt))
+        .order("desc")
+        .take(beforeLimit))
+        .reverse();
+      const after = await ctx.db.query("messages")
+        .withIndex("by_chat_sent_at", (q) => q.eq("chatId", args.chatId).gte("sentAt", source.sentAt))
+        .order("asc")
+        .take(Math.max(1, limit - before.length + 1));
+      messages = [...new Map([...before, source, ...after].map((message) => [String(message._id), message])).values()]
+        .sort((left, right) => left.sentAt - right.sentAt)
+        .slice(0, limit);
+    } else {
+      messages = (await ctx.db.query("messages")
+        .withIndex("by_chat_sent_at", (q) => q.eq("chatId", args.chatId))
+        .order("desc")
+        .take(limit))
+        .reverse();
+    }
     return await Promise.all(messages.map(async (message) => ({
       ...message,
       attachments: await ctx.db.query("attachments").withIndex("by_message", (q) => q.eq("messageId", message._id)).collect(),
     })));
+  },
+});
+
+export const searchMessages = query({
+  args: {
+    sessionHash: v.string(),
+    projectId: v.id("projects"),
+    chatId: v.id("chats"),
+    search: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectChatAccess(ctx, args.sessionHash, args.projectId, args.chatId);
+    const search = args.search.trim().slice(0, 200);
+    if (!search) return [];
+    const limit = Math.min(Math.max(args.limit || 50, 1), 100);
+    const messages = await ctx.db.query("messages")
+      .withSearchIndex("search_text", (q) => q.search("text", search).eq("chatId", args.chatId))
+      .take(limit);
+    return messages.sort((left, right) => left.sentAt - right.sentAt);
   },
 });
