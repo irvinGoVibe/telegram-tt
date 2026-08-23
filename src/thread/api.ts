@@ -113,10 +113,10 @@ export async function createClientTask(
   projectId: string,
   title: string,
   description: string,
-  source: ThreadSource,
+  sources: ThreadSource[],
 ) {
   return request<{ task: ThreadTask }>(`/api/projects/${encodeURIComponent(projectId)}/client-tasks`, {
-    method: 'POST', body: JSON.stringify({ title, description, sources: [source] }),
+    method: 'POST', body: JSON.stringify({ title, description, sources: sources.slice(0, 20) }),
   });
 }
 
