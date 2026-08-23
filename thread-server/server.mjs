@@ -6,7 +6,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handlePlatformApi } from "./lib/platform-api.mjs";
 import { api, convexClient, convexConfig, requireUser } from "./lib/convex.mjs";
-import { syncProjectChatWindow } from "./lib/telegram-sync.mjs";
 
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,10 +14,12 @@ for (const envFile of [".env.local", ".env"]) {
   if (existsSync(envPath) && typeof process.loadEnvFile === "function") process.loadEnvFile(envPath);
 }
 
+const BUILT_CLIENT_ROOT = path.resolve(APP_ROOT, "../dist");
 const PUBLIC_ROOT = process.env.THREAD_WEB_ROOT
   ? path.resolve(APP_ROOT, process.env.THREAD_WEB_ROOT)
-  : path.join(APP_ROOT, "public");
-const IS_INTEGRATED_CLIENT = Boolean(process.env.THREAD_WEB_ROOT);
+  : (existsSync(path.join(BUILT_CLIENT_ROOT, "index.html")) ? BUILT_CLIENT_ROOT : path.join(APP_ROOT, "public"));
+const IS_INTEGRATED_CLIENT = PUBLIC_ROOT === BUILT_CLIENT_ROOT
+  || Boolean(process.env.THREAD_WEB_ROOT && PUBLIC_ROOT !== path.join(APP_ROOT, "public"));
 const STATIC_ALIASES = new Map([
   ["/vendor/fflate.js", path.join(APP_ROOT, "node_modules", "fflate", "esm", "browser.js")],
 ]);
@@ -695,33 +696,6 @@ export async function uploadR2File(image, signal) {
   throw error;
 }
 
-async function persistAssistantImages({ client, sessionHash, projectId, messageId, images }) {
-  const persisted = [];
-  for (const image of images) {
-    const uploadUrl = await client.mutation(api.storage.generateUploadUrl, { sessionHash, projectId });
-    const upload = await fetch(uploadUrl, {
-      method: "POST",
-      headers: { "content-type": image.mimeType },
-      body: image.buffer,
-    });
-    if (!upload.ok) throw new Error(`Convex Storage returned ${upload.status}.`);
-    const { storageId } = await upload.json();
-    if (!storageId) throw new Error("Convex Storage did not return a storage ID.");
-    const attachment = await client.mutation(api.assistant.saveAssistantAttachment, {
-      sessionHash,
-      projectId,
-      assistantMessageId: messageId,
-      storageId,
-      type: "image",
-      fileName: image.fileName,
-      mimeType: image.mimeType,
-      size: image.buffer.length,
-    });
-    persisted.push({ ...image, id: attachment._id });
-  }
-  return persisted;
-}
-
 async function getR2Models() {
   if (r2ModelsCache.value && r2ModelsCache.expiresAt > Date.now()) return r2ModelsCache.value;
   const controller = new AbortController();
@@ -851,6 +825,25 @@ function entityLinks(entities) {
     .filter(Boolean);
 }
 
+export function ephemeralTelegramMessages(values, max = 1_000) {
+  return (Array.isArray(values) ? values : []).slice(-max).map((message) => {
+    const telegramMessageId = Number(message.telegramMessageId ?? message.telegram_message_id ?? message.id);
+    const sentAtValue = message.sentAt ?? message.sent_at ?? message.date;
+    const parsedSentAt = typeof sentAtValue === "number" ? sentAtValue : Date.parse(sentAtValue);
+    return {
+      _id: cleanLine(message._id ?? message.id ?? `telegram:${telegramMessageId}`, 200),
+      telegramMessageId,
+      senderName: cleanLine(message.senderName ?? message.sender_name ?? message.from, 300) || "Telegram user",
+      text: String(message.text || "").slice(0, 12_000),
+      sentAt: Number.isFinite(parsedSentAt) ? parsedSentAt : Date.now(),
+      replyToMessageId: Number(message.replyToMessageId ?? message.reply_to_message_id ?? message.replyTo) || undefined,
+      telegramUrl: cleanLine(message.telegramUrl ?? message.telegram_url, 4_000) || undefined,
+      links: Array.isArray(message.links) ? message.links.map((link) => cleanLine(link, 4_000)).filter(Boolean).slice(0, 8) : [],
+      media: cleanLine(message.media, 500),
+    };
+  }).filter((message) => Number.isFinite(message.telegramMessageId) && message.telegramMessageId > 0);
+}
+
 async function handleTaskDraft({ request, response, url }) {
   if (url.pathname !== "/api/task-drafts" || request.method !== "POST") return false;
   const { client, sessionHash } = await requireUser(request);
@@ -866,44 +859,18 @@ async function handleTaskDraft({ request, response, url }) {
     return true;
   }
 
-  const anchorContext = await client.query(api.tasks.taskDraftAnchors, {
-    sessionHash,
-    projectId,
-    chatId,
-    anchorMessageIds,
-    rangeDays,
-  });
-  let syncResult = null;
-  let syncWarning = "";
-  try {
-    syncResult = await syncProjectChatWindow({
-      sessionHash,
-      projectId,
-      chatId,
-      startAt: anchorContext.startAt,
-      endAt: anchorContext.endAt,
-    });
-  } catch (error) {
-    syncWarning = cleanLine(error?.errorMessage || error?.message || "Telegram history could not be refreshed.", 500);
+  const scope = await client.query(api.projects.taskDraftScope, { sessionHash, projectId, chatId });
+  const suppliedMessages = ephemeralTelegramMessages(body.messages, TASK_DRAFT_MAX_MESSAGES);
+  const anchorSet = new Set(anchorMessageIds);
+  const anchors = suppliedMessages.filter((message) => anchorSet.has(String(message._id)));
+  if (!anchors.length) {
+    sendJson(response, 400, { error: "The selected Telegram messages are no longer available in this browser session." });
+    return true;
   }
-
-  const allMessages = [];
-  let cursor = null;
-  let contextDone = false;
-  while (!contextDone && allMessages.length < TASK_DRAFT_MAX_MESSAGES) {
-    const page = await client.query(api.tasks.taskDraftContextPage, {
-      sessionHash,
-      projectId,
-      chatId,
-      anchorMessageIds,
-      rangeDays,
-      paginationOpts: { numItems: Math.min(250, TASK_DRAFT_MAX_MESSAGES - allMessages.length), cursor },
-    });
-    allMessages.push(...page.page);
-    contextDone = page.isDone;
-    cursor = page.continueCursor;
-  }
-  const context = { ...anchorContext, messages: allMessages, truncated: !contextDone };
+  const startAt = Math.min(...anchors.map((message) => message.sentAt)) - rangeDays * 24 * 60 * 60 * 1_000;
+  const endAt = Math.max(...anchors.map((message) => message.sentAt));
+  const allMessages = suppliedMessages.filter((message) => message.sentAt >= startAt && message.sentAt <= endAt);
+  const context = { ...scope, anchors, messages: allMessages, startAt, endAt, truncated: false };
   if (!allMessages.length) {
     sendJson(response, 409, { error: "No Telegram messages are available in the selected 10-day context." });
     return true;
@@ -980,9 +947,10 @@ async function handleTaskDraft({ request, response, url }) {
       scanned: allMessages.length,
       candidates: candidates.length,
       cited: sourceMessages.length,
-      truncated: Boolean(context.truncated || syncResult?.truncated),
+      truncated: Boolean(context.truncated),
       model: result.model,
-      syncWarning: syncWarning || null,
+      syncWarning: null,
+      storage: "ephemeral",
     },
   });
   return true;
@@ -1007,21 +975,15 @@ async function handleProjectAssistant({ request, response, url }) {
     return true;
   }
 
-  const context = await client.query(api.assistant.context, { sessionHash, projectId, threadId, chatId });
-  const { project, thread, chat, messages: telegramRows, history: historyRows } = context;
+  const context = await client.query(api.assistant.scope, { sessionHash, projectId, threadId, chatId });
+  const { project, thread, chat, history: historyRows } = context;
+  const telegramRows = ephemeralTelegramMessages(body.context?.messages, 2_000);
   if (!telegramRows.length) {
     sendJson(response, 409, { error: "This chat has not synced any messages yet. Refresh it and try again." });
     return true;
   }
 
-  const userMessage = await client.mutation(api.assistant.addUserMessage, { sessionHash, projectId, threadId, content: question });
-  const persistedImages = images.length ? await persistAssistantImages({
-    client,
-    sessionHash,
-    projectId,
-    messageId: userMessage._id,
-    images,
-  }) : [];
+  await client.mutation(api.assistant.addUserMessage, { sessionHash, projectId, threadId, content: question });
 
   const messages = telegramRows.map((message) => ({
     id: String(message.telegramMessageId),
@@ -1054,7 +1016,7 @@ async function handleProjectAssistant({ request, response, url }) {
     request.once("aborted", abortAttachments);
     let r2Attachments = [];
     try {
-      r2Attachments = await Promise.all(persistedImages.map(async (image) => {
+      r2Attachments = await Promise.all(images.map(async (image) => {
         const fileId = await uploadR2File(image, attachmentController.signal);
         return { type: 2, mime_type: image.mimeType, name: image.fileName, file_id: fileId, file_size: image.buffer.length };
       }));
@@ -1095,7 +1057,6 @@ async function handleProjectAssistant({ request, response, url }) {
     sessionHash,
     projectId,
     threadId,
-    chatId,
     content: result.answer,
     model: result.model,
     citationTelegramMessageIds: referencedIds.map(Number).filter(Number.isFinite),

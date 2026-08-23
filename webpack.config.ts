@@ -25,6 +25,7 @@ const {
   APP_ENV = 'production',
   APP_MOCKED_CLIENT = '',
 } = process.env;
+const IS_DEV_SERVER = process.argv.includes('serve') && process.env.DISABLE_WATCH_FILE_PLUGIN !== '1';
 
 const DEFAULT_APP_TITLE = `Telegram${APP_ENV !== 'production' ? ' Beta' : ''}`;
 
@@ -251,7 +252,7 @@ export default function createConfig(
         open: false,
         extensions: [new WebpackContextExtension()],
       }),
-      new WatchFilePlugin({
+      ...(IS_DEV_SERVER ? [new WatchFilePlugin({
         rules: [
           {
             files: 'src/assets/localization/fallback.strings',
@@ -268,7 +269,7 @@ export default function createConfig(
             sharedAction: true,
           },
         ],
-      }),
+      })] : []),
     ],
 
     devtool: 'source-map',

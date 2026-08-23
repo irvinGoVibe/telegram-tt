@@ -45,6 +45,7 @@ export default defineSchema({
 
   projects: defineTable({
     ownerId: v.id("users"),
+    workspaceKind: v.optional(v.string()),
     name: v.string(),
     description: v.optional(v.string()),
     instructions: v.string(),
@@ -224,6 +225,7 @@ export default defineSchema({
     authorUserId: v.optional(v.id("users")),
     content: v.string(),
     model: v.optional(v.string()),
+    citationTelegramMessageIds: v.optional(v.array(v.number())),
     createdAt: v.number(),
   }).index("by_thread", ["threadId", "createdAt"]),
 

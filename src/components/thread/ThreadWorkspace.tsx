@@ -1,4 +1,4 @@
-import type { ChangeEvent, FormEvent } from 'react';
+import type { ChangeEvent } from 'react';
 import type { FC } from '../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useState,
@@ -6,7 +6,6 @@ import {
 
 import type {
   LinearCatalog,
-  ThreadProject,
   ThreadTask,
   ThreadUser,
   ThreadWorkspacePayload,
@@ -17,12 +16,10 @@ import {
   beginLinearConnection,
   beginThreadTelegramSignIn,
   createClientTask,
-  createThreadProject,
   getLinearCatalog,
   getThreadSession,
   getThreadTelegramAuthConfig,
   getThreadWorkspace,
-  listThreadProjects,
   publishTaskToLinear,
   setLinearDestination,
   signOutFromThread,
@@ -40,8 +37,6 @@ import TextArea from '../ui/TextArea';
 
 import './ThreadWorkspace.scss';
 
-const ACTIVE_PROJECT_KEY = 'telegram-thread.active-project';
-
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong.';
 }
@@ -51,17 +46,13 @@ const ThreadWorkspace: FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [user, setUser] = useState<ThreadUser>();
-  const [projects, setProjects] = useState<ThreadProject[]>([]);
-  const [activeProjectId, setActiveProjectId] = useState('');
   const [workspace, setWorkspace] = useState<ThreadWorkspacePayload>();
   const [sources, setSources] = useState<ThreadSource[]>([]);
+  const [activeChat, setActiveChat] = useState<{ id: string; title: string }>();
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [createdTask, setCreatedTask] = useState<ThreadTask>();
   const [isTelegramAuthEnabled, setIsTelegramAuthEnabled] = useState(false);
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
-  const [projectName, setProjectName] = useState('');
-  const [projectDescription, setProjectDescription] = useState('');
   const [catalog, setCatalog] = useState<LinearCatalog>();
   const [linearTeamId, setLinearTeamId] = useState('');
   const [linearProjectId, setLinearProjectId] = useState('');
@@ -73,24 +64,9 @@ const ThreadWorkspace: FC = () => {
     (project) => project.teamIds.includes(linearTeamId),
   ) || [], [catalog, linearTeamId]);
 
-  const loadWorkspace = useLastCallback(async (projectId: string) => {
-    if (!projectId) {
-      setWorkspace(undefined);
-      return;
-    }
-    const nextWorkspace = await getThreadWorkspace(projectId);
+  const loadWorkspace = useLastCallback(async () => {
+    const nextWorkspace = await getThreadWorkspace();
     setWorkspace(nextWorkspace);
-  });
-
-  const loadProjects = useLastCallback(async (preferredProjectId?: string) => {
-    const result = await listThreadProjects();
-    setProjects(result.projects);
-    const storedProjectId = preferredProjectId || localStorage.getItem(ACTIVE_PROJECT_KEY) || '';
-    const nextProjectId = result.projects.some(({ id }) => id === storedProjectId)
-      ? storedProjectId : (result.projects[0]?.id || '');
-    setActiveProjectId(nextProjectId);
-    if (nextProjectId) localStorage.setItem(ACTIVE_PROJECT_KEY, nextProjectId);
-    await loadWorkspace(nextProjectId);
   });
 
   const bootstrap = useLastCallback(async () => {
@@ -104,8 +80,7 @@ const ThreadWorkspace: FC = () => {
       setIsTelegramAuthEnabled(authConfig.enabled);
       setUser(session.user || undefined);
       if (session.user) {
-        const callbackProject = new URLSearchParams(window.location.search).get('project') || undefined;
-        await loadProjects(callbackProject);
+        await loadWorkspace();
       }
     } catch (nextError) {
       setError(errorMessage(nextError));
@@ -122,6 +97,7 @@ const ThreadWorkspace: FC = () => {
       setError('');
       if (nextSources?.length) {
         setSources(nextSources);
+        setActiveChat({ id: nextSources[0].telegramChatId, title: nextSources[0].chatTitle });
         setTaskTitle(buildThreadTaskTitle(nextSources));
         setTaskDescription(buildThreadTaskDescription(nextSources));
       }
@@ -138,7 +114,6 @@ const ThreadWorkspace: FC = () => {
       params.delete('linear');
       params.delete('telegramAuth');
       params.delete('message');
-      params.delete('project');
       const query = params.toString();
       const cleanLocation = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
       window.history.replaceState({}, '', cleanLocation);
@@ -156,50 +131,8 @@ const ThreadWorkspace: FC = () => {
     beginThreadTelegramSignIn();
   });
 
-  const handleProjectChange = useLastCallback(async (event: ChangeEvent<HTMLSelectElement>) => {
-    const projectId = event.currentTarget.value;
-    setActiveProjectId(projectId);
-    setCatalog(undefined);
-    localStorage.setItem(ACTIVE_PROJECT_KEY, projectId);
-    setIsLoading(true);
-    setError('');
-    try {
-      await loadWorkspace(projectId);
-    } catch (nextError) {
-      setError(errorMessage(nextError));
-    } finally {
-      setIsLoading(false);
-    }
-  });
-
-  const submitProject = useLastCallback(async () => {
-    if (isLoading) return;
-    if (!projectName.trim()) {
-      setError('Enter a project name.');
-      return;
-    }
-    setIsLoading(true);
-    setError('');
-    try {
-      const result = await createThreadProject(projectName, projectDescription);
-      setProjectName('');
-      setProjectDescription('');
-      setIsCreatingProject(false);
-      await loadProjects(result.project.id);
-    } catch (nextError) {
-      setError(errorMessage(nextError));
-    } finally {
-      setIsLoading(false);
-    }
-  });
-
-  const handleCreateProject = useLastCallback((event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void submitProject();
-  });
-
   const handleCreateTask = useLastCallback(async (publishToLinear: boolean) => {
-    if (isLoading || !sources.length || !activeProjectId) return;
+    if (isLoading || !sources.length) return;
     if (!taskTitle.trim()) {
       setError('Enter a task title.');
       return;
@@ -207,7 +140,7 @@ const ThreadWorkspace: FC = () => {
     setIsLoading(true);
     setError('');
     try {
-      const result = await createClientTask(activeProjectId, taskTitle, taskDescription, sources);
+      const result = await createClientTask(taskTitle, taskDescription, sources);
       let nextTask = result.task;
       if (publishToLinear) {
         const published = await publishTaskToLinear(result.task.id);
@@ -215,7 +148,7 @@ const ThreadWorkspace: FC = () => {
       }
       setCreatedTask(nextTask);
       setSources([]);
-      await loadWorkspace(activeProjectId);
+      await loadWorkspace();
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {
@@ -224,12 +157,10 @@ const ThreadWorkspace: FC = () => {
   });
 
   const handleConnectLinear = useLastCallback(async () => {
-    if (!activeProjectId) return;
     setIsLoading(true);
     setError('');
     try {
-      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
-      const { authorizeUrl } = await beginLinearConnection(activeProjectId);
+      const { authorizeUrl } = await beginLinearConnection();
       window.location.assign(authorizeUrl);
     } catch (nextError) {
       setError(errorMessage(nextError));
@@ -238,11 +169,10 @@ const ThreadWorkspace: FC = () => {
   });
 
   const handleLoadCatalog = useLastCallback(async () => {
-    if (!activeProjectId) return;
     setIsLoading(true);
     setError('');
     try {
-      const nextCatalog = await getLinearCatalog(activeProjectId);
+      const nextCatalog = await getLinearCatalog();
       setCatalog(nextCatalog);
       const nextTeamId = linearIntegration?.config.teamId || nextCatalog.teams[0]?.id || '';
       setLinearTeamId(nextTeamId);
@@ -263,13 +193,13 @@ const ThreadWorkspace: FC = () => {
   });
 
   const handleSaveDestination = useLastCallback(async () => {
-    if (!activeProjectId || !linearTeamId || !linearProjectId) return;
+    if (!linearTeamId || !linearProjectId) return;
     setIsLoading(true);
     setError('');
     try {
-      await setLinearDestination(activeProjectId, linearTeamId, linearProjectId);
+      await setLinearDestination(linearTeamId, linearProjectId);
       setCatalog(undefined);
-      await loadWorkspace(activeProjectId);
+      await loadWorkspace();
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {
@@ -282,7 +212,6 @@ const ThreadWorkspace: FC = () => {
     try {
       await signOutFromThread();
       setUser(undefined);
-      setProjects([]);
       setWorkspace(undefined);
     } finally {
       setIsLoading(false);
@@ -306,38 +235,6 @@ const ThreadWorkspace: FC = () => {
         <small className="ThreadWorkspace-authHint">Telegram sign-in is not configured on this server yet.</small>
       )}
     </div>
-  );
-
-  const renderProjectCreator = () => (
-    <form action="" className="ThreadWorkspace-projectForm" onSubmit={handleCreateProject}>
-      <div>
-        <strong>New project</strong>
-        <p>Group the chats and Linear work that belong to one outcome.</p>
-      </div>
-      <label className="input-group touched with-label">
-        <input
-          className="form-control"
-          value={projectName}
-          required
-          maxLength={120}
-          onChange={(event) => setProjectName(event.currentTarget.value)}
-        />
-        <span>Project name</span>
-      </label>
-      <TextArea
-        value={projectDescription}
-        label="Description"
-        maxLength={4000}
-        noReplaceNewlines
-        onChange={(event) => setProjectDescription(event.currentTarget.value)}
-      />
-      <div className="ThreadWorkspace-rowEnd">
-        {projects.length > 0 && (
-          <Button color="translucent" onClick={() => setIsCreatingProject(false)}>Cancel</Button>
-        )}
-        <Button isLoading={isLoading} onClick={() => void submitProject()}>Create project</Button>
-      </div>
-    </form>
   );
 
   const renderLinear = () => (
@@ -456,14 +353,17 @@ const ThreadWorkspace: FC = () => {
     </section>
   );
 
+  const visibleTasks = workspace?.tasks.filter((task) => !activeChat
+    || task.client_sources?.some((source) => source.telegram_chat_id === activeChat.id)) || [];
+
   const renderTasks = () => (
     <section className="ThreadWorkspace-tasks">
       <div className="ThreadWorkspace-sectionHeading">
         <div>
-          <span>Project trail</span>
-          <strong>Recent tasks</strong>
+          <span>{activeChat?.title || 'All chats'}</span>
+          <strong>Recent Linear tasks</strong>
         </div>
-        <span>{workspace?.tasks.length || 0}</span>
+        <span>{visibleTasks.length}</span>
       </div>
       {createdTask && (
         <div className="ThreadWorkspace-success">
@@ -477,7 +377,7 @@ const ThreadWorkspace: FC = () => {
           )}
         </div>
       )}
-      {workspace?.tasks.length ? workspace.tasks.slice(0, 8).map((task) => (
+      {visibleTasks.length ? visibleTasks.slice(0, 8).map((task) => (
         <a
           key={task.id}
           className="ThreadWorkspace-taskRow"
@@ -502,39 +402,21 @@ const ThreadWorkspace: FC = () => {
     </section>
   );
 
-  const renderWorkspace = () => {
-    if (isCreatingProject || !projects.length) return renderProjectCreator();
-    return (
-      <div className="ThreadWorkspace-body">
-        <div className="ThreadWorkspace-projectBar">
-          <Select
-            id="threadProject"
-            label="Active project"
-            value={activeProjectId}
-            hasArrow
-            onChange={handleProjectChange}
-          >
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </Select>
-          <Button
-            round
-            size="smaller"
-            color="translucent"
-            ariaLabel="Create project"
-            onClick={() => setIsCreatingProject(true)}
-          >
-            <Icon name="add" />
-          </Button>
-        </div>
-        {renderTaskComposer()}
-        {renderLinear()}
-        {renderTasks()}
-        <button className="ThreadWorkspace-signOut" type="button" onClick={handleSignOut}>
-          Sign out of Telegram Tasks
-        </button>
+  const renderWorkspace = () => (
+    <div className="ThreadWorkspace-body">
+      <div className="ThreadWorkspace-chatContext">
+        <span>Telegram chat</span>
+        <strong>{activeChat?.title || 'Open a message to create a task'}</strong>
+        <small>Each chat is its own task stream. Linear and AI settings are shared.</small>
       </div>
-    );
-  };
+      {renderTaskComposer()}
+      {renderLinear()}
+      {renderTasks()}
+      <button className="ThreadWorkspace-signOut" type="button" onClick={handleSignOut}>
+        Sign out of Telegram Tasks
+      </button>
+    </div>
+  );
 
   return (
     <Modal
@@ -543,7 +425,7 @@ const ThreadWorkspace: FC = () => {
       hasCloseButton
       className="ThreadWorkspace"
       contentClassName="ThreadWorkspace-content"
-      title="Projects & Linear"
+      title="Chat tasks & Linear"
       dialogStyle="width: min(46rem, calc(100vw - 2rem));"
     >
       {error && <div className="ThreadWorkspace-error" role="alert">{error}</div>}

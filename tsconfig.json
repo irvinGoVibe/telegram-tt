@@ -38,5 +38,9 @@
     ".fantasticonrc.cjs",
     ".github/workflows/*.js",
     "deploy/*.js"
+  ],
+  "exclude": [
+    "**/* 2.*",
+    "**/* 2"
   ]
 }

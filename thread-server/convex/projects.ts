@@ -60,6 +60,38 @@ export const createProject = mutation({
   },
 });
 
+// Compatibility bridge while the persisted project model is being retired.
+// The product exposes one account workspace; Telegram chats are the visible
+// workspaces and carry their own identity in task source snapshots.
+export const getOrCreateAccountWorkspace = mutation({
+  args: { sessionHash: v.string() },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, args.sessionHash);
+    const owned = await ctx.db.query("projects")
+      .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
+      .collect();
+    const current = owned.find((project) => project.workspaceKind === "account")
+      || owned.sort((left, right) => right.updatedAt - left.updatedAt)[0];
+    if (current) {
+      if (current.workspaceKind !== "account") {
+        await ctx.db.patch(current._id, { workspaceKind: "account", updatedAt: Date.now() });
+      }
+      return await ctx.db.get(current._id);
+    }
+    const now = Date.now();
+    const projectId = await ctx.db.insert("projects", {
+      ownerId: user._id,
+      workspaceKind: "account",
+      name: "Telegram chats",
+      instructions: "",
+      responseLanguage: "auto",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return await ctx.db.get(projectId);
+  },
+});
+
 export const updateProject = mutation({
   args: {
     sessionHash: v.string(),
@@ -110,12 +142,23 @@ export const getWorkspace = query({
     const threads = await ctx.db.query("assistantThreads").withIndex("by_project", (q) => q.eq("projectId", args.projectId)).order("desc").collect();
     return {
       project: access.project,
-      members: await memberRows(ctx, args.projectId),
       chats,
       tasks: await taskRows(ctx, args.projectId),
       threads,
       integrations: await integrationRows(ctx, args.projectId),
     };
+  },
+});
+
+export const taskDraftScope = query({
+  args: { sessionHash: v.string(), projectId: v.id("projects"), chatId: v.id("chats") },
+  handler: async (ctx, args) => {
+    const { project } = await requireProjectAccess(ctx, args.sessionHash, args.projectId, editableRoles);
+    const link = await ctx.db.query("projectChats")
+      .withIndex("by_project_chat", (q) => q.eq("projectId", args.projectId).eq("chatId", args.chatId)).unique();
+    const chat = link ? await ctx.db.get(args.chatId) : null;
+    if (!chat) throw new Error("Project chat not found.");
+    return { project, chat };
   },
 });
 

@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import {
   api,
   asId,
@@ -274,6 +273,12 @@ async function workspacePayload(client, sessionHash, projectId) {
   };
 }
 
+async function accountWorkspace(client, sessionHash) {
+  const workspace = await client.mutation(api.projects.getOrCreateAccountWorkspace, { sessionHash });
+  if (!workspace) throw new Error("Workspace is unavailable.");
+  return workspace;
+}
+
 function sendRedirect(response, url, headers = {}) {
   if (!url) {
     response.writeHead(404, { "cache-control": "no-store" });
@@ -311,13 +316,14 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
       provider: "convex",
       telegramEnabled: Boolean(process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH && process.env.SESSION_ENCRYPTION_KEY),
       telegramAuthEnabled: telegramOidcConfig(request).enabled,
+      telegramContentStorage: "ephemeral",
       linearEnabled: linearConfig().enabled,
       linearMcpUrl: linearConfig().mcpUrl,
     });
     return true;
   }
 
-  const candidateRoute = ["/api/auth/", "/api/platform/", "/api/projects", "/api/telegram/", "/api/invites/", "/api/tasks/", "/api/assistant/", "/api/integrations/"].some((prefix) => url.pathname.startsWith(prefix));
+  const candidateRoute = ["/api/auth/", "/api/platform/", "/api/workspace", "/api/projects/", "/api/telegram/", "/api/tasks", "/api/assistant/", "/api/integrations/"].some((prefix) => url.pathname.startsWith(prefix));
   if (!candidateRoute) return false;
   const client = convexClient();
 
@@ -397,7 +403,7 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
     return true;
   }
 
-  const protectedRoute = ["/api/platform/", "/api/projects", "/api/telegram/", "/api/invites/", "/api/tasks/", "/api/assistant/", "/api/integrations/"].some((prefix) => url.pathname.startsWith(prefix));
+  const protectedRoute = ["/api/platform/", "/api/workspace", "/api/projects/", "/api/telegram/", "/api/tasks", "/api/assistant/", "/api/integrations/"].some((prefix) => url.pathname.startsWith(prefix));
   if (!protectedRoute) return false;
   const { user, sessionHash } = await requireUser(request);
 
@@ -406,29 +412,6 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
       user: { id: user.id, email: user.email || "" },
       profile: { id: user.id, email: user.email || "", display_name: user.displayName, avatar_url: user.avatarUrl || null },
     });
-    return true;
-  }
-
-  const projectAiSettingsMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/ai\/settings$/);
-  if (projectAiSettingsMatch && request.method === "GET") {
-    const result = await client.query(api.aiSettings.getProjectSettings, {
-      sessionHash,
-      projectId: asId(projectAiSettingsMatch[1], "project"),
-    });
-    sendJson(response, 200, projectAiSettingsPayload(result.settings, result.role));
-    return true;
-  }
-
-  if (projectAiSettingsMatch && request.method === "PUT") {
-    const body = await readJsonBody(request);
-    const projectId = asId(projectAiSettingsMatch[1], "project");
-    await client.mutation(api.aiSettings.setProjectDefaultModel, {
-      sessionHash,
-      projectId,
-      defaultModel: clean(body.defaultModel, 120),
-    });
-    const result = await client.query(api.aiSettings.getProjectSettings, { sessionHash, projectId });
-    sendJson(response, 200, projectAiSettingsPayload(result.settings, result.role));
     return true;
   }
 
@@ -444,52 +427,42 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
         state: url.searchParams.get("state"),
         code: url.searchParams.get("code"),
       });
-      sendRedirect(response, linearReturnPath(`linear=connected&project=${encodeURIComponent(result.projectId)}`));
+      sendRedirect(response, linearReturnPath("linear=connected"));
     } catch (error) {
       sendRedirect(response, linearReturnPath(`linear=error&message=${encodeURIComponent(clean(error.message, 1_000))}`));
     }
     return true;
   }
 
-  if (url.pathname === "/api/projects" && request.method === "GET") {
-    const projects = await client.query(api.projects.listProjects, { sessionHash });
-    sendJson(response, 200, { projects: projects.map(mapProject) });
+  if (url.pathname === "/api/workspace" && request.method === "GET") {
+    const workspace = await accountWorkspace(client, sessionHash);
+    const payload = await workspacePayload(client, sessionHash, workspace._id);
+    sendJson(response, 200, { tasks: payload.tasks, integrations: payload.integrations });
     return true;
   }
 
-  if (url.pathname === "/api/projects" && request.method === "POST") {
+  if (url.pathname === "/api/integrations/linear/connect" && request.method === "POST") {
+    const workspace = await accountWorkspace(client, sessionHash);
+    sendJson(response, 200, await beginLinearConnection({ request, sessionHash, projectId: workspace._id }));
+    return true;
+  }
+
+  if (url.pathname === "/api/integrations/linear/catalog" && request.method === "GET") {
+    const workspace = await accountWorkspace(client, sessionHash);
+    sendJson(response, 200, { catalog: await getLinearCatalog({ sessionHash, projectId: workspace._id }) });
+    return true;
+  }
+
+  if (url.pathname === "/api/integrations/linear" && request.method === "PATCH") {
     const body = await readJsonBody(request);
-    const project = await client.mutation(api.projects.createProject, {
-      sessionHash, name: clean(body.name, 120), description: clean(body.description, 4_000) || undefined,
-      responseLanguage: ["auto", "en", "ru"].includes(body.responseLanguage) ? body.responseLanguage : "auto",
+    const workspace = await accountWorkspace(client, sessionHash);
+    const integration = await setLinearDestination({
+      sessionHash,
+      projectId: workspace._id,
+      teamId: body.teamId,
+      externalProjectId: body.projectId,
     });
-    sendJson(response, 201, { project: mapProject(project) });
-    return true;
-  }
-
-  if (url.pathname === "/api/invites/accept" && request.method === "POST") {
-    const body = await readJsonBody(request);
-    const token = clean(body.token, 256);
-    if (!token) { sendJson(response, 400, { error: "The invitation token is missing." }); return true; }
-    const result = await client.mutation(api.projects.acceptInvite, { sessionHash, tokenHash: createHash("sha256").update(token).digest("hex") });
-    sendJson(response, 200, result);
-    return true;
-  }
-
-  const inviteMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/invites$/);
-  if (inviteMatch && request.method === "POST") {
-    const body = await readJsonBody(request);
-    const email = clean(body.email, 320).toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(email)) { sendJson(response, 400, { error: "Enter a valid email address." }); return true; }
-    const token = randomBytes(32).toString("base64url");
-    const invite = await client.mutation(api.projects.createInvite, {
-      sessionHash, projectId: asId(inviteMatch[1], "project"), email,
-      role: ["viewer", "editor"].includes(body.role) ? body.role : "viewer",
-      tokenHash: createHash("sha256").update(token).digest("hex"), expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1_000,
-    });
-    const protocol = clean(request.headers["x-forwarded-proto"], 20) || "http";
-    const host = clean(request.headers["x-forwarded-host"] || request.headers.host, 500);
-    sendJson(response, 201, { invite: { id: invite._id, email: invite.email, role: invite.role, expires_at: iso(invite.expiresAt) }, inviteUrl: `${protocol}://${host}/?invite=${encodeURIComponent(token)}` });
+    sendJson(response, 200, { integration: mapIntegration(integration) });
     return true;
   }
 
@@ -629,14 +602,26 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
     }
     const results = [];
     for (const link of scopedLinks) {
-      try { results.push({ chatId: link.chatId, ok: true, ...(await syncProjectChat({ sessionHash, projectId, chatId: link.chatId })) }); }
+      try {
+        const synced = await syncProjectChat({ sessionHash, projectId, chatId: link.chatId });
+        results.push({
+          ...synced,
+          chatId: link.chatId,
+          ok: true,
+          messages: synced.messages.map((message) => mapMessage(message, projectId)),
+        });
+      }
       catch (error) {
         const message = clean(error?.errorMessage || error?.message || "Telegram sync failed.", 500);
         console.error("Telegram chat sync failed", { projectId: String(projectId), chatId: String(link.chatId), error: message });
         results.push({ chatId: link.chatId, ok: false, error: message });
       }
     }
-    sendJson(response, results.some((result) => !result.ok) ? 207 : 200, { synced: results.filter((result) => result.ok).length, results });
+    sendJson(response, results.some((result) => !result.ok) ? 207 : 200, {
+      synced: results.filter((result) => result.ok).length,
+      storage: "ephemeral",
+      results,
+    });
     return true;
   }
 
@@ -657,40 +642,27 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
   }
 
   if (messagesMatch && request.method === "GET") {
-    const projectId = asId(messagesMatch[1], "project");
-    const chatId = asId(url.searchParams.get("chatId"), "project chat");
-    const sourceId = clean(url.searchParams.get("sourceId"), 100);
-    const rows = await client.query(api.telegram.listMessages, {
+    await client.query(api.projects.getWorkspace, {
       sessionHash,
-      projectId,
-      chatId,
-      limit: clampInteger(url.searchParams.get("limit"), 1, 1_000, 250),
-      sourceId: sourceId ? asId(sourceId, "source message") : undefined,
+      projectId: asId(messagesMatch[1], "project"),
     });
-    sendJson(response, 200, { messages: rows.map((row) => mapMessage(row, projectId)) });
+    sendJson(response, 200, { messages: [], storage: "ephemeral" });
     return true;
   }
 
   const messageSearchMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/messages\/search$/);
   if (messageSearchMatch && request.method === "GET") {
-    const projectId = asId(messageSearchMatch[1], "project");
-    const chatId = asId(url.searchParams.get("chatId"), "project chat");
-    const search = clean(url.searchParams.get("q"), 200);
-    const rows = search ? await client.query(api.telegram.searchMessages, {
+    await client.query(api.projects.getWorkspace, {
       sessionHash,
-      projectId,
-      chatId,
-      search,
-      limit: clampInteger(url.searchParams.get("limit"), 1, 100, 50),
-    }) : [];
-    sendJson(response, 200, { messages: rows.map((row) => mapMessage(row, projectId)) });
+      projectId: asId(messageSearchMatch[1], "project"),
+    });
+    sendJson(response, 200, { messages: [], storage: "ephemeral" });
     return true;
   }
 
   const attachmentMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/attachments\/([^/]+)$/);
   if (attachmentMatch && request.method === "GET") {
-    const result = await client.query(api.storage.attachmentUrl, { sessionHash, projectId: asId(attachmentMatch[1], "project"), attachmentId: asId(attachmentMatch[2], "attachment") });
-    sendRedirect(response, result.url);
+    sendJson(response, 410, { error: "Telegram attachments are not stored by Telegram Tasks." });
     return true;
   }
 
@@ -703,34 +675,58 @@ export async function handlePlatformApi({ request, response, url, readJsonBody, 
 
   const tasksMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/tasks$/);
   if (tasksMatch && request.method === "POST") {
-    const body = await readJsonBody(request);
-    const task = await client.mutation(api.tasks.createTaskFromMessages, {
-      sessionHash, projectId: asId(tasksMatch[1], "project"),
-      sourceMessageIds: Array.isArray(body.sourceMessageIds) ? [...new Set(body.sourceMessageIds.map((id) => asId(id, "source message")))].slice(0, 100) : [],
-      anchorMessageIds: Array.isArray(body.anchorMessageIds) ? [...new Set(body.anchorMessageIds.map((id) => asId(id, "anchor message")))].slice(0, 20) : undefined,
-      contextWindowDays: body.contextWindowDays === undefined ? undefined : clampInteger(body.contextWindowDays, 1, 30, 10),
-      generationModel: clean(body.generationModel, 120) || undefined,
-      title: clean(body.title, 300), description: clean(body.description, 50_000) || undefined,
+    sendJson(response, 410, {
+      error: "Persistent Telegram message tasks are disabled. Send selected source snapshots to /client-tasks instead.",
     });
-    sendJson(response, 201, { task: mapTask(task) });
     return true;
   }
 
   const clientTasksMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/client-tasks$/);
   if (clientTasksMatch && request.method === "POST") {
     const body = await readJsonBody(request);
-    const sources = Array.isArray(body.sources) ? body.sources.slice(0, 20).map((source) => ({
-      telegramChatId: clean(source.telegramChatId, 200),
-      telegramMessageId: clampInteger(source.telegramMessageId, 1, Number.MAX_SAFE_INTEGER, 0),
-      chatTitle: clean(source.chatTitle, 300) || "Telegram chat",
-      senderName: clean(source.senderName, 300) || "Telegram user",
-      text: clean(source.text, 12_000),
-      sentAt: Number.isFinite(Number(source.sentAt)) ? Number(source.sentAt) : Date.now(),
-      telegramUrl: clean(source.telegramUrl, 4_000) || undefined,
-    })) : [];
+    const sources = Array.isArray(body.sources) ? body.sources.slice(0, 20).map((source) => {
+      const numericSentAt = Number(source.sentAt);
+      const parsedSentAt = Date.parse(source.sentAt);
+      return {
+        telegramChatId: clean(source.telegramChatId, 200),
+        telegramMessageId: clampInteger(source.telegramMessageId, 1, Number.MAX_SAFE_INTEGER, 0),
+        chatTitle: clean(source.chatTitle, 300) || "Telegram chat",
+        senderName: clean(source.senderName, 300) || "Telegram user",
+        text: clean(source.text, 12_000),
+        sentAt: Number.isFinite(numericSentAt) ? numericSentAt : Number.isFinite(parsedSentAt) ? parsedSentAt : Date.now(),
+        telegramUrl: clean(source.telegramUrl, 4_000) || undefined,
+      };
+    }) : [];
     const task = await client.mutation(api.tasks.createTaskFromClientMessages, {
       sessionHash,
       projectId: asId(clientTasksMatch[1], "project"),
+      sources,
+      title: clean(body.title, 300),
+      description: clean(body.description, 50_000) || undefined,
+    });
+    sendJson(response, 201, { task: mapTask(task) });
+    return true;
+  }
+
+  if (url.pathname === "/api/tasks" && request.method === "POST") {
+    const body = await readJsonBody(request);
+    const sources = Array.isArray(body.sources) ? body.sources.slice(0, 20).map((source) => {
+      const numericSentAt = Number(source.sentAt);
+      const parsedSentAt = Date.parse(source.sentAt);
+      return {
+        telegramChatId: clean(source.telegramChatId, 200),
+        telegramMessageId: clampInteger(source.telegramMessageId, 1, Number.MAX_SAFE_INTEGER, 0),
+        chatTitle: clean(source.chatTitle, 300) || "Telegram chat",
+        senderName: clean(source.senderName, 300) || "Telegram user",
+        text: clean(source.text, 12_000),
+        sentAt: Number.isFinite(numericSentAt) ? numericSentAt : Number.isFinite(parsedSentAt) ? parsedSentAt : Date.now(),
+        telegramUrl: clean(source.telegramUrl, 4_000) || undefined,
+      };
+    }) : [];
+    const workspace = await accountWorkspace(client, sessionHash);
+    const task = await client.mutation(api.tasks.createTaskFromClientMessages, {
+      sessionHash,
+      projectId: workspace._id,
       sources,
       title: clean(body.title, 300),
       description: clean(body.description, 50_000) || undefined,

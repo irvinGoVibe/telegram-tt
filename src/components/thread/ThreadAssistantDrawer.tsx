@@ -39,7 +39,6 @@ import './ThreadAssistantDrawer.scss';
 
 const CHAT_STORAGE_PREFIX = 'telegram-thread.ai-chat';
 const MODEL_STORAGE_KEY = 'telegram-thread.ai-model';
-const ACTIVE_PROJECT_KEY = 'telegram-thread.active-project';
 const MAX_IMAGE_COUNT = 4;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -213,7 +212,6 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const [models, setModels] = useState<ThreadModel[]>([]);
   const [activeModel, setActiveModel] = useState('');
   const [settings, setSettings] = useState<ThreadAiSettings>(EMPTY_SETTINGS);
-  const [settingsProjectId, setSettingsProjectId] = useState('');
   const [settingsModel, setSettingsModel] = useState('');
   const [question, setQuestion] = useState('');
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -303,11 +301,8 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     setActiveContextDateField(undefined);
     void loadContextHistory(storedContextSelection);
     setIsLoading(true);
-    const projectId = localStorage.getItem(ACTIVE_PROJECT_KEY) || '';
-    setSettingsProjectId(projectId);
-
     const [settingsResult, modelsResult] = await Promise.allSettled([
-      getThreadAiSettings(projectId || undefined),
+      getThreadAiSettings(),
       getThreadModels(),
     ]);
 
@@ -542,14 +537,14 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   });
 
   const saveSettings = useLastCallback(async (shouldTest = false) => {
-    if (!settingsModel || !settingsProjectId || settings.canEdit === false) return;
+    if (!settingsModel || settings.canEdit === false) return;
     const requestedModel = settingsModel;
     setIsSavingSettings(true);
     setError('');
     setNotice('');
     try {
-      const nextSettings = await updateThreadAiSettings(settingsProjectId, { defaultModel: requestedModel });
-      const persistedSettings = await getThreadAiSettings(settingsProjectId);
+      const nextSettings = await updateThreadAiSettings({ defaultModel: requestedModel });
+      const persistedSettings = await getThreadAiSettings();
       if (nextSettings.defaultModel !== requestedModel || persistedSettings.defaultModel !== requestedModel) {
         setSettings(persistedSettings);
         setSettingsModel(persistedSettings.defaultModel || requestedModel);
@@ -941,21 +936,18 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         {!models.length && <small>{lang('ThreadAIModelCatalogUnavailable')}</small>}
       </label>
 
-      {!settingsProjectId && <small>{lang('ThreadAIProjectRequired')}</small>}
-      {settingsProjectId && settings.canEdit === false && <small>{lang('ThreadAIProjectOwnerOnly')}</small>}
-
       <div className="ThreadAssistantDrawer-settingsActions">
         <button
           type="button"
           className="primary"
-          disabled={isSavingSettings || !settingsModel || !settingsProjectId || settings.canEdit === false}
+          disabled={isSavingSettings || !settingsModel || settings.canEdit === false}
           onClick={() => void saveSettings(false)}
         >
           {lang('ThreadAISaveSettings')}
         </button>
         <button
           type="button"
-          disabled={isSavingSettings || !settingsModel || !settingsProjectId || settings.canEdit === false}
+          disabled={isSavingSettings || !settingsModel || settings.canEdit === false}
           onClick={() => void saveSettings(true)}
         >
           {isTestingSettings ? lang('ThreadAITestingConnection') : lang('ThreadAITestConnection')}
