@@ -34,6 +34,10 @@ import { getAttachmentMediaType, matchLinkInMessageText } from './messages';
 export type MediaWithThumbs = ApiPhoto | ApiVideo | ApiDocument | ApiSticker | ApiMediaExtendedPreview;
 export type DownloadableMedia = ApiPhoto | ApiVideo | ApiDocument | ApiSticker | ApiAudio | ApiVoice | ApiWebDocument;
 
+const MIN_STATIC_MAP_ZOOM = 13;
+const MAX_STATIC_MAP_ZOOM = 20;
+const FALLBACK_MEDIA_DIMENSIONS: ApiDimensions = { width: 100, height: 100 };
+
 export function getMessageContent(message: MediaContainer) {
   return message.content;
 }
@@ -55,10 +59,14 @@ export function hasMessageMedia(message: MediaContainer) {
 
 export function canEditMedia(message: MediaContainer) {
   const {
-    video, ...otherMedia
+    photo, video, audio, document, text, webPage, ...otherMedia
   } = message.content;
 
   return !video?.isRound && !Object.keys(otherMedia).length;
+}
+
+export function canEditMediaInEditor(message: MediaContainer) {
+  return canEditMedia(message) && (getMessagePhoto(message) || getMessageDocumentPhoto(message));
 }
 
 export function getMessagePhoto(message: MediaContainer) {
@@ -188,9 +196,18 @@ export function buildStaticMapHash(
   const {
     long, lat, accessHash, accuracyRadius,
   } = geo;
+  const staticMapZoom = Math.min(Math.max(zoom, MIN_STATIC_MAP_ZOOM), MAX_STATIC_MAP_ZOOM);
 
-  // eslint-disable-next-line @stylistic/max-len
-  return `staticMap:${accessHash}?lat=${lat}&long=${long}&w=${width}&h=${height}&zoom=${zoom}&scale=${scale}&accuracyRadius=${accuracyRadius}`;
+  const urlParams = new URLSearchParams();
+  urlParams.set('lat', lat.toString());
+  urlParams.set('long', long.toString());
+  urlParams.set('w', width.toString());
+  urlParams.set('h', height.toString());
+  urlParams.set('zoom', staticMapZoom.toString());
+  urlParams.set('scale', scale.toString());
+  if (accuracyRadius) urlParams.set('accuracyRadius', accuracyRadius.toString());
+
+  return `staticMap:${accessHash}?${urlParams.toString()}`;
 }
 
 export function getPhotoMediaHash(photo: ApiPhoto | ApiDocument, target: SizeTarget, isAction?: boolean) {
@@ -362,12 +379,16 @@ export function getGamePreviewVideoHash(game: ApiGame) {
   return undefined;
 }
 
-export function appendProgressiveQueryParameters(media: ApiAudio | ApiVideo | ApiDocument, base: string) {
+export function appendProgressiveQueryParameters(
+  media: Pick<ApiAudio | ApiVideo | ApiDocument, 'mimeType' | 'size'>, base: string,
+) {
   if (IS_PROGRESSIVE_SUPPORTED && IS_SAFARI) {
-    const url = new URL(base, window.location.href);
-    url.searchParams.append('fileSize', media.size.toString());
-    url.searchParams.append('mimeType', media.mimeType);
-    return url.toString();
+    const [path, query = ''] = base.split('?');
+    const params = new URLSearchParams(query);
+    params.append('fileSize', media.size.toString());
+    params.append('mimeType', media.mimeType);
+
+    return `${path}?${params.toString()}`;
   }
 
   return base;
@@ -402,8 +423,8 @@ export function getMediaFormat(
   }
 
   if (isAudio || isVoice) {
-    // Safari
-    if (isVoice && !IS_OPUS_SUPPORTED) {
+    // Safari versions that support Opus are not working with streaming
+    if (isVoice && (IS_SAFARI || !IS_OPUS_SUPPORTED)) {
       return ApiMediaFormat.BlobUrl;
     }
 
@@ -429,18 +450,49 @@ export function hasMediaLocalBlobUrl(media: ApiPhoto | ApiVideo | ApiDocument) {
   return false;
 }
 
-export function getChatMediaMessageIds(
-  messages: Record<number, ApiMessage>, listedIds: number[], isFromSharedMedia = false,
-) {
-  return getMessageContentIds(messages, listedIds, isFromSharedMedia ? 'media' : 'inlineMedia');
-}
-
 export function getPhotoFullDimensions(photo: Pick<ApiPhoto, 'sizes' | 'thumbnail'>): ApiDimensions | undefined {
   return (
     photo.sizes.find((size) => size.type === 'w')
     || photo.sizes.find((size) => size.type === 'y')
     || getPhotoInlineDimensions(photo)
   );
+}
+
+export function getMediaDimensions(
+  media: ApiPhoto | ApiVideo | ApiMediaExtendedPreview | ApiWebDocument,
+): ApiDimensions & { isFallback?: true } {
+  let dimensions: ApiDimensions | undefined;
+
+  if (media.mediaType === 'photo') {
+    dimensions = media.sizes.reduce<ApiDimensions | undefined>((largest, size) => {
+      if (!areMediaDimensionsValid(size)) return largest;
+      if (!largest || size.width * size.height > largest.width * largest.height) return size;
+      return largest;
+    }, undefined) || media.thumbnail;
+  } else if (media.mediaType === 'webDocument') {
+    dimensions = media.dimensions;
+  } else {
+    dimensions = areMediaDimensionsValid(media)
+      ? { width: media.width, height: media.height }
+      : media.thumbnail;
+  }
+
+  if (dimensions && areMediaDimensionsValid(dimensions)) {
+    return dimensions;
+  }
+
+  return {
+    ...FALLBACK_MEDIA_DIMENSIONS,
+    isFallback: true,
+  };
+}
+
+function areMediaDimensionsValid(
+  dimensions: { width?: number; height?: number },
+): dimensions is ApiDimensions {
+  const { width, height } = dimensions;
+  return typeof width === 'number' && typeof height === 'number'
+    && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
 }
 
 export function getPhotoInlineDimensions(photo: Pick<ApiPhoto, 'sizes' | 'thumbnail'>): ApiDimensions | undefined {
@@ -464,15 +516,41 @@ export function getMediaTransferState(
   progress?: number, isLoadNeeded = false, isUploading = false,
 ) {
   const isTransferring = isUploading || isLoadNeeded;
-  const transferProgress = Number(progress);
+  const transferProgress = progress || 0;
 
   return {
     isUploading, isTransferring, transferProgress,
   };
 }
 
+export function getMediaSearchType(media: DownloadableMedia):
+  Extract<ApiMessageSearchType, 'gif' | 'media' | 'documents' | 'audio' | 'voice'> | undefined {
+  if (media.mediaType === 'video') {
+    if (media.isRound) return 'voice';
+    return media.isGif ? 'gif' : 'media';
+  }
+
+  if (media.mediaType === 'audio') {
+    return 'audio';
+  }
+
+  if (media.mediaType === 'voice') {
+    return 'voice';
+  }
+
+  if (media.mediaType === 'document') {
+    return 'documents';
+  }
+
+  if (media.mediaType === 'photo') {
+    return 'media';
+  }
+
+  return undefined;
+}
+
 export function getMessageContentIds(
-  messages: Record<number, ApiMessage>, messageIds: number[], contentType: ApiMessageSearchType | 'inlineMedia',
+  messages: Record<number, ApiMessage>, messageIds: number[], contentType: ApiMessageSearchType,
 ) {
   let validator: (message: ApiMessage) => unknown;
 
@@ -488,6 +566,13 @@ export function getMessageContentIds(
       validator = getMessageDocument;
       break;
 
+    case 'gif':
+      validator = (message: ApiMessage) => {
+        const video = getMessageVideo(message);
+        return video?.isGif;
+      };
+      break;
+
     case 'links':
       validator = (message: ApiMessage) => getMessageWebPage(message) || matchLinkInMessageText(message);
       break;
@@ -500,19 +585,6 @@ export function getMessageContentIds(
       validator = (message: ApiMessage) => {
         const video = getMessageVideo(message);
         return getMessageVoice(message) || (video && video.isRound);
-      };
-      break;
-
-    case 'inlineMedia':
-      validator = (message: ApiMessage) => {
-        const video = getMessageVideo(message);
-        const document = getMessageDocument(message);
-        return (
-          getMessagePhoto(message)
-          || (video && !video.isRound && !video.isGif)
-          || (document && isDocumentPhoto(document))
-          || (document && isDocumentVideo(document))
-        );
       };
       break;
 
@@ -608,6 +680,23 @@ export function getMessageMediaHash(
   }
 
   return undefined;
+}
+
+export function getAllMessageMediaHashes(
+  message: MediaContainer,
+  statefulMedia: StatefulMediaContent,
+) {
+  const targets: SizeTarget[] = ['micro', 'pictogram', 'inline', 'preview', 'full', 'download'];
+  const hashes = new Set<string>();
+
+  targets.forEach((target) => {
+    const hash = getMessageMediaHash(message, statefulMedia, target);
+    if (hash) {
+      hashes.add(hash);
+    }
+  });
+
+  return Array.from(hashes);
 }
 
 export function canReplaceMessageMedia(

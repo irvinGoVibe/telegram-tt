@@ -223,6 +223,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const [historyMessages, setHistoryMessages] = useState<Record<number, ApiMessage>>({});
   const [isHistoryLimited, setIsHistoryLimited] = useState(false);
   const [activeContextDateField, setActiveContextDateField] = useState<ContextDateField>();
+  const [calendarMaxAt, setCalendarMaxAt] = useState(0);
 
   const messagesRef = useRef<HTMLDivElement>();
   const imageInputRef = useRef<HTMLInputElement>();
@@ -373,6 +374,11 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       [activeContextDateField]: formatContextDateValue(date),
     }));
     setActiveContextDateField(undefined);
+  });
+
+  const openContextDateField = useLastCallback((field: ContextDateField) => {
+    setCalendarMaxAt(Date.now());
+    setActiveContextDateField(field);
   });
 
   const handleContextRangeSelect = useLastCallback((from: Date, to: Date) => {
@@ -679,7 +685,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
             const nextMode = isDateContextMode(draftContextSelection.mode)
               ? draftContextSelection.mode : 'since';
             setDraftContextSelection((current) => ({ ...current, mode: nextMode }));
-            setActiveContextDateField(nextMode === 'since' ? 'from' : nextMode === 'until' ? 'to' : 'range');
+            openContextDateField(nextMode === 'since' ? 'from' : nextMode === 'until' ? 'to' : 'range');
           }}
         >
           <span>
@@ -970,7 +976,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         minAt={activeContextDateField === 'to'
           ? contextDateToTimestamp(draftContextSelection.from) : undefined}
         maxAt={activeContextDateField === 'from'
-          ? contextDateToTimestamp(draftContextSelection.to) : Date.now()}
+          ? contextDateToTimestamp(draftContextSelection.to) : calendarMaxAt}
         isPastMode
         isRangeMode={activeContextDateField === 'range'}
         topContent={(
@@ -982,7 +988,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
                 className={draftContextSelection.mode === mode ? 'active' : undefined}
                 onClick={() => {
                   setDraftContextSelection((current) => ({ ...current, mode }));
-                  setActiveContextDateField(mode === 'since' ? 'from' : mode === 'until' ? 'to' : 'range');
+                  openContextDateField(mode === 'since' ? 'from' : mode === 'until' ? 'to' : 'range');
                 }}
               >
                 {lang(mode === 'since' ? 'ThreadAIContextSinceTab'

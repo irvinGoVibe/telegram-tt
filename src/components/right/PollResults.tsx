@@ -1,24 +1,23 @@
-import type { FC } from '../../lib/teact/teact';
 import { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
-import type { ApiChat, ApiMessage, ApiPoll } from '../../api/types';
+import type { ApiChat, ApiMessage, ApiMessagePoll } from '../../api/types';
 
 import {
   selectChat, selectChatMessage, selectPollFromMessage, selectTabState,
 } from '../../global/selectors';
-import { buildCollectionByKey } from '../../util/iteratees';
 import { renderTextWithEntities } from '../common/helpers/renderTextWithEntities';
 
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useOldLang from '../../hooks/useOldLang';
 
+import { IslandOutside } from '../gili/layout/Island';
 import Loading from '../ui/Loading';
 import PollAnswerResults from './PollAnswerResults';
 
 import './PollResults.scss';
 
-type OwnProps = {
+export type OwnProps = {
   isActive: boolean;
   onClose: NoneToVoidFunction;
 };
@@ -26,16 +25,16 @@ type OwnProps = {
 type StateProps = {
   chat?: ApiChat;
   message?: ApiMessage;
-  poll?: ApiPoll;
+  poll?: ApiMessagePoll;
 };
 
-const PollResults: FC<OwnProps & StateProps> = ({
+const PollResults = ({
   isActive,
   chat,
   message,
   poll,
   onClose,
-}) => {
+}: OwnProps & StateProps) => {
   const lang = useOldLang();
 
   useHistoryBack({
@@ -48,32 +47,30 @@ const PollResults: FC<OwnProps & StateProps> = ({
   }
 
   const { summary, results } = poll;
-  if (!results.results) {
+  if (!results.resultByOption) {
     return undefined;
   }
 
-  const resultsByOption = buildCollectionByKey(results.results, 'option');
-
   return (
-    <div className="PollResults" dir={lang.isRtl ? 'rtl' : undefined}>
-      <h3 className="poll-question" dir="auto">
-        {renderTextWithEntities({
-          text: summary.question.text,
-          entities: summary.question.entities,
-        })}
-      </h3>
-      <div className="poll-results-list custom-scroll">
+    <div className="PollResults custom-scroll" dir={lang.isRtl ? 'rtl' : undefined}>
+      <IslandOutside className="poll-results-content">
+        <h3 className="poll-question" dir="auto">
+          {renderTextWithEntities({
+            text: summary.question.text,
+            entities: summary.question.entities,
+          })}
+        </h3>
         {summary.answers.map((answer) => (
           <PollAnswerResults
-            key={`${poll.id}-${answer.option}`}
+            key={`${poll.summary.id}-${answer.option}`}
             chat={chat}
             message={message}
             answer={answer}
-            answerVote={resultsByOption[answer.option]}
+            answerVote={results.resultByOption![answer.option]}
             totalVoters={results.totalVoters!}
           />
         ))}
-      </div>
+      </IslandOutside>
     </div>
   );
 };

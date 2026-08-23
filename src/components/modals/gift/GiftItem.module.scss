@@ -11,6 +11,7 @@
   justify-content: center;
 
   min-width: 0;
+  margin-inline: 0.125rem;
   padding: 0.625rem;
   padding-top: 0;
   border-radius: 0.625rem;
@@ -39,9 +40,19 @@
   &:hover::before {
     opacity: 1;
   }
+
+  &.noClickable {
+    cursor: default;
+
+    &:hover::before {
+      opacity: 0;
+    }
+  }
 }
 
 .starGift {
+  overflow: visible;
+  flex-basis: auto;
   padding: 0.875rem;
   padding-bottom: 0.625rem;
 }
@@ -64,23 +75,26 @@
 
 .buy {
   margin-top: 0.625rem;
-  font-size: 0.6875rem !important;
+  font-size: 0.75rem !important;
   font-weight: var(--font-weight-semibold) !important;
   line-height: 1;
 }
 
-.star {
-  margin-inline-start: 0 !important;
-  margin-inline-end: 0.125rem;
-  font-size: 0.75rem !important;
+.transferBadge {
+  font-size: 0.8125rem;
 }
 
+.star {
+  font-size: inherit;
+}
+
+.auction,
 .premiumRequired {
-  outline: 0.125rem solid #D18D21;
+  outline: 0.125rem solid #D18D21 !important;
   outline-offset: -0.125rem;
 
   &:focus-visible {
-    outline: 0.125rem solid #D18D21;
+    outline: 0.125rem solid #D18D21 !important;
     outline-offset: -0.125rem;
   }
 }
@@ -93,11 +107,6 @@
   margin-top: 0.5rem;
   font-size: 0.75rem;
   color: var(--color-stars);
-}
-
-.starsPriceIcon {
-  margin-inline-start: 0 !important;
-  margin-inline-end: 0.125rem !important;
 }
 
 .radialPattern {

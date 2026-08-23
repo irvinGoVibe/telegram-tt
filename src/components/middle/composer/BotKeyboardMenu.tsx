@@ -1,21 +1,24 @@
-import type { FC, TeactNode } from '../../../lib/teact/teact';
-import { memo, useMemo } from '../../../lib/teact/teact';
+import type { TeactNode } from '../../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiMessage } from '../../../api/types';
 import type { ThreadId } from '../../../types';
 
-import { selectChatMessage, selectCurrentMessageList } from '../../../global/selectors';
+import { isKeyboardButtonUnsupportedForEphemeral } from '../../../global/helpers';
+import { selectChatMessage, selectCurrentMessageList, selectEphemeralMessage } from '../../../global/selectors';
 import { IS_TOUCH_ENV } from '../../../util/browser/windowEnvironment';
+import buildClassName from '../../../util/buildClassName';
 import renderKeyboardButtonText from './helpers/renderKeyboardButtonText';
 
+import useLang from '../../../hooks/useLang';
 import useMouseInside from '../../../hooks/useMouseInside';
-import useOldLang from '../../../hooks/useOldLang';
 
+import CustomEmoji from '../../common/CustomEmoji';
 import Button from '../../ui/Button';
 import Menu from '../../ui/Menu';
 
-import './BotKeyboardMenu.scss';
+import styles from './BotKeyboardMenu.module.scss';
 
 export type OwnProps = {
   isOpen: boolean;
@@ -28,15 +31,23 @@ type StateProps = {
   message?: ApiMessage;
 };
 
-const BotKeyboardMenu: FC<OwnProps & StateProps> = ({
+const ICON_SIZE = 16;
+
+const BotKeyboardMenu = ({
   isOpen, threadId, message, onClose,
-}) => {
+}: OwnProps & StateProps) => {
   const { clickBotInlineButton } = getActions();
 
-  const lang = useOldLang();
+  const lang = useLang();
 
-  const [handleMouseEnter, handleMouseLeave] = useMouseInside(isOpen, onClose);
+  const [handleMouseEnter, handleMouseLeave, markMouseInside] = useMouseInside(isOpen, onClose);
   const { isKeyboardSingleUse } = message || {};
+
+  useEffect(() => {
+    if (isOpen) {
+      markMouseInside();
+    }
+  }, [isOpen, markMouseInside]);
 
   const buttonTexts = useMemo(() => {
     const texts: TeactNode[][] = [];
@@ -58,25 +69,40 @@ const BotKeyboardMenu: FC<OwnProps & StateProps> = ({
       positionX="right"
       positionY="bottom"
       onClose={onClose}
-      className="BotKeyboardMenu"
+      className={styles.root}
       onCloseAnimationEnd={onClose}
       onMouseEnter={!IS_TOUCH_ENV ? handleMouseEnter : undefined}
       onMouseLeave={!IS_TOUCH_ENV ? handleMouseLeave : undefined}
+      noCloseOnBackdrop={!IS_TOUCH_ENV}
       noCompact
     >
-      <div className="content custom-scroll">
+      <div className={buildClassName(styles.content, 'custom-scroll')}>
         {message.keyboardButtons.map((row, i) => (
-          <div className="row">
+          <div className={styles.row}>
             {row.map((button, j) => (
               <Button
+                className={buildClassName(
+                  styles.button,
+                  button.style?.type && styles[`${button.style.type}Tint`],
+                )}
                 ripple
-                disabled={button.type === 'unsupported'}
-
+                noForcedUpperCase
+                disabled={button.type === 'unsupported'
+                  || (message.isEphemeral && isKeyboardButtonUnsupportedForEphemeral(button))}
                 onClick={() => clickBotInlineButton({
                   chatId: message.chatId, messageId: message.id, threadId, button,
                 })}
               >
-                {buttonTexts?.[i][j]}
+                <span className={styles.inlineButtonText}>
+                  {button.style?.iconId && (
+                    <CustomEmoji
+                      className={styles.customEmojiIcon}
+                      documentId={button.style.iconId}
+                      size={ICON_SIZE}
+                    />
+                  )}
+                  {buttonTexts?.[i][j]}
+                </span>
               </Button>
             ))}
           </div>
@@ -90,7 +116,9 @@ export default memo(withGlobal<OwnProps>(
   (global, { messageId }): Complete<StateProps> => {
     const { chatId } = selectCurrentMessageList(global) || {};
 
-    const message = chatId ? selectChatMessage(global, chatId, messageId) : undefined;
+    const message = chatId
+      ? selectChatMessage(global, chatId, messageId) || selectEphemeralMessage(global, chatId, messageId)
+      : undefined;
     return {
       message,
     };

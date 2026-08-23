@@ -1,5 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   memo, useMemo,
 } from '../../lib/teact/teact';
@@ -19,15 +17,15 @@ import Checkbox from '../ui/Checkbox';
 
 export type OwnProps = {
   chatId?: string;
-  handlePermissionChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   permissions: ApiChatBannedRights;
   isMediaDropdownOpen: boolean;
-  setIsMediaDropdownOpen: (open: boolean) => void;
   className?: string;
   shiftedClassName?: string;
   dropdownClassName?: string;
   withCheckbox?: boolean;
   permissionGroup?: boolean;
+  handlePermissionChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  setIsMediaDropdownOpen: (open: boolean) => void;
   getControlIsDisabled?: (key: Exclude<keyof ApiChatBannedRights, 'untilDate'>) => boolean | undefined;
 };
 
@@ -38,23 +36,25 @@ type StateProps = {
 
 const permissionKeyList: (keyof ApiChatBannedRights)[] = [
   'sendPhotos', 'sendVideos', 'sendStickers',
-  'sendAudios', 'sendDocs', 'sendVoices', 'sendRoundvideos', 'embedLinks', 'sendPolls',
+  'sendAudios', 'sendDocs', 'sendVoices', 'sendRoundvideos', 'embedLinks', 'sendPolls', 'sendReactions',
 ];
 
-const PermissionCheckboxList: FC<OwnProps & StateProps> = ({
+export const MEDIA_DROPDOWN_ROW_COUNT = permissionKeyList.length;
+
+const PermissionCheckboxList = ({
   chat,
   isMediaDropdownOpen,
-  setIsMediaDropdownOpen,
   hasLinkedChat,
   permissions,
-  handlePermissionChange,
   className,
   shiftedClassName,
   dropdownClassName,
   withCheckbox,
-  getControlIsDisabled,
   permissionGroup,
-}) => {
+  setIsMediaDropdownOpen,
+  handlePermissionChange,
+  getControlIsDisabled,
+}: OwnProps & StateProps) => {
   const {
     showNotification,
   } = getActions();
@@ -222,6 +222,18 @@ const PermissionCheckboxList: FC<OwnProps & StateProps> = ({
               disabled={getControlIsDisabled && getControlIsDisabled('sendPolls')}
             />
           </div>
+
+          <div className={buildClassName('ListItem', withCheckbox && 'with-checkbox')}>
+            <Checkbox
+              name="sendReactions"
+              checked={!permissions.sendReactions}
+              label={lang('UserRestrictionsSendReactions')}
+              blocking
+              permissionGroup={permissionGroup}
+              onChange={handlePermissionChange}
+              disabled={getControlIsDisabled && getControlIsDisabled('sendReactions')}
+            />
+          </div>
         </div>
       </div>
       <div className={shiftedClassName}>
@@ -249,6 +261,17 @@ const PermissionCheckboxList: FC<OwnProps & StateProps> = ({
             blocking
             permissionGroup={permissionGroup}
             onChange={handlePermissionChange}
+          />
+        </div>
+        <div className={buildClassName('ListItem', withCheckbox && 'with-checkbox')}>
+          <Checkbox
+            name="editRank"
+            checked={!permissions.editRank}
+            label={lang('UserRestrictionsEditRank')}
+            blocking
+            permissionGroup={permissionGroup}
+            onChange={handlePermissionChange}
+            disabled={getControlIsDisabled && getControlIsDisabled('editRank')}
           />
         </div>
         <div

@@ -1,4 +1,5 @@
-import type { ElementRef, FC } from '../../lib/teact/teact';
+import Color from 'colorjs.io';
+import type { ElementRef } from '../../lib/teact/teact';
 import {
   getIsHeavyAnimating,
   memo,
@@ -8,15 +9,15 @@ import {
   useUnmountCleanup,
 } from '../../lib/teact/teact';
 
-import type RLottieInstance from '../../lib/rlottie/RLottie';
+import type TLottieInstance from '../../lib/tlottie/TLottie';
+import type { EmojiFitzModifier } from '../../util/emoji/skinTone';
 
 import { requestMeasure } from '../../lib/fasterdom/fasterdom';
-import { ensureRLottie, getRLottie } from '../../lib/rlottie/RLottie.async';
+import { ensureTLottie, getTLottie } from '../../lib/tlottie/TLottie.async';
 import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import buildClassName from '../../util/buildClassName';
 import buildStyle from '../../util/buildStyle';
 import generateUniqueId from '../../util/generateUniqueId';
-import { hexToRgb } from '../../util/switchTheme';
 
 import useColorFilter from '../../hooks/stickers/useColorFilter';
 import useEffectWithPrevDeps from '../../hooks/useEffectWithPrevDeps';
@@ -39,11 +40,13 @@ export type OwnProps = {
   tgsUrl?: string;
   play?: boolean | string;
   playSegment?: [number, number];
+  seekToEnd?: boolean;
   speed?: number;
   noLoop?: boolean;
   size: number;
   quality?: number;
   color?: string;
+  fitzModifier?: EmojiFitzModifier;
   isLowPriority?: boolean;
   forceAlways?: boolean;
   forceOnHeavyAnimation?: boolean;
@@ -55,11 +58,12 @@ export type OwnProps = {
   onLoad?: NoneToVoidFunction;
   onEnded?: NoneToVoidFunction;
   onLoop?: NoneToVoidFunction;
+  onFrame?: (index: number) => void;
 };
 
 const THROTTLE_MS = 150;
 
-const AnimatedSticker: FC<OwnProps> = ({
+const AnimatedSticker = ({
   ref,
   renderId,
   className,
@@ -68,11 +72,13 @@ const AnimatedSticker: FC<OwnProps> = ({
   play,
   playSegment,
   speed,
+  seekToEnd,
   noLoop,
   size,
   quality,
   isLowPriority,
   color,
+  fitzModifier,
   forceAlways,
   forceOnHeavyAnimation,
   sharedCanvas,
@@ -83,17 +89,19 @@ const AnimatedSticker: FC<OwnProps> = ({
   onLoad,
   onEnded,
   onLoop,
-}) => {
+  onFrame,
+}: OwnProps) => {
   let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
 
   const viewId = useUniqueId();
+  const rendererId = renderId && fitzModifier ? `${renderId}_${fitzModifier}` : renderId;
 
-  const [animation, setAnimation] = useState<RLottieInstance>();
-  const animationRef = useRef<RLottieInstance>();
-  const isFirstRender = useRef(true);
+  const [animation, setAnimation] = useState<TLottieInstance>();
+  const animationRef = useRef<TLottieInstance>();
+  const isFirstRenderRef = useRef(true);
 
   const shouldUseColorFilter = !sharedCanvas && color;
   const colorFilter = useColorFilter(shouldUseColorFilter ? color : undefined);
@@ -102,7 +110,7 @@ const AnimatedSticker: FC<OwnProps> = ({
   const playRef = useStateRef(play);
   const playSegmentRef = useStateRef(playSegment);
 
-  const rgbColor = useRef<[number, number, number] | undefined>();
+  const colorRef = useRef<Color | undefined>();
 
   const shouldForceOnHeavyAnimation = forceAlways || forceOnHeavyAnimation;
   // Delay initialization until heavy animation ends
@@ -116,10 +124,9 @@ const AnimatedSticker: FC<OwnProps> = ({
 
   useSyncEffect(() => {
     if (color && !shouldUseColorFilter) {
-      const { r, g, b } = hexToRgb(color);
-      rgbColor.current = [r, g, b];
+      colorRef.current = new Color(color);
     } else {
-      rgbColor.current = undefined;
+      colorRef.current = undefined;
     }
   }, [color, shouldUseColorFilter]);
 
@@ -144,26 +151,37 @@ const AnimatedSticker: FC<OwnProps> = ({
       return;
     }
 
-    const newAnimation = getRLottie().init(
+    const TLottie = getTLottie();
+    if (!TLottie) {
+      return;
+    }
+
+    const newAnimation = TLottie.init(
       tgsUrl,
       container,
-      renderId || generateUniqueId(),
+      rendererId || generateUniqueId(),
       {
         size,
         noLoop,
         quality,
         isLowPriority,
         coords: sharedCanvasCoords,
+        fitzModifier,
       },
       viewId,
-      rgbColor.current,
+      colorRef.current,
       onLoad,
       onEnded,
       onLoop,
+      onFrame,
     );
 
     if (speed) {
       newAnimation.setSpeed(speed);
+    }
+
+    if (seekToEnd) {
+      newAnimation.seekToEnd();
     }
 
     setAnimation(newAnimation);
@@ -172,10 +190,10 @@ const AnimatedSticker: FC<OwnProps> = ({
 
   useEffect(() => {
     if (!canInitialize) return;
-    if (getRLottie()) {
+    if (getTLottie()) {
       init();
     } else {
-      ensureRLottie().then(init);
+      ensureTLottie().then(init);
     }
   }, [init, tgsUrl, sharedCanvas, sharedCanvasCoords, canInitialize]);
 
@@ -183,7 +201,7 @@ const AnimatedSticker: FC<OwnProps> = ({
   useSharedIntersectionObserver(sharedCanvas, throttledInit);
 
   useEffect(() => {
-    animation?.setColor(rgbColor.current);
+    animation?.setColor(colorRef.current);
   }, [color, animation]);
 
   useEffect(() => {
@@ -207,6 +225,8 @@ const AnimatedSticker: FC<OwnProps> = ({
 
     if (playSegmentRef.current) {
       animation.playSegment(playSegmentRef.current, shouldRestart, viewId);
+    } else if (seekToEnd) {
+      animation.seekToEnd();
     } else {
       animation.play(shouldRestart, viewId);
     }
@@ -250,14 +270,14 @@ const AnimatedSticker: FC<OwnProps> = ({
 
   useEffect(() => {
     if (animation) {
-      if (isFirstRender.current) {
-        isFirstRender.current = false;
+      if (isFirstRenderRef.current) {
+        isFirstRenderRef.current = false;
       } else if (tgsUrl) {
-        animation.changeData(tgsUrl);
+        animation.changeData(tgsUrl, fitzModifier);
         playAnimation();
       }
     }
-  }, [playAnimation, animation, tgsUrl]);
+  }, [playAnimation, animation, tgsUrl, fitzModifier]);
 
   useHeavyAnimation(pauseAnimation, playAnimation, !playKey || shouldForceOnHeavyAnimation);
   usePriorityPlaybackCheck(pauseAnimation, playAnimation, !playKey || forceAlways);

@@ -11,7 +11,6 @@ import useLang from '../../../hooks/useLang';
 import useMultiClick from '../../../hooks/useMultiClick';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import ConfirmDialog from '../../ui/ConfirmDialog';
 import DropdownMenu from '../../ui/DropdownMenu';
@@ -20,12 +19,14 @@ import MenuItem from '../../ui/MenuItem';
 type OwnProps = {
   currentScreen: SettingsScreens;
   editedFolderId?: number;
+  hasProfileBackground?: boolean;
   onReset: () => void;
 };
 
 const SettingsHeader: FC<OwnProps> = ({
   currentScreen,
   editedFolderId,
+  hasProfileBackground,
   onReset,
 }) => {
   const {
@@ -70,9 +71,8 @@ const SettingsHeader: FC<OwnProps> = ({
         className={isOpen ? 'active' : ''}
         onClick={onTrigger}
         ariaLabel="More actions"
-      >
-        <Icon name="more" />
-      </Button>
+        iconName="more"
+      />
     );
   }, [isMobile]);
 
@@ -95,6 +95,8 @@ const SettingsHeader: FC<OwnProps> = ({
         return <h3>{oldLang('DataSettings')}</h3>;
       case SettingsScreens.Privacy:
         return <h3>{oldLang('PrivacySettings')}</h3>;
+      case SettingsScreens.AutoDeleteMessages:
+        return <h3>{lang('AutoDeleteMessages')}</h3>;
       case SettingsScreens.Language:
         return <h3>{oldLang('Language')}</h3>;
       case SettingsScreens.DoNotTranslate:
@@ -255,10 +257,13 @@ const SettingsHeader: FC<OwnProps> = ({
             )}
           </h3>
         );
+
+      case SettingsScreens.Passkeys:
+        return <h3>{lang('SettingsPasskeyTitle')}</h3>;
+
       default:
         return (
           <div className="settings-main-header">
-            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
             <h3 onClick={handleMultiClick}>
               {oldLang('SETTINGS')}
             </h3>
@@ -268,12 +273,10 @@ const SettingsHeader: FC<OwnProps> = ({
               ripple={!isMobile}
               size="smaller"
               color="translucent"
-
               onClick={() => openSettingsScreen({ screen: SettingsScreens.EditProfile })}
               ariaLabel={oldLang('lng_settings_information')}
-            >
-              <Icon name="edit" />
-            </Button>
+              iconName="edit"
+            />
             <DropdownMenu
               className="settings-more-menu"
               trigger={SettingsMenuButton}
@@ -287,16 +290,17 @@ const SettingsHeader: FC<OwnProps> = ({
   }
 
   return (
-    <div className="left-header">
+    <div className={hasProfileBackground && currentScreen === SettingsScreens.Main
+      ? 'left-header' : 'left-header secondary'}
+    >
       <Button
         round
         size="smaller"
         color="translucent"
         onClick={onReset}
         ariaLabel={oldLang('AccDescrGoBack')}
-      >
-        <Icon name="arrow-left" />
-      </Button>
+        iconName="arrow-left"
+      />
       {renderHeaderContent()}
       <ConfirmDialog
         isOpen={isSignOutDialogOpen}

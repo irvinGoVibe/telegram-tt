@@ -12,13 +12,14 @@ import { isUserId } from '../../util/entities/ids';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
 import {
   getHasAdminRight,
-  getPrivateChatUserId,
+  isChatAdmin,
   isChatChannel,
   isChatPublic,
   isChatSuperGroup,
   isHistoryClearMessage,
   isUserBot,
   isUserOnline,
+  isUserRightBanned,
 } from '../helpers';
 import { selectActiveRestrictionReasons } from './messages';
 import { selectTabState } from './tabs';
@@ -39,27 +40,22 @@ export function selectPeerFullInfo<T extends GlobalState>(global: T, peerId: str
   return selectChatFullInfo(global, peerId);
 }
 
+export function selectChatHistoryTtl<T extends GlobalState>(global: T, chatId: string) {
+  return selectChat(global, chatId)?.ttlPeriod ?? selectPeerFullInfo(global, chatId)?.ttlPeriod;
+}
+
 export function selectChatListLoadingParameters<T extends GlobalState>(
   global: T, listType: ChatListType,
 ) {
   return global.chats.loadingParameters[listType];
 }
 
-export function selectChatUser<T extends GlobalState>(global: T, chat: ApiChat) {
-  const userId = getPrivateChatUserId(chat);
-  if (!userId) {
-    return false;
-  }
-
-  return selectUser(global, userId);
-}
-
 export function selectIsChatWithSelf<T extends GlobalState>(global: T, chatId: string) {
   return chatId === global.currentUserId;
 }
 
-export function selectIsChatWithBot<T extends GlobalState>(global: T, chat: ApiChat) {
-  const user = selectChatUser(global, chat);
+export function selectIsChatWithBot<T extends GlobalState>(global: T, chatId: string) {
+  const user = selectUser(global, chatId);
   return user && isUserBot(user);
 }
 
@@ -91,7 +87,7 @@ export function selectChatOnlineCount<T extends GlobalState>(global: T, chat: Ap
 }
 
 export function selectIsTrustedBot<T extends GlobalState>(global: T, botId: string) {
-  return global.trustedBotIds.includes(botId);
+  return global.trustedBotIds.includes(botId) || global.appConfig.whitelistedBotIds?.includes(botId);
 }
 
 export function selectChatType<T extends GlobalState>(global: T, chatId: string): ApiChatType | undefined {
@@ -158,18 +154,6 @@ export function selectChatListType<T extends GlobalState>(
 
 export function selectChatFolder<T extends GlobalState>(global: T, folderId: number) {
   return global.chatFolders.byId[folderId];
-}
-
-export function selectTotalChatCount<T extends GlobalState>(global: T, listType: 'active' | 'archived'): number {
-  const { totalCount } = global.chats;
-  const allChatsCount = totalCount.all;
-  const archivedChatsCount = totalCount.archived || 0;
-
-  if (listType === 'archived') {
-    return archivedChatsCount;
-  }
-
-  return allChatsCount ? allChatsCount - archivedChatsCount : 0;
 }
 
 export function selectIsChatPinned<T extends GlobalState>(
@@ -262,6 +246,13 @@ export function selectCanInviteToChat<T extends GlobalState>(global: T, chatId: 
   ) : (chat.isCreator || getHasAdminRight(chat, 'inviteUsers'))));
 }
 
+export function selectCanBanUsers<T extends GlobalState>(global: T, chatId: string) {
+  const chat = selectChat(global, chatId);
+  if (!chat || chat.isMonoforum) return false;
+
+  return Boolean(chat.isCreator || getHasAdminRight(chat, 'banUsers'));
+}
+
 export function selectCanShareFolder<T extends GlobalState>(global: T, folderId: number) {
   const folder = selectChatFolder(global, folderId);
   if (!folder) return false;
@@ -321,6 +312,15 @@ export function selectRequestedChatTranslationLanguage<T extends GlobalState>(
   return requestedTranslations.byChatId[chatId]?.toLanguage;
 }
 
+export function selectRequestedChatTranslationTone<T extends GlobalState>(
+  global: T, chatId: string,
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const { requestedTranslations } = selectTabState(global, tabId);
+
+  return requestedTranslations.byChatId[chatId]?.tone || global.settings.byKey.translationTone || 'neutral';
+}
+
 export function selectSimilarChannelIds<T extends GlobalState>(
   global: T,
   chatId: string,
@@ -360,7 +360,7 @@ export function selectIsMonoforumAdmin<T extends GlobalState>(
   const channel = selectMonoforumChannel(global, chatId);
   if (!channel) return;
 
-  return Boolean(chat.isCreator || chat.adminRights || channel.isCreator || channel.adminRights);
+  return Boolean(chat.isCreator || getHasAdminRight(channel, 'manageDirectMessages'));
 }
 
 /**
@@ -382,4 +382,41 @@ export function selectIsChatRestricted<T extends GlobalState>(global: T, chatId:
 
   const activeRestrictions = selectActiveRestrictionReasons(global, chat.restrictionReasons);
   return activeRestrictions.length > 0;
+}
+
+export function selectAreFoldersPresent<T extends GlobalState>(global: T) {
+  const ids = global.chatFolders.orderedIds;
+  return Boolean(ids && ids.length > 1);
+}
+
+export function selectCanEditRank<T extends GlobalState>(global: T, {
+  chatId, userId, isAdmin, isOwner,
+}: {
+  chatId: string;
+  userId: string;
+  isAdmin?: boolean;
+  isOwner?: boolean;
+}) {
+  const chat = selectChat(global, chatId);
+  if (!chat || chat.isNotJoined || chat.isRestricted) return false;
+
+  const isCurrentUserAdmin = isChatAdmin(chat);
+  const hasAdminRight = getHasAdminRight(chat, 'manageRanks');
+  if (!isCurrentUserAdmin) return userId === global.currentUserId && !isUserRightBanned(chat, 'editRank'); // Users can edit only their own rank
+  if (!hasAdminRight) return false;
+
+  if (userId === global.currentUserId) return true; // Admin can edit own rank with permission
+
+  if (!chat.isCreator && (isOwner || isAdmin)) return false; // Admin can't edit rank of owner or another admin
+
+  return true;
+}
+
+export function selectCanEditOwnRank<T extends GlobalState>(global: T, chatId: string) {
+  const chat = selectChat(global, chatId);
+  if (!chat || chat.isNotJoined || chat.isRestricted) return false;
+
+  const isCurrentUserAdmin = isChatAdmin(chat);
+  if (!isCurrentUserAdmin) return !isUserRightBanned(chat, 'editRank'); // Users can edit only their own rank
+  return getHasAdminRight(chat, 'manageRanks');
 }

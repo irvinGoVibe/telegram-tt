@@ -1,5 +1,3 @@
-import type BigInt from 'big-integer';
-
 import type { BinaryReader } from '../../extensions';
 
 import Api from '../api';
@@ -13,17 +11,17 @@ export default class RPCResult {
 
     private CONSTRUCTOR_ID: number;
 
-    private reqMsgId: BigInt.BigInteger;
+    private reqMsgId: bigint;
 
-    private body?: Buffer;
+    private body?: Uint8Array;
 
     private error?: Api.RpcError;
 
     private classType: string;
 
     constructor(
-        reqMsgId: BigInt.BigInteger,
-        body?: Buffer,
+        reqMsgId: bigint,
+        body?: Uint8Array,
         error?: Api.RpcError,
     ) {
         this.CONSTRUCTOR_ID = 0xf35c6d01;
@@ -33,7 +31,7 @@ export default class RPCResult {
         this.classType = 'constructor';
     }
 
-    static async fromReader(reader: BinaryReader) {
+    static fromReader(reader: BinaryReader) {
         const msgId = reader.readLong();
         const innerCode = reader.readInt(false);
         if (innerCode === Api.RpcError.CONSTRUCTOR_ID) {
@@ -46,7 +44,7 @@ export default class RPCResult {
         if (innerCode === GZIPPacked.CONSTRUCTOR_ID) {
             return new RPCResult(
                 msgId,
-                (await GZIPPacked.fromReader(reader)).data,
+                GZIPPacked.fromReader(reader).data,
             );
         }
         reader.seek(-4);

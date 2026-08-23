@@ -1,5 +1,8 @@
+import type { LovelyChartParams } from 'lovely-chart';
+
 import type { ApiChat } from './chats';
 import type { ApiTypePrepaidGiveaway } from './payments';
+import type { ApiTypeCurrencyAmount } from './stars';
 
 export interface ApiChannelStatistics {
   type: 'channel';
@@ -81,30 +84,11 @@ export interface ApiStoryPublicForward {
   reactionsCount?: number;
 }
 
-export interface StatisticsGraph {
+export interface StatisticsGraph extends LovelyChartParams {
   graphType: 'graph';
-  type: string;
   zoomToken?: string;
-  labelFormatter: string;
-  tooltipFormatter: string;
-  labels: Array<string | number>;
-  isStacked: boolean;
-  isPercentage?: boolean;
-  isCurrency?: boolean;
-  currencyRate?: number;
-  hideCaption: boolean;
-  hasSecondYAxis: boolean;
-  minimapRange: {
-    begin: number;
-    end: number;
-  };
   labelFromIndex: number;
   labelToIndex: number;
-  datasets: {
-    name: string;
-    color: string;
-    values: number[];
-  };
 }
 
 export interface StatisticsGraphError {
@@ -153,8 +137,8 @@ export interface StatisticsStoryInteractionCounter {
 }
 
 export interface ChannelMonetizationBalances {
-  currentBalance: number;
-  availableBalance: number;
-  overallRevenue: number;
+  currentBalance: ApiTypeCurrencyAmount;
+  availableBalance: ApiTypeCurrencyAmount;
+  overallRevenue: ApiTypeCurrencyAmount;
   isWithdrawalEnabled?: boolean;
 }

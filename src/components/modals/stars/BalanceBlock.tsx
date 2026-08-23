@@ -3,7 +3,7 @@ import { getActions } from '../../../global';
 
 import type { ApiTypeCurrencyAmount } from '../../../api/types';
 
-import { STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../../config';
+import { NNBSP, STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../../config';
 import { formatStarsAmount } from '../../../global/helpers/payments';
 import buildClassName from '../../../util/buildClassName';
 import { convertCurrencyFromBaseUnit } from '../../../util/formatCurrency';
@@ -11,6 +11,7 @@ import { convertCurrencyFromBaseUnit } from '../../../util/formatCurrency';
 import useLang from '../../../hooks/useLang';
 
 import BadgeButton from '../../common/BadgeButton';
+import GramIcon from '../../common/icons/GramIcon';
 import Icon from '../../common/icons/Icon';
 import StarIcon from '../../common/icons/StarIcon';
 
@@ -32,9 +33,12 @@ const BalanceBlock = ({ balance, className, withAddButton }: OwnProps) => {
   const renderStarsAmount = () => {
     return (
       <>
-        <StarIcon type="gold" size="middle" />
-        {balance !== undefined && balance.currency === STARS_CURRENCY_CODE
-          ? formatStarsAmount(lang, balance) : '…'}
+        <span>
+          <StarIcon type="gold" size="adaptive" />
+          {NNBSP}
+          {balance !== undefined && balance.currency === STARS_CURRENCY_CODE
+            ? formatStarsAmount(lang, balance) : '…'}
+        </span>
         {withAddButton && (
           <BadgeButton
             className={styles.addStarsButton}
@@ -52,10 +56,11 @@ const BalanceBlock = ({ balance, className, withAddButton }: OwnProps) => {
 
   const renderTonAmount = () => {
     return (
-      <>
-        <Icon name="toncoin" />
+      <span>
+        <GramIcon />
+        {NNBSP}
         {balance !== undefined ? convertCurrencyFromBaseUnit(balance.amount, balance.currency) : '…'}
-      </>
+      </span>
     );
   };
 

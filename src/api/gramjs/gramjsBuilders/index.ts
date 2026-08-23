@@ -1,29 +1,34 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
-import { generateRandomBytes, readBigIntFromBuffer } from '../../../lib/gramjs/Helpers';
+import { generateRandomBigInt, generateRandomBytes, readBigIntFromBuffer } from '../../../lib/gramjs/Helpers';
 
 import type {
+  ApiAudio,
+  ApiBirthday,
   ApiBotApp,
   ApiChatAdminRights,
   ApiChatBannedRights,
   ApiChatFolder,
   ApiChatReactions,
   ApiDisallowedGiftsSettings,
+  ApiDocument,
   ApiEmojiStatusType,
   ApiFormattedText,
   ApiGroupCall,
+  ApiInputAiComposeTone,
   ApiInputPrivacyRules,
   ApiInputReplyInfo,
   ApiInputStorePaymentPurpose,
   ApiInputSuggestedPostInfo,
+  ApiLocation,
   ApiMessageEntity,
+  ApiMessagePoll,
   ApiNewMediaTodo,
   ApiNewPoll,
   ApiPhoneCall,
   ApiPhoto,
-  ApiPoll,
   ApiPremiumGiftCodeOption,
   ApiPrivacyKey,
+  ApiProfileTab,
   ApiReactionWithPaid,
   ApiReportReason,
   ApiRequestInputInvoice,
@@ -35,25 +40,30 @@ import type {
   ApiThemeParameters,
   ApiTypeCurrencyAmount,
   ApiVideo,
+  MediaContent,
 } from '../../types';
 import {
   ApiMessageEntityTypes,
 } from '../../types';
 
 import { CHANNEL_ID_BASE, DEFAULT_STATUS_ICON_ID, STARS_CURRENCY_CODE } from '../../../config';
+import { writeUint32LE } from '../../../util/encoding/buffer';
 import { pick } from '../../../util/iteratees';
+import { getMtpEphemeralMessageId } from '../../../util/keys/messageKey';
 import { deserializeBytes } from '../helpers/misc';
 import localDb from '../localDb';
 
+export { buildInputRichMessage } from './richContent';
+
 export const DEFAULT_PRIMITIVES = {
   INT: 0,
-  BIGINT: BigInt(0),
+  BIGINT: 0n,
   STRING: '',
 } as const;
 
 export function getEntityTypeById(peerId: string) {
-  const n = Number(peerId);
-  if (n > 0) {
+  const n = BigInt(peerId);
+  if (n > 0n) {
     return 'user';
   }
 
@@ -143,7 +153,7 @@ export function buildInputPaidReactionPrivacy(isPrivate?: boolean, peerId?: stri
 
 export function buildInputPeerFromLocalDb(chatOrUserId: string): GramJs.TypeInputPeer | undefined {
   const type = getEntityTypeById(chatOrUserId);
-  let accessHash: BigInt.BigInteger | undefined;
+  let accessHash: bigint | undefined;
 
   if (type === 'user') {
     accessHash = localDb.users[chatOrUserId]?.accessHash;
@@ -158,6 +168,15 @@ export function buildInputPeerFromLocalDb(chatOrUserId: string): GramJs.TypeInpu
   }
 
   return buildInputPeer(chatOrUserId, String(accessHash));
+}
+
+export function buildInputUserFromLocalDb(userId: string): GramJs.TypeInputUser | undefined {
+  const accessHash = localDb.users[userId]?.accessHash;
+  if (!accessHash) {
+    return undefined;
+  }
+
+  return buildInputUser(userId, String(accessHash));
 }
 
 export function buildInputChannelFromLocalDb(channelId: string): GramJs.TypeInputChannel | undefined {
@@ -183,7 +202,11 @@ export function buildInputStickerSetShortName(shortName: string) {
   });
 }
 
-export function buildInputDocument(media: ApiSticker | ApiVideo) {
+export function buildInputDocument(media: ApiAudio | ApiSticker | ApiVideo | ApiDocument) {
+  if (!media.id) {
+    return undefined;
+  }
+
   const document = localDb.documents[media.id];
 
   if (!document) {
@@ -197,55 +220,65 @@ export function buildInputDocument(media: ApiSticker | ApiVideo) {
   ]));
 }
 
-export function buildInputMediaDocument(media: ApiSticker | ApiVideo) {
+export function buildInputMediaDocument(media: ApiSticker | ApiVideo | ApiDocument, spoiler?: true) {
   const inputDocument = buildInputDocument(media);
 
   if (!inputDocument) {
     return undefined;
   }
 
-  return new GramJs.InputMediaDocument({ id: inputDocument });
+  return new GramJs.InputMediaDocument({ id: inputDocument, spoiler });
 }
 
-export function buildInputPoll(pollParams: ApiNewPoll, randomId: BigInt.BigInteger) {
-  const { summary, quiz } = pollParams;
+export function buildInputPoll(
+  pollParams: ApiNewPoll,
+  randomId: bigint,
+  media?: {
+    attachedMedia?: GramJs.TypeInputMedia;
+    solutionMedia?: GramJs.TypeInputMedia;
+  },
+) {
+  const { summary: poll, correctAnswers, solution, solutionEntities } = pollParams;
 
-  const poll = new GramJs.Poll({
+  const inputPoll = new GramJs.Poll({
     id: randomId,
-    publicVoters: summary.isPublic,
-    question: buildInputTextWithEntities(summary.question),
-    answers: summary.answers.map(({ text, option }) => {
+    publicVoters: poll.isPublic,
+    question: buildInputTextWithEntities(poll.question),
+    answers: poll.answers.map(({ text, option }) => {
       return new GramJs.PollAnswer({
         text: buildInputTextWithEntities(text),
         option: deserializeBytes(option),
       });
     }),
-    quiz: summary.quiz,
-    multipleChoice: summary.multipleChoice,
+    quiz: poll.isQuiz,
+    closeDate: poll.closeDate,
+    closePeriod: poll.closePeriod,
+    hideResultsUntilClose: poll.shouldHideResultsUntilClose,
+    revotingDisabled: poll.isRevoteDisabled,
+    shuffleAnswers: poll.shouldShuffleAnswers,
+    subscribersOnly: poll.isRestrictedToSubscribers,
+    countriesIso2: poll.allowedCountryCodes,
+    openAnswers: poll.canAddAnswers,
+    multipleChoice: poll.isMultipleChoice,
+    hash: DEFAULT_PRIMITIVES.BIGINT,
   });
 
-  if (!quiz) {
-    return new GramJs.InputMediaPoll({ poll });
-  }
-
-  const correctAnswers = quiz.correctAnswers.map(deserializeBytes);
-  const { solution } = quiz;
-  const solutionEntities = quiz.solutionEntities ? quiz.solutionEntities.map(buildMtpMessageEntity) : [];
+  const inputSolutionEntities = solutionEntities?.map(buildMtpMessageEntity) || [];
 
   return new GramJs.InputMediaPoll({
-    poll,
+    poll: inputPoll,
     correctAnswers,
-    ...(solution && {
-      solution,
-      solutionEntities,
-    }),
+    attachedMedia: media?.attachedMedia,
+    solution,
+    solutionEntities: solution !== undefined ? inputSolutionEntities : undefined,
+    solutionMedia: media?.solutionMedia,
   });
 }
 
-export function buildInputPollFromExisting(poll: ApiPoll, shouldClose = false) {
+export function buildInputPollFromExisting(poll: ApiMessagePoll, shouldClose = false) {
   return new GramJs.InputMediaPoll({
     poll: new GramJs.Poll({
-      id: BigInt(poll.id),
+      id: BigInt(poll.summary.id),
       publicVoters: poll.summary.isPublic,
       question: buildInputTextWithEntities(poll.summary.question),
       answers: poll.summary.answers.map(({ text, option }) => {
@@ -254,15 +287,97 @@ export function buildInputPollFromExisting(poll: ApiPoll, shouldClose = false) {
           option: deserializeBytes(option),
         });
       }),
-      quiz: poll.summary.quiz,
-      multipleChoice: poll.summary.multipleChoice,
+      quiz: poll.summary.isQuiz,
+      multipleChoice: poll.summary.isMultipleChoice,
       closeDate: poll.summary.closeDate,
       closePeriod: poll.summary.closePeriod,
-      closed: shouldClose ? true : poll.summary.closed,
+      closed: shouldClose ? true : poll.summary.isClosed,
+      creator: poll.summary.isCreator,
+      subscribersOnly: poll.summary.isRestrictedToSubscribers,
+      countriesIso2: poll.summary.allowedCountryCodes,
+      revotingDisabled: poll.summary.isRevoteDisabled,
+      shuffleAnswers: poll.summary.shouldShuffleAnswers,
+      hideResultsUntilClose: poll.summary.shouldHideResultsUntilClose,
+      openAnswers: poll.summary.canAddAnswers,
+      hash: BigInt(poll.summary.hash),
     }),
-    correctAnswers: poll.results.results?.filter((o) => o.isCorrect).map((o) => deserializeBytes(o.option)),
+    correctAnswers: poll.summary.answers.map((answer, index) => {
+      const result = poll.results.resultByOption?.[answer.option];
+      return result?.isCorrect ? index : -1;
+    }).filter((i) => i !== -1),
+    attachedMedia: buildInputMediaFromContent(poll.attachedMedia),
     solution: poll.results.solution,
     solutionEntities: poll.results.solutionEntities?.map(buildMtpMessageEntity),
+    solutionMedia: buildInputMediaFromContent(poll.results.solutionMedia),
+  });
+}
+
+function buildInputMediaFromContent(content?: MediaContent) {
+  if (!content) {
+    return undefined;
+  }
+
+  if (content.photo) {
+    const inputPhoto = buildInputPhoto(content.photo);
+    return inputPhoto ? new GramJs.InputMediaPhoto({
+      id: inputPhoto,
+      spoiler: content.photo.isSpoiler || undefined,
+    }) : undefined;
+  }
+
+  if (content.video) {
+    return buildInputMediaDocument(content.video, content.video.isSpoiler || undefined);
+  }
+
+  if (content.document) {
+    return buildInputMediaDocument(content.document);
+  }
+
+  if (content.location) {
+    return buildInputLocationMedia(content.location);
+  }
+
+  if (content.sticker) {
+    return buildInputMediaDocument(content.sticker);
+  }
+
+  return undefined;
+}
+
+function buildInputLocationMedia(location: ApiLocation) {
+  const geoPoint = buildInputGeoPoint(location.geo);
+
+  if (!geoPoint) {
+    return undefined;
+  }
+
+  if (location.mediaType === 'venue') {
+    return new GramJs.InputMediaVenue({
+      geoPoint,
+      title: location.title,
+      address: location.address,
+      provider: location.provider,
+      venueId: location.venueId,
+      venueType: location.venueType,
+    });
+  }
+
+  if (location.mediaType === 'geoLive') {
+    return new GramJs.InputMediaGeoLive({
+      geoPoint,
+      heading: location.heading,
+      period: location.period,
+    });
+  }
+
+  return new GramJs.InputMediaGeoPoint({ geoPoint });
+}
+
+function buildInputGeoPoint(geo: ApiLocation['geo']) {
+  return new GramJs.InputGeoPoint({
+    lat: geo.lat,
+    long: geo.long,
+    accuracyRadius: geo.accuracyRadius,
   });
 }
 
@@ -359,21 +474,13 @@ export function buildInputStory(story: ApiStory | ApiStorySkipped) {
   });
 }
 
-export function generateRandomBigInt() {
-  return readBigIntFromBuffer(generateRandomBytes(8), true, true);
-}
-
 export function generateRandomTimestampedBigInt() {
   // 32 bits for timestamp, 32 bits are random
   const buffer = generateRandomBytes(8);
-  const timestampBuffer = Buffer.alloc(4);
-  timestampBuffer.writeUInt32LE(Math.floor(Date.now() / 1000), 0);
+  const timestampBuffer = new Uint8Array(4);
+  writeUint32LE(timestampBuffer, Math.floor(Date.now() / 1000));
   buffer.set(timestampBuffer, 4);
   return readBigIntFromBuffer(buffer, true, true);
-}
-
-export function generateRandomInt() {
-  return readBigIntFromBuffer(generateRandomBytes(4), true, true).toJSNumber();
 }
 
 export function buildMessageFromUpdate(
@@ -411,7 +518,11 @@ export function buildMtpMessageEntity(entity: ApiMessageEntity): GramJs.TypeMess
     case ApiMessageEntityTypes.Pre:
       return new GramJs.MessageEntityPre({ offset, length, language: entity.language || '' });
     case ApiMessageEntityTypes.Blockquote:
-      return new GramJs.MessageEntityBlockquote({ offset, length });
+      return new GramJs.MessageEntityBlockquote({
+        collapsed: entity.canCollapse ? true : undefined,
+        offset,
+        length,
+      });
     case ApiMessageEntityTypes.TextUrl:
       return new GramJs.MessageEntityTextUrl({ offset, length, url: entity.url });
     case ApiMessageEntityTypes.Url:
@@ -428,6 +539,18 @@ export function buildMtpMessageEntity(entity: ApiMessageEntity): GramJs.TypeMess
       return new GramJs.MessageEntitySpoiler({ offset, length });
     case ApiMessageEntityTypes.CustomEmoji:
       return new GramJs.MessageEntityCustomEmoji({ offset, length, documentId: BigInt(entity.documentId) });
+    case ApiMessageEntityTypes.FormattedDate:
+      return new GramJs.MessageEntityFormattedDate({
+        offset,
+        length,
+        date: entity.date,
+        relative: entity.relative,
+        shortTime: entity.shortTime,
+        longTime: entity.longTime,
+        shortDate: entity.shortDate,
+        longDate: entity.longDate,
+        dayOfWeek: entity.dayOfWeek,
+      });
     default:
       return new GramJs.MessageEntityUnknown({ offset, length });
   }
@@ -460,6 +583,14 @@ export function buildInputPhoto(photo: ApiPhoto) {
   ]));
 }
 
+export function buildInputBirthday(birthday: ApiBirthday) {
+  return new GramJs.Birthday({
+    day: birthday.day,
+    month: birthday.month,
+    year: birthday.year,
+  });
+}
+
 export function buildInputContact({
   phone,
   firstName,
@@ -470,7 +601,7 @@ export function buildInputContact({
   lastName: string;
 }) {
   return new GramJs.InputPhoneContact({
-    clientId: BigInt(1),
+    clientId: 1n,
     phone,
     firstName,
     lastName,
@@ -582,6 +713,8 @@ export function buildSendMessageAction(action: ApiSendMessageAction) {
       return new GramJs.SendMessageTypingAction();
     case 'recordAudio':
       return new GramJs.SendMessageRecordAudioAction();
+    case 'recordRound':
+      return new GramJs.SendMessageRecordRoundAction();
     case 'chooseSticker':
       return new GramJs.SendMessageChooseStickerAction();
     case 'playingGame':
@@ -597,17 +730,16 @@ export function buildInputThemeParams(params: ApiThemeParameters) {
 }
 
 export function buildMtpPeerId(id: string, type: 'user' | 'chat' | 'channel') {
+  const n = BigInt(id);
   if (type === 'user') {
-    return BigInt(id);
+    return n;
   }
-
-  const n = Number(id);
 
   if (type === 'channel') {
-    return BigInt(-n - CHANNEL_ID_BASE);
+    return -n - CHANNEL_ID_BASE;
   }
 
-  return BigInt(n * -1);
+  return n * -1n;
 }
 
 export function buildInputGroupCall(groupCall: Partial<ApiGroupCall>) {
@@ -624,13 +756,17 @@ export function buildInputPhoneCall({ id, accessHash }: ApiPhoneCall) {
   });
 }
 
-export function buildInputStorePaymentPurpose(purpose: ApiInputStorePaymentPurpose):
-GramJs.TypeInputStorePaymentPurpose {
+export function buildInputStorePaymentPurpose(
+  purpose: ApiInputStorePaymentPurpose,
+): GramJs.TypeInputStorePaymentPurpose {
   if (purpose.type === 'stars') {
     return new GramJs.InputStorePaymentStarsTopup({
       stars: BigInt(purpose.stars),
       currency: purpose.currency,
       amount: BigInt(purpose.amount),
+      spendPurposePeer: purpose.spendPurposePeer
+        ? buildInputPeer(purpose.spendPurposePeer.id, purpose.spendPurposePeer.accessHash)
+        : undefined,
     });
   }
 
@@ -790,6 +926,33 @@ export function buildInputInvoice(invoice: ApiRequestInputInvoice) {
       });
     }
 
+    case 'stargiftDropOriginalDetails': {
+      return new GramJs.InputInvoiceStarGiftDropOriginalDetails({
+        stargift: buildInputSavedStarGift(invoice.inputSavedGift),
+      });
+    }
+
+    case 'stargiftPrepaidUpgrade': {
+      return new GramJs.InputInvoiceStarGiftPrepaidUpgrade({
+        peer: buildInputPeer(invoice.peer.id, invoice.peer.accessHash),
+        hash: invoice.hash,
+      });
+    }
+
+    case 'stargiftAuctionBid': {
+      const {
+        giftId, bidAmount, peer, message, shouldHideName, isUpdateBid,
+      } = invoice;
+      return new GramJs.InputInvoiceStarGiftAuctionBid({
+        giftId: BigInt(giftId),
+        bidAmount: BigInt(bidAmount),
+        peer: peer && buildInputPeer(peer.id, peer.accessHash || ''),
+        message: message && buildInputTextWithEntities(message),
+        hideName: shouldHideName || undefined,
+        updateBid: isUpdateBid || undefined,
+      });
+    }
+
     case 'giveaway':
     default: {
       const purpose = buildInputStorePaymentPurpose(invoice.purpose);
@@ -854,6 +1017,17 @@ export function buildInputEmojiStatus(emojiStatus: ApiEmojiStatusType) {
   });
 }
 
+export function buildInputAiComposeTone(tone: ApiInputAiComposeTone): GramJs.TypeInputAiComposeTone {
+  switch (tone.type) {
+    case 'default':
+      return new GramJs.InputAiComposeToneDefault({ tone: tone.tone });
+    case 'id':
+      return new GramJs.InputAiComposeToneID({ id: BigInt(tone.id), accessHash: BigInt(tone.accessHash) });
+    case 'slug':
+      return new GramJs.InputAiComposeToneSlug({ slug: tone.slug });
+  }
+}
+
 export function buildInputTextWithEntities(formatted: ApiFormattedText) {
   return new GramJs.TextWithEntities({
     text: formatted.text,
@@ -873,6 +1047,12 @@ export function buildInputReplyTo(replyInfo: ApiInputReplyInfo) {
     return new GramJs.InputReplyToStory({
       peer: buildInputPeerFromLocalDb(replyInfo.peerId)!,
       storyId: replyInfo.storyId,
+    });
+  }
+
+  if (replyInfo.type === 'ephemeral') {
+    return new GramJs.InputReplyToEphemeralMessage({
+      id: getMtpEphemeralMessageId(replyInfo.replyToMsgId),
     });
   }
 
@@ -989,4 +1169,29 @@ export function buildInputSavedStarGift(inputGift: ApiRequestInputSavedStarGift)
     peer: buildInputPeer(inputGift.chat.id, inputGift.chat.accessHash),
     savedId: BigInt(inputGift.savedId),
   });
+}
+
+export function buildInputProfileTab(profileTab: ApiProfileTab) {
+  switch (profileTab) {
+    case 'stories':
+      return new GramJs.ProfileTabPosts();
+    case 'gifts':
+      return new GramJs.ProfileTabGifts();
+    case 'media':
+      return new GramJs.ProfileTabMedia();
+    case 'documents':
+      return new GramJs.ProfileTabFiles();
+    case 'audio':
+      return new GramJs.ProfileTabMusic();
+    case 'voice':
+      return new GramJs.ProfileTabVoice();
+    case 'links':
+      return new GramJs.ProfileTabLinks();
+    case 'gif':
+      return new GramJs.ProfileTabGifs();
+    default: {
+      const _exhaustiveCheck: never = profileTab;
+      return _exhaustiveCheck;
+    }
+  }
 }

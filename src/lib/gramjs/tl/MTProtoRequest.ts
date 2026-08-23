@@ -3,7 +3,7 @@ export abstract class MTProtoRequest {
 
     private sequence: number;
 
-    private msgId: number;
+    private msgId: bigint;
 
     private readonly dirty: boolean;
 
@@ -19,7 +19,7 @@ export abstract class MTProtoRequest {
 
     constructor() {
         this.sent = false;
-        this.msgId = 0; // long
+        this.msgId = 0n; // long
         this.sequence = 0;
 
         this.dirty = false;
@@ -50,7 +50,7 @@ export abstract class MTProtoRequest {
     // These should be overrode
     abstract onSend(): void;
 
-    abstract onResponse(_buffer: Buffer): void;
+    abstract onResponse(_buffer: Uint8Array): void;
 
     abstract onException(_exception: Error): void;
 }

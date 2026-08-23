@@ -11,6 +11,8 @@ import type {
 import type { BufferedRange } from '../../hooks/useBuffering';
 import type { OldLangFn } from '../../hooks/useOldLang';
 import type { ThemeKey } from '../../types';
+import type { LangFn } from '../../util/localization';
+import type { MenuItemContextAction } from '../ui/ListItem';
 import { ApiMediaFormat } from '../../api/types';
 import { AudioOrigin } from '../../types';
 
@@ -28,16 +30,17 @@ import { selectMessageMediaDuration } from '../../global/selectors/media';
 import { makeTrackId } from '../../util/audioPlayer';
 import buildClassName from '../../util/buildClassName';
 import { captureEvents } from '../../util/captureEvents';
-import { formatMediaDateTime, formatMediaDuration, formatPastTimeShort } from '../../util/dates/dateFormat';
+import { formatMediaDateTime, formatMediaDuration, formatPastTimeShort } from '../../util/dates/oldDateFormat';
 import { decodeWaveform, interpolateArray } from '../../util/waveform';
 import { LOCAL_TGS_URLS } from './helpers/animatedAssets';
-import { getFileSizeString } from './helpers/documentInfo';
 import renderText from './helpers/renderText';
 import { MAX_EMPTY_WAVEFORM_POINTS, renderWaveform } from './helpers/waveform';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useAudioPlayer from '../../hooks/useAudioPlayer';
 import useBuffering from '../../hooks/useBuffering';
+import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useMedia from '../../hooks/useMedia';
 import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
@@ -46,7 +49,11 @@ import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated
 
 import Button from '../ui/Button';
 import Link from '../ui/Link';
+import Menu from '../ui/Menu';
+import MenuItem from '../ui/MenuItem';
+import MenuSeparator from '../ui/MenuSeparator';
 import ProgressSpinner from '../ui/ProgressSpinner';
+import AnimatedFileSize from './AnimatedFileSize';
 import AnimatedIcon from './AnimatedIcon';
 import Icon from './icons/Icon';
 
@@ -77,6 +84,7 @@ type OwnProps = {
   onReadMedia?: () => void;
   onCancelUpload?: () => void;
   onDateClick?: (arg: ApiMessage) => void;
+  contextActions?: MenuItemContextAction[];
 };
 
 type StateProps = {
@@ -117,6 +125,7 @@ const Audio = ({
   onReadMedia,
   onCancelUpload,
   onDateClick,
+  contextActions,
 }: OwnProps & StateProps) => {
   const {
     cancelMediaDownload, downloadMedia, transcribeAudio, openOneTimeMediaModal,
@@ -131,10 +140,12 @@ const Audio = ({
   const media = (voice || video || audio)!;
   const mediaSource = (voice || video);
   const isVoice = Boolean(voice || video);
-  const isSeeking = useRef<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>();
+  const menuRef = useRef<HTMLDivElement>();
+  const isSeekingRef = useRef<boolean>(false);
   const seekerRef = useRef<HTMLDivElement>();
-  const lang = useOldLang();
-  const { isRtl } = lang;
+  const oldLang = useOldLang();
+  const lang = useLang();
 
   const { isMobile } = useAppLayout();
   const [isActivated, setIsActivated] = useState(false);
@@ -263,8 +274,19 @@ const Audio = ({
     }
   });
 
+  const {
+    isContextMenuOpen, contextMenuAnchor,
+    handleBeforeContextMenu, handleContextMenu,
+    handleContextMenuClose, handleContextMenuHide,
+  } = useContextMenuHandlers(containerRef, !contextActions);
+
+  const getTriggerElement = useLastCallback(() => containerRef.current);
+  const getRootElement = useLastCallback(() => containerRef.current!.closest('.custom-scroll') || document.body);
+  const getMenuElement = useLastCallback(() => menuRef.current);
+  const getLayout = useLastCallback(() => ({ withPortal: true }));
+
   const handleSeek = useLastCallback((e: MouseEvent | TouchEvent) => {
-    if (isSeeking.current && seekerRef.current) {
+    if (isSeekingRef.current && seekerRef.current) {
       const { width, left } = seekerRef.current.getBoundingClientRect();
       const clientX = e instanceof MouseEvent ? e.clientX : e.targetTouches[0].clientX;
       e.stopPropagation(); // Prevent Slide-to-Reply activation
@@ -275,12 +297,12 @@ const Audio = ({
 
   const handleStartSeek = useLastCallback((e: MouseEvent | TouchEvent) => {
     if (e instanceof MouseEvent && e.button === 2) return;
-    isSeeking.current = true;
+    isSeekingRef.current = true;
     handleSeek(e);
   });
 
   const handleStopSeek = useLastCallback(() => {
-    isSeeking.current = false;
+    isSeekingRef.current = false;
   });
 
   const handleDateClick = useLastCallback(() => {
@@ -314,7 +336,7 @@ const Audio = ({
   function renderSecondLine() {
     if (isVoice) {
       return (
-        <div className="meta" dir={isRtl ? 'rtl' : undefined}>
+        <div className="meta" dir={lang.isRtl ? 'rtl' : undefined}>
           {formatMediaDuration((voice || video)!.duration)}
         </div>
       );
@@ -323,7 +345,7 @@ const Audio = ({
     const { performer } = audio!;
 
     return (
-      <div className="meta" dir={isRtl ? 'rtl' : undefined}>
+      <div className="meta" dir={lang.isRtl ? 'rtl' : undefined}>
         {formatMediaDuration(duration)}
         <span className="bullet">&bull;</span>
         {performer && <span className="performer" title={performer}>{renderText(performer)}</span>}
@@ -341,6 +363,7 @@ const Audio = ({
     isOwn && origin === AudioOrigin.Inline && 'own',
     (origin === AudioOrigin.Search || origin === AudioOrigin.SharedMedia) && 'bigger',
     isSelected && 'audio-is-selected',
+    contextMenuAnchor && 'has-menu-open',
   );
 
   const buttonClassNames = ['toogle-play-wrapper'];
@@ -364,14 +387,14 @@ const Audio = ({
                 className="date"
                 onClick={handleDateClick}
               >
-                {formatPastTimeShort(lang, date * 1000)}
+                {formatPastTimeShort(oldLang, date * 1000)}
               </Link>
             )}
           </div>
         </div>
 
         {withSeekline && (
-          <div className="meta search-result" dir={isRtl ? 'rtl' : undefined}>
+          <div className="meta search-result" dir={lang.isRtl ? 'rtl' : undefined}>
             <span className="duration with-seekline" dir="auto">
               {playProgress < 1 && formatMediaDuration(duration * playProgress, duration)}
             </span>
@@ -418,10 +441,16 @@ const Audio = ({
   }
 
   return (
-    <div className={fullClassName} dir={lang.isRtl ? 'rtl' : 'ltr'}>
+    <div
+      ref={containerRef}
+      className={fullClassName}
+      dir={lang.isRtl ? 'rtl' : 'ltr'}
+      onMouseDown={handleBeforeContextMenu}
+      onContextMenu={contextActions ? handleContextMenu : undefined}
+    >
       {isSelectable && (
         <div className="message-select-control no-selection">
-          {isSelected && <Icon name="select" />}
+          {isSelected && <Icon name="check" className="message-select-control-icon" />}
         </div>
       )}
       {renderTooglePlayWrapper()}
@@ -455,13 +484,13 @@ const Audio = ({
           className="download-button"
           ariaLabel={isDownloading ? 'Cancel download' : 'Download'}
           onClick={handleDownloadClick}
-        >
-          <Icon name={isDownloading ? 'close' : 'arrow-down'} />
-        </Button>
+          iconName={isDownloading ? 'close' : 'arrow-down'}
+        />
       )}
       {origin === AudioOrigin.Search && renderWithTitle()}
       {origin !== AudioOrigin.Search && audio && renderAudio(
         lang,
+        oldLang,
         audio,
         duration,
         isPlaying,
@@ -490,6 +519,38 @@ const Audio = ({
           origin,
         )
       )}
+      {contextActions && contextMenuAnchor !== undefined && (
+        <Menu
+          ref={menuRef}
+          isOpen={isContextMenuOpen}
+          anchor={contextMenuAnchor}
+          getTriggerElement={getTriggerElement}
+          getRootElement={getRootElement}
+          getMenuElement={getMenuElement}
+          getLayout={getLayout}
+          className="shared-media-context-menu"
+          autoClose
+          onClose={handleContextMenuClose}
+          onCloseAnimationEnd={handleContextMenuHide}
+          withPortal
+        >
+          {contextActions.map((action) => (
+            ('isSeparator' in action) ? (
+              <MenuSeparator key={action.key || 'separator'} />
+            ) : (
+              <MenuItem
+                key={action.title}
+                icon={action.icon}
+                destructive={action.destructive}
+                disabled={!action.handler}
+                onClick={action.handler}
+              >
+                {action.title}
+              </MenuItem>
+            )
+          ))}
+        </Menu>
+      )}
     </div>
   );
 };
@@ -505,8 +566,9 @@ function getSeeklineSpikeAmounts(isMobile?: boolean, withAvatar?: boolean) {
   };
 }
 
-function renderAudio(
-  lang: OldLangFn,
+export function renderAudio(
+  lang: LangFn,
+  oldLang: OldLangFn,
   audio: ApiAudio,
   duration: number,
   isPlaying: boolean,
@@ -536,10 +598,7 @@ function renderAudio(
         </div>
       )}
       {!showSeekline && showProgress && (
-        <div className="meta" dir={isRtl ? 'rtl' : undefined}>
-          {progress ? `${getFileSizeString(audio.size * progress)} / ` : undefined}
-          {getFileSizeString(audio.size)}
-        </div>
+        <AnimatedFileSize className="meta" size={audio.size} progress={progress} />
       )}
       {!showSeekline && !showProgress && (
         <div className="meta" dir={isRtl ? 'rtl' : undefined}>
@@ -554,7 +613,7 @@ function renderAudio(
             <>
               <span className="bullet">&bull;</span>
               <Link className="date" onClick={handleDateClick}>
-                {formatMediaDateTime(lang, date * 1000, true)}
+                {formatMediaDateTime(oldLang, date * 1000, true)}
               </Link>
             </>
           )}
@@ -616,7 +675,7 @@ function renderVoice(
                   stroke-linejoin="round"
                   rx="6"
                   ry="6"
-                  stroke="white"
+                  stroke="currentColor"
                   stroke-dashoffset="1"
                   stroke-dasharray="32,68"
                 />

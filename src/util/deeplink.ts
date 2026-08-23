@@ -1,6 +1,8 @@
 import { getActions } from '../global';
 
-import type { ApiChatType, ApiFormattedText, LinkContext } from '../api/types';
+import type {
+  ApiChatType, ApiFormattedText, LinkContext,
+} from '../api/types';
 import type { DeepLinkMethod } from './deepLinkParser';
 import { LeftColumnContent, SettingsScreens } from '../types';
 
@@ -41,6 +43,7 @@ export const processDeepLink = (url: string, linkContext?: LinkContext): boolean
         actions.openChatByUsername({
           username: parsedLink.username,
           startParam: parsedLink.start,
+          startGroup: parsedLink.startGroup,
           ref: parsedLink.ref,
           text: parsedLink.text,
           startApp: parsedLink.startApp,
@@ -79,6 +82,9 @@ export const processDeepLink = (url: string, linkContext?: LinkContext): boolean
       case 'giftUniqueLink':
         actions.openUniqueGiftBySlug({ slug: parsedLink.slug });
         return true;
+      case 'giftAuctionLink':
+        actions.openGiftAuctionBySlug({ slug: parsedLink.slug });
+        return true;
       case 'settings':
         if (!parsedLink.screen) {
           actions.openLeftColumnContent({ contentKey: LeftColumnContent.Settings });
@@ -87,30 +93,34 @@ export const processDeepLink = (url: string, linkContext?: LinkContext): boolean
         switch (parsedLink.screen) {
           case 'editProfile':
             actions.openSettingsScreen({ screen: SettingsScreens.EditProfile });
-            break;
+            return true;
           case 'language':
             actions.openSettingsScreen({ screen: SettingsScreens.Language });
-            break;
+            return true;
           case 'devices':
             actions.openSettingsScreen({ screen: SettingsScreens.ActiveSessions });
-            break;
+            return true;
           case 'privacy':
             actions.openSettingsScreen({ screen: SettingsScreens.Privacy });
-            break;
+            return true;
           case 'folders':
             actions.openSettingsScreen({ screen: SettingsScreens.Folders });
-            break;
+            return true;
           case 'theme':
             actions.openSettingsScreen({ screen: SettingsScreens.General });
-            break;
+            return true;
         }
-        return true;
+        break;
       case 'stars':
         actions.openStarsBalanceModal({});
-        break;
+        return true;
       case 'ton':
         actions.openStarsBalanceModal({ currency: TON_CURRENCY_CODE });
-        break;
+        return true;
+      case 'oauth':
+        if (linkContext?.type !== 'inner') return false;
+        actions.requestLinkUrlAuth({ url: parsedLink.url });
+        return true;
       default:
         break;
     }
@@ -213,6 +223,12 @@ export const processDeepLink = (url: string, linkContext?: LinkContext): boolean
           shortName: set,
         },
       });
+      break;
+    }
+    case 'addstyle': {
+      const { set } = params;
+      if (!set) return false;
+      actions.openAiTonePreview({ slug: set });
       break;
     }
     case 'share':

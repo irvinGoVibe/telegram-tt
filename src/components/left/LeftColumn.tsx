@@ -11,7 +11,8 @@ import type { ReducerAction } from '../../hooks/useReducer';
 import { type AnimationLevel, LeftColumnContent, SettingsScreens } from '../../types';
 
 import {
-  selectCurrentChat, selectIsCurrentUserFrozen, selectIsForumPanelOpen, selectTabState,
+  selectCurrentChat, selectIsChatListPanelOpen, selectIsCurrentUserFrozen, selectIsForumPanelOpen,
+  selectPeerHasProfileBackground, selectTabState,
 } from '../../global/selectors';
 import { selectSharedSettings } from '../../global/selectors/sharedState';
 import {
@@ -20,6 +21,7 @@ import {
 import captureEscKeyListener from '../../util/captureEscKeyListener';
 import { resolveTransitionName } from '../../util/resolveTransitionName';
 import { captureControlledSwipe } from '../../util/swipeController';
+import { isComposerHasSelection } from '../middle/composer/helpers/selection';
 
 import useFoldersReducer from '../../hooks/reducers/useFoldersReducer';
 import { useHotkeys } from '../../hooks/useHotkeys';
@@ -38,6 +40,7 @@ import './LeftColumn.scss';
 
 interface OwnProps {
   ref: ElementRef<HTMLDivElement>;
+  isFoldersSidebarShown: boolean;
 }
 
 type StateProps = {
@@ -54,11 +57,13 @@ type StateProps = {
   isChatOpen: boolean;
   isAppUpdateAvailable?: boolean;
   isForumPanelOpen?: boolean;
+  isChatListPanelOpen?: boolean;
   forumPanelChatId?: string;
   isClosingSearch?: boolean;
   archiveSettings: GlobalState['archiveSettings'];
   isArchivedStoryRibbonShown?: boolean;
   isAccountFrozen?: boolean;
+  hasProfileBackground?: boolean;
 };
 
 enum ContentType {
@@ -91,11 +96,14 @@ function LeftColumn({
   isChatOpen,
   isAppUpdateAvailable,
   isForumPanelOpen,
+  isChatListPanelOpen,
   forumPanelChatId,
   isClosingSearch,
   archiveSettings,
   isArchivedStoryRibbonShown,
   isAccountFrozen,
+  hasProfileBackground,
+  isFoldersSidebarShown,
 }: OwnProps & StateProps) {
   const {
     setGlobalSearchQuery,
@@ -108,6 +116,7 @@ function LeftColumn({
     openChat,
     openLeftColumnContent,
     openSettingsScreen,
+    openQuickChatPicker,
   } = getActions();
 
   const [contactsFilter, setContactsFilter] = useState<string>('');
@@ -208,6 +217,7 @@ function LeftColumn({
         case SettingsScreens.PrivacyGroupChats:
         case SettingsScreens.PrivacyVoiceMessages:
         case SettingsScreens.PrivacyMessages:
+        case SettingsScreens.AutoDeleteMessages:
         case SettingsScreens.PrivacyBlockedUsers:
         case SettingsScreens.ActiveWebsites:
         case SettingsScreens.TwoFaDisabled:
@@ -216,6 +226,7 @@ function LeftColumn({
         case SettingsScreens.PasscodeDisabled:
         case SettingsScreens.PasscodeEnabled:
         case SettingsScreens.PasscodeCongratulations:
+        case SettingsScreens.Passkeys:
           openSettingsScreen({ screen: SettingsScreens.Privacy });
           return;
 
@@ -392,13 +403,13 @@ function LeftColumn({
     () => {
       const isArchived = contentKey === LeftColumnContent.Archived;
       const isChatList = contentKey === LeftColumnContent.ChatList;
-      const noChatOrForumOpen = !isChatOpen && !isForumPanelOpen;
+      const noChatOrPanelOpen = !isChatOpen && !isChatListPanelOpen;
       // We listen for escape key only in these cases:
-      // 1. When we are in archived chats and no chat or forum is open.
+      // 1. When we are in archived chats and no chat or chat-list panel is open.
       // 2. When we are in any other screen except chat list and archived chat list.
-      // 3. When we are in chat list and first chat folder is active and no chat or forum is open.
-      if ((isArchived && noChatOrForumOpen) || (!isChatList && !isArchived)
-        || (isFirstChatFolderActive && noChatOrForumOpen)) {
+      // 3. When we are in chat list and first chat folder is active and no chat or chat-list panel is open.
+      if ((isArchived && noChatOrPanelOpen) || (!isChatList && !isArchived)
+        || (isFirstChatFolderActive && noChatOrPanelOpen)) {
         return captureEscKeyListener(() => {
           handleReset();
         });
@@ -406,7 +417,7 @@ function LeftColumn({
         return undefined;
       }
     },
-    [isFirstChatFolderActive, contentKey, handleReset, isChatOpen, isForumPanelOpen],
+    [isFirstChatFolderActive, contentKey, handleReset, isChatOpen, isChatListPanelOpen],
   );
 
   const handleHotkeySearch = useLastCallback((e: KeyboardEvent) => {
@@ -433,8 +444,16 @@ function LeftColumn({
     openLeftColumnContent({ contentKey: LeftColumnContent.Settings });
   });
 
+  const handleQuickChatPicker = useLastCallback((e: KeyboardEvent) => {
+    if (isComposerHasSelection()) return;
+
+    e.preventDefault();
+    openQuickChatPicker();
+  });
+
   useHotkeys(useMemo(() => ({
     'Mod+Shift+F': handleHotkeySearch,
+    'Mod+K': handleQuickChatPicker,
     // https://support.mozilla.org/en-US/kb/take-screenshots-firefox
     ...(!IS_FIREFOX && {
       'Mod+Shift+S': handleHotkeySavedMessages,
@@ -468,7 +487,7 @@ function LeftColumn({
     }
 
     return captureControlledSwipe(ref.current!, {
-      excludedClosestSelector: '.ProfileInfo, .color-picker, .hue-picker',
+      excludedClosestSelector: '.ProfileInfo, .color-picker, .hue-picker, .TabList',
       selectorToPreventScroll: '#Settings .custom-scroll',
       onSwipeRightStart: handleReset,
       onCancel: () => {
@@ -501,6 +520,7 @@ function LeftColumn({
             foldersDispatch={foldersDispatch}
             animationLevel={animationLevel}
             shouldSkipTransition={shouldSkipHistoryAnimations}
+            hasProfileBackground={hasProfileBackground}
             onReset={handleReset}
           />
         );
@@ -541,6 +561,7 @@ function LeftColumn({
             isForumPanelOpen={isForumPanelOpen}
             onTopicSearch={handleTopicSearch}
             isAccountFrozen={isAccountFrozen}
+            isFoldersSidebarShown={isFoldersSidebarShown}
           />
         );
     }
@@ -593,6 +614,7 @@ export default memo(withGlobal<OwnProps>(
     const currentChat = selectCurrentChat(global);
     const isChatOpen = Boolean(currentChat?.id);
     const isForumPanelOpen = selectIsForumPanelOpen(global);
+    const isChatListPanelOpen = selectIsChatListPanelOpen(global);
     const forumPanelChatId = tabState.forumPanelChatId;
     const isAccountFrozen = selectIsCurrentUserFrozen(global);
 
@@ -608,11 +630,14 @@ export default memo(withGlobal<OwnProps>(
       isChatOpen,
       isAppUpdateAvailable,
       isForumPanelOpen,
+      isChatListPanelOpen,
       forumPanelChatId,
       isClosingSearch: tabState.globalSearch.isClosing,
       archiveSettings,
       isArchivedStoryRibbonShown: isArchivedRibbonShown,
       isAccountFrozen,
+      hasProfileBackground: currentUserId
+        ? selectPeerHasProfileBackground(global, currentUserId) : undefined,
       contentKey: leftColumn.contentKey,
       settingsScreen: leftColumn.settingsScreen,
     };

@@ -7,24 +7,26 @@ import type {
   ApiCountry,
   ApiLanguage,
   ApiOldLangString,
-  ApiPeerColors,
-  ApiPeerNotifySettings,
-  ApiPeerProfileColorSet,
+  ApiPasskey,
+  ApiPendingSuggestion,
   ApiPrivacyKey,
+  ApiPromoData,
   ApiRestrictionReason,
   ApiSession,
   ApiTimezone,
   ApiUrlAuthResult,
   ApiWallpaper,
+  ApiWallpaperSettings,
   ApiWebSession,
   LangPackStringValue,
 } from '../../types';
 
-import { numberToHexColor } from '../../../util/colors';
 import {
-  buildCollectionByCallback, omit, omitUndefined, pick,
+  omit, omitUndefined, pick,
 } from '../../../util/iteratees';
+import { toJSNumber } from '../../../util/numbers';
 import { addUserToLocalDb } from '../helpers/localDb';
+import { buildApiFormattedText } from './common';
 import { omitVirtualClassFields } from './helpers';
 import { buildApiDocument, buildMessageTextContent } from './messageContent';
 import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
@@ -33,8 +35,17 @@ import { buildApiUser } from './users';
 
 export function buildApiWallpaper(wallpaper: GramJs.TypeWallPaper): ApiWallpaper | undefined {
   if (wallpaper instanceof GramJs.WallPaperNoFile) {
-    // TODO: Plain color wallpapers
-    return undefined;
+    const settings = wallpaper.settings && buildApiWallpaperSettings(wallpaper.settings);
+    if (!settings) {
+      return undefined;
+    }
+
+    return {
+      slug: String(wallpaper.id),
+      isDark: wallpaper.dark,
+      isDefault: wallpaper.default,
+      settings,
+    };
   }
 
   const { slug } = wallpaper;
@@ -48,6 +59,30 @@ export function buildApiWallpaper(wallpaper: GramJs.TypeWallPaper): ApiWallpaper
   return {
     slug,
     document,
+    isPattern: wallpaper.pattern,
+    isDark: wallpaper.dark,
+    isCreator: wallpaper.creator,
+    isDefault: wallpaper.default,
+    settings: wallpaper.settings && buildApiWallpaperSettings(wallpaper.settings),
+  };
+}
+
+function buildApiWallpaperSettings(settings: GramJs.TypeWallPaperSettings): ApiWallpaperSettings {
+  const {
+    backgroundColor, secondBackgroundColor, thirdBackgroundColor, fourthBackgroundColor,
+    intensity, rotation, blur, motion, emoticon,
+  } = settings;
+
+  return {
+    backgroundColor,
+    secondBackgroundColor,
+    thirdBackgroundColor,
+    fourthBackgroundColor,
+    intensity,
+    rotation,
+    emoticon,
+    isBlurred: blur,
+    isMoving: motion,
   };
 }
 
@@ -110,23 +145,6 @@ export function buildPrivacyKey(key: GramJs.TypePrivacyKey): ApiPrivacyKey | und
   return undefined;
 }
 
-export function buildApiPeerNotifySettings(
-  notifySettings: GramJs.TypePeerNotifySettings,
-): ApiPeerNotifySettings {
-  const {
-    silent, muteUntil, showPreviews, otherSound,
-  } = notifySettings;
-
-  const hasSound = !(otherSound instanceof GramJs.NotificationSoundNone);
-
-  return {
-    hasSound,
-    isSilentPosting: silent,
-    mutedUntil: muteUntil,
-    shouldShowPreviews: showPreviews,
-  };
-}
-
 function buildApiCountry(country: GramJs.help.Country, code: GramJs.help.CountryCode) {
   const {
     hidden, iso2, defaultName, name,
@@ -182,7 +200,10 @@ export function buildJson(json: GramJs.TypeJSONValue): any {
 
 export function buildApiUrlAuthResult(result: GramJs.TypeUrlAuthResult): ApiUrlAuthResult | undefined {
   if (result instanceof GramJs.UrlAuthResultRequest) {
-    const { bot, domain, requestWriteAccess } = result;
+    const {
+      bot, domain, requestWriteAccess, requestPhoneNumber, browser, platform, ip, region, matchCodes,
+      matchCodesFirst, userIdHint, isApp, verifiedAppName,
+    } = result;
     const user = buildApiUser(bot);
     if (!user) return undefined;
 
@@ -191,8 +212,18 @@ export function buildApiUrlAuthResult(result: GramJs.TypeUrlAuthResult): ApiUrlA
     return {
       type: 'request',
       domain,
+      isApp,
       shouldRequestWriteAccess: requestWriteAccess,
       bot: user,
+      shouldRequestPhoneNumber: requestPhoneNumber,
+      browser,
+      platform,
+      ip,
+      region,
+      matchCodes,
+      matchCodesFirst,
+      userIdHint: userIdHint?.toString(),
+      verifiedAppName,
     };
   }
 
@@ -214,7 +245,7 @@ export function buildApiUrlAuthResult(result: GramJs.TypeUrlAuthResult): ApiUrlA
 export function buildApiConfig(config: GramJs.Config): ApiConfig {
   const {
     testMode, expires, gifSearchUsername, chatSizeMax, autologinToken, reactionsDefault,
-    messageLengthMax, editTimeLimit, forwardedCountMax,
+    messageLengthMax, editTimeLimit, forwardedCountMax, ratingEDecay,
   } = config;
   const defaultReaction = reactionsDefault && buildApiReaction(reactionsDefault);
   return {
@@ -227,6 +258,31 @@ export function buildApiConfig(config: GramJs.Config): ApiConfig {
     maxMessageLength: messageLengthMax,
     editTimeLimit,
     maxForwardedCount: forwardedCountMax,
+    ratingEDecay,
+  };
+}
+
+export function buildApiPromoData(promoData: GramJs.help.PromoData): ApiPromoData {
+  const {
+    expires, pendingSuggestions, dismissedSuggestions, customPendingSuggestion,
+  } = promoData;
+  return {
+    expires,
+    pendingSuggestions,
+    dismissedSuggestions,
+    customPendingSuggestion: customPendingSuggestion ? buildApiPendingSuggestion(customPendingSuggestion) : undefined,
+  };
+}
+
+function buildApiPendingSuggestion(pendingSuggestion: GramJs.TypePendingSuggestion): ApiPendingSuggestion {
+  const {
+    suggestion, title, description, url,
+  } = pendingSuggestion;
+  return {
+    suggestion,
+    title: buildApiFormattedText(title),
+    description: buildApiFormattedText(description),
+    url,
   };
 }
 
@@ -237,7 +293,7 @@ export function oldBuildLangPack(mtpLangPack: GramJs.LangPackDifference) {
   }, {});
 }
 
-export function oldBuildLangPackString(mtpString: GramJs.TypeLangPackString) {
+function oldBuildLangPackString(mtpString: GramJs.TypeLangPackString) {
   return mtpString instanceof GramJs.LangPackString
     ? mtpString.value
     : mtpString instanceof GramJs.LangPackStringPluralized
@@ -294,46 +350,6 @@ export function buildApiLanguage(lang: GramJs.TypeLangPackLanguage): ApiLanguage
   };
 }
 
-function buildApiPeerColorSet(colorSet: GramJs.help.PeerColorSet) {
-  return colorSet.colors.map((color) => numberToHexColor(color));
-}
-
-function buildApiPeerProfileColorSet(colorSet: GramJs.help.PeerColorProfileSet): ApiPeerProfileColorSet {
-  return {
-    paletteColors: colorSet.paletteColors.map((color) => numberToHexColor(color)),
-    bgColors: colorSet.bgColors.map((color) => numberToHexColor(color)),
-    storyColors: colorSet.storyColors.map((color) => numberToHexColor(color)),
-  };
-}
-
-export function buildApiPeerColors(wrapper: GramJs.help.TypePeerColors): ApiPeerColors['general'] | undefined {
-  if (!(wrapper instanceof GramJs.help.PeerColors)) return undefined;
-
-  return buildCollectionByCallback(wrapper.colors, (color) => {
-    return [color.colorId, {
-      isHidden: color.hidden,
-      colors: color.colors instanceof GramJs.help.PeerColorSet
-        ? buildApiPeerColorSet(color.colors) : undefined,
-      darkColors: color.darkColors instanceof GramJs.help.PeerColorSet
-        ? buildApiPeerColorSet(color.darkColors) : undefined,
-    }];
-  });
-}
-
-export function buildApiPeerProfileColors(wrapper: GramJs.help.TypePeerColors): ApiPeerColors['profile'] | undefined {
-  if (!(wrapper instanceof GramJs.help.PeerColors)) return undefined;
-
-  return buildCollectionByCallback(wrapper.colors, (color) => {
-    return [color.colorId, {
-      isHidden: color.hidden,
-      colors: color.colors instanceof GramJs.help.PeerColorProfileSet
-        ? buildApiPeerProfileColorSet(color.colors) : undefined,
-      darkColors: color.darkColors instanceof GramJs.help.PeerColorProfileSet
-        ? buildApiPeerProfileColorSet(color.darkColors) : undefined,
-    }];
-  });
-}
-
 export function buildApiTimezone(timezone: GramJs.TypeTimezone): ApiTimezone {
   const { id, name, utcOffset } = timezone;
   return {
@@ -362,9 +378,9 @@ export function buildApiCollectibleInfo(info: GramJs.fragment.TypeCollectibleInf
   } = info;
 
   return {
-    amount: amount.toJSNumber(),
+    amount: toJSNumber(amount),
     currency,
-    cryptoAmount: cryptoAmount.toJSNumber(),
+    cryptoAmount: toJSNumber(cryptoAmount),
     cryptoCurrency,
     purchaseDate,
     url,
@@ -381,4 +397,15 @@ export function buildApiRestrictionReasons(
   return restrictionReasons.map((
     { reason, text, platform }) =>
     ({ reason, text, platform }));
+}
+
+export function buildApiPasskey(passkey: GramJs.TypePasskey): ApiPasskey {
+  const { id, name, date, softwareEmojiId, lastUsageDate } = passkey;
+  return {
+    id,
+    name,
+    date,
+    softwareEmojiId: softwareEmojiId?.toString(),
+    lastUsageDate,
+  };
 }

@@ -1,10 +1,9 @@
-import BigInt from 'big-integer';
-
 import type { DownloadFileWithDcParams } from './downloadFile';
 import type { MockTypes } from './mockUtils/MockTypes';
 import type { SizeType } from './TelegramClient';
 
 import { GENERAL_TOPIC_ID } from '../../../config';
+import { toJSNumber } from '../../../util/numbers';
 import { Logger } from '../extensions';
 import { UpdateConnectionState } from '../network';
 import Api from '../tl/api';
@@ -65,7 +64,7 @@ class TelegramClient {
 
   async loadScenario(scenario = 'default'): Promise<void> {
     try {
-      const invokeMiddleware = await import(`./__invokeMiddlewares__/${scenario}`);
+      const invokeMiddleware = await import(/* @vite-ignore */ `./__invokeMiddlewares__/${scenario}`);
 
       this.invokeMiddleware = invokeMiddleware.default;
     } catch (e) {
@@ -74,10 +73,10 @@ class TelegramClient {
     return import(`./__mocks__/${scenario}.json`).then(async (mockData) => {
       this.mockData = mockData as MockTypes;
       await Promise.all(this.mockData.documents.map(async (l, i) => {
-        const response = await import(`./__data__/${l.url}`).then((module) => fetch(module.default));
+        const response = await import(/* @vite-ignore */ `./__data__/${l.url}`).then((module) => fetch(module.default));
         const bytes = await response.arrayBuffer();
         this.mockData.documents[i].size = BigInt(bytes.byteLength);
-        this.mockData.documents[i].bytes = Buffer.from(new Uint8Array(bytes));
+        this.mockData.documents[i].bytes = new Uint8Array(bytes);
       }));
 
       this.callbacks.forEach(({ eventBuilder, callback }) => (callback(
@@ -139,13 +138,20 @@ class TelegramClient {
         messages: messages.map((message) => createMockedMessage(peerId, message.id, this.mockData)),
         chats: [],
         users: [],
+        topics: [],
       });
     }
 
     if (request instanceof Api.contacts.GetTopPeers) {
       return new Api.contacts.TopPeers({
         categories: [new Api.TopPeerCategoryPeers({
-          category: new Api.TopPeerCategoryCorrespondents(),
+          category: request.botsInline
+            ? new Api.TopPeerCategoryBotsInline()
+            : request.botsApp
+              ? new Api.TopPeerCategoryBotsApp()
+              : request.botsGuestchat
+                ? new Api.TopPeerCategoryBotsGuestChat()
+                : new Api.TopPeerCategoryCorrespondents(),
           count: this.mockData.topPeers.length,
           peers: this.mockData.topPeers.map((id) => {
             return new Api.TopPeer({
@@ -159,11 +165,11 @@ class TelegramClient {
       });
     }
 
-    if (request instanceof Api.channels.GetForumTopics) {
-      const channelId = getIdFromInputPeer(request.channel);
-      if (!channelId) return undefined;
+    if (request instanceof Api.messages.GetForumTopics) {
+      const peerId = getIdFromInputPeer(request.peer);
+      if (!peerId) return undefined;
 
-      const topics = this.getChannel(channelId)?.forumTopics;
+      const topics = this.getChannel(peerId)?.forumTopics;
 
       if (!topics) return undefined;
 
@@ -174,7 +180,7 @@ class TelegramClient {
         topics: topics
           .sort((a, b) => b.id - a.id)
           .map((topic) => {
-            return createMockedForumTopic(channelId, topic.id, this.mockData);
+            return createMockedForumTopic(peerId, topic.id, this.mockData);
           }).filter((topic) => {
             if (offsetTopicId) {
               return topic.id < offsetTopicId;
@@ -195,7 +201,7 @@ class TelegramClient {
           about: 'lol',
           settings: new Api.PeerSettings({}),
           notifySettings: new Api.PeerNotifySettings({}),
-          id: BigInt(1),
+          id: 1n,
           commonChatsCount: 0,
         }),
         chats: [],
@@ -220,6 +226,7 @@ class TelegramClient {
         messages: this.getMessagesFrom(peerId),
         chats: [],
         users: [],
+        topics: [],
       });
     }
 
@@ -230,7 +237,7 @@ class TelegramClient {
       return new Api.upload.File({
         type: new Api.storage.FileUnknown(),
         mtime: 0,
-        bytes: Buffer.from(new Uint8Array(this.mockData.documents.find((i) => i.id === fileId)!.bytes)),
+        bytes: new Uint8Array(this.mockData.documents.find((i) => i.id === fileId)!.bytes),
       });
     }
 
@@ -381,7 +388,7 @@ class TelegramClient {
         thumbSize: size ? size.type : '',
       }),
       {
-        fileSize: size ? size.size : doc.size.toJSNumber(),
+        fileSize: size ? size.size : toJSNumber(doc.size),
         progressCallback: args.progressCallback,
         start: args.start,
         end: args.end,

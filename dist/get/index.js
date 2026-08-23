@@ -23,7 +23,7 @@ const packagesPromise = fetch(LATEST_RELEASE_API_URL)
       } else if (name.endsWith('.AppImage')) {
         acc['linux'] = browser_download_url;
       } else if (name.endsWith('.dmg')) {
-        acc[`mac-${name.includes('arm') ? 'arm' : 'x64'}`] = browser_download_url;
+        acc[`mac-${name.includes('arm') || name.includes('aarch') ? 'arm' : 'x64'}`] = browser_download_url;
       }
 
       return acc;
@@ -36,7 +36,7 @@ const packagesPromise = fetch(LATEST_RELEASE_API_URL)
   });
 
 (function init() {
-  if (platform === 'Windows' || platform === 'Linux') {
+  if (platform === 'Windows') {
     if (currentPage === 'index') {
       setupDownloadButton();
       setupVersion();
@@ -115,8 +115,6 @@ function redirectToFullList() {
 function downloadDefault() {
   if (platform === 'Windows') {
     download('win');
-  } else if (platform === 'Linux') {
-    download('linux');
   } else if (platform === 'macOS') {
     redirectToMac();
   } else {

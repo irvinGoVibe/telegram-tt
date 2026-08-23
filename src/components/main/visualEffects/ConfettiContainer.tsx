@@ -180,7 +180,7 @@ const ConfettiContainer = ({ confetti }: StateProps) => {
   });
 
   useSyncEffect(([prevConfettiTime]) => {
-    let hideTimeout: ReturnType<typeof setTimeout>;
+    let hideTimeout: number;
     if (prevConfettiTime !== lastConfettiTime) {
       generateConfetti(width || windowSize.width, height || windowSize.height);
       hideTimeout = setTimeout(forceUpdate, CONFETTI_FADEOUT_TIMEOUT);
@@ -195,6 +195,7 @@ const ConfettiContainer = ({ confetti }: StateProps) => {
   // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- Old timeout should be cleared only if new confetti is generated
   }, [lastConfettiTime, forceUpdate, updateCanvas]);
 
+  // eslint-disable-next-line @eslint-react/purity
   if (!lastConfettiTime || Date.now() - lastConfettiTime > CONFETTI_FADEOUT_TIMEOUT) {
     return undefined;
   }

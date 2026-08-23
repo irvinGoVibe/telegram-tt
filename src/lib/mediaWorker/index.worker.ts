@@ -1,12 +1,9 @@
-import '../rlottie/rlottie.worker';
-import '../video-preview/video-preview.worker';
+import '../tlottie/tlottie.worker';
 import '../offscreen-canvas/offscreen-canvas.worker';
 
 import type { OffscreenCanvasApi } from '../offscreen-canvas/offscreen-canvas.worker';
-import type { RLottieApi } from '../rlottie/rlottie.worker';
-import type { VideoPreviewApi } from '../video-preview/video-preview.worker';
+import type { TLottieApi } from '../tlottie/tlottie.worker';
 
 export type MediaWorkerApi =
-  RLottieApi
-  & VideoPreviewApi
+  TLottieApi
   & OffscreenCanvasApi;

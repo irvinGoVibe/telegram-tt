@@ -1,4 +1,3 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type { ApiAppConfig, ApiLimitType, ApiPremiumSection } from '../../types';
@@ -20,6 +19,7 @@ type Limit =
   | 'dialog_filters_limit'
   | 'dialogs_folder_pinned_limit'
   | 'dialogs_pinned_limit'
+  | 'message_length_limit'
   | 'caption_length_limit'
   | 'channels_limit'
   | 'channels_public_limit'
@@ -28,7 +28,8 @@ type Limit =
   | 'chatlist_joined_limit'
   | 'recommended_channels_limit'
   | 'saved_dialogs_pinned_limit'
-  | 'reactions_user_max';
+  | 'reactions_user_max'
+  | 'aicompose_tone_saved_limit';
 type LimitKey = `${Limit}_${LimitType}`;
 type LimitsConfig = Record<LimitKey, number>;
 
@@ -39,6 +40,10 @@ export interface GramJsAppConfig extends LimitsConfig {
     file_reference_base64: string;
   }>;
   emojies_send_dice: string[];
+  emojies_send_dice_success: Record<string, {
+    value: number;
+    frame_start: number;
+  }>;
   groupcall_video_participants_max: number;
   reactions_uniq_max: number;
   chat_read_mark_size_threshold: number;
@@ -49,6 +54,7 @@ export interface GramJsAppConfig extends LimitsConfig {
   autologin_domains: string[];
   autologin_token: string;
   url_auth_domains: string[];
+  web_app_allowed_protocols?: string[];
   whitelisted_domains: string[];
   premium_purchase_blocked: boolean;
   giveaway_gifts_purchase_available: boolean;
@@ -86,6 +92,7 @@ export interface GramJsAppConfig extends LimitsConfig {
   ton_blockchain_explorer_url?: string;
   stars_paid_messages_available?: boolean;
   stars_usd_withdraw_rate_x1000?: number;
+  stars_usd_sell_rate_x1000?: number;
   stars_paid_message_commission_permille?: number;
   stars_paid_message_amount_max?: number;
   stargifts_pinned_to_top_limit?: number;
@@ -96,6 +103,7 @@ export interface GramJsAppConfig extends LimitsConfig {
   stars_stargift_resale_amount_max?: number;
   stars_stargift_resale_amount_min?: number;
   stars_stargift_resale_commission_permille?: number;
+  stargifts_craft_attribute_permilles?: number[];
   ton_stargift_resale_amount_min?: number;
   ton_stargift_resale_amount_max?: number;
   ton_stargift_resale_commission_permille?: number;
@@ -105,12 +113,16 @@ export interface GramJsAppConfig extends LimitsConfig {
   stars_suggested_post_age_min?: number;
   stars_suggested_post_future_max?: number;
   stars_suggested_post_future_min?: number;
+  no_forwards_request_expire_period?: number;
   ton_suggested_post_commission_permille?: number;
   ton_suggested_post_amount_max?: number;
   ton_suggested_post_amount_min?: number;
   ton_usd_rate?: number;
   ton_topup_url?: string;
   poll_answers_max?: number;
+  poll_close_period_max?: number;
+  poll_countries_max?: number;
+  phone_country_iso2?: string;
   todo_items_max?: number;
   todo_title_length_max?: number;
   todo_item_length_max?: number;
@@ -119,6 +131,20 @@ export interface GramJsAppConfig extends LimitsConfig {
   verify_age_bot_username?: string;
   verify_age_country?: string;
   verify_age_min?: number;
+  message_typing_draft_ttl?: number;
+  message_primary_edited_date?: boolean;
+  contact_note_length_limit?: number;
+  rich_message_length_limit?: number;
+  rich_message_max_blocks?: number;
+  rich_message_max_depth?: number;
+  rich_message_max_media?: number;
+  rich_message_max_table_cols?: number;
+  whitelisted_bots?: string[];
+  settings_display_passkeys?: boolean;
+  passkeys_account_passkeys_max?: number;
+  aicompose_tone_examples_num?: number;
+  aicompose_tone_title_length_max?: number;
+  aicompose_tone_prompt_length_max?: number;
 }
 
 function buildEmojiSounds(appConfig: GramJsAppConfig) {
@@ -130,13 +156,24 @@ function buildEmojiSounds(appConfig: GramJsAppConfig) {
       accessHash: BigInt(l.access_hash),
       dcId: 1,
       mimeType: 'audio/ogg',
-      fileReference: Buffer.alloc(0),
-      size: BigInt(0),
+      fileReference: new Uint8Array(0),
+      size: 0n,
     } as GramJs.Document);
 
     acc[key] = l.id;
     return acc;
   }, {}) : {};
+}
+
+function buildDiceEmojiesSuccess(appConfig: GramJsAppConfig) {
+  const { emojies_send_dice_success } = appConfig;
+  return emojies_send_dice_success ? Object.entries(emojies_send_dice_success).reduce((acc, [key, value]) => {
+    acc[key] = {
+      value: value.value,
+      frameStart: value.frame_start,
+    };
+    return acc;
+  }, {} as ApiAppConfig['diceEmojiesSuccess']) : {};
 }
 
 function getLimit(appConfig: GramJsAppConfig, key: Limit, fallbackKey: ApiLimitType) {
@@ -156,6 +193,7 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
     autologinDomains: appConfig.autologin_domains || [],
     urlAuthDomains: appConfig.url_auth_domains || [],
     whitelistedDomains: appConfig.whitelisted_domains || [],
+    webAppAllowedProtocols: appConfig.web_app_allowed_protocols,
     maxUniqueReactions: appConfig.reactions_uniq_max,
     premiumBotUsername: appConfig.premium_bot_username,
     premiumInvoiceSlug: appConfig.premium_invoice_slug,
@@ -177,6 +215,7 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
       dialogFiltersChats: getLimit(appConfig, 'dialog_filters_chats_limit', 'dialogFiltersChats'),
       dialogFilters: getLimit(appConfig, 'dialog_filters_limit', 'dialogFilters'),
       dialogFolderPinned: getLimit(appConfig, 'dialogs_pinned_limit', 'dialogFolderPinned'),
+      messageLength: getLimit(appConfig, 'message_length_limit', 'messageLength'),
       captionLength: getLimit(appConfig, 'caption_length_limit', 'captionLength'),
       channels: getLimit(appConfig, 'channels_limit', 'channels'),
       channelsPublic: getLimit(appConfig, 'channels_public_limit', 'channelsPublic'),
@@ -187,7 +226,15 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
       savedDialogsPinned: getLimit(appConfig, 'saved_dialogs_pinned_limit', 'savedDialogsPinned'),
       maxReactions: getLimit(appConfig, 'reactions_user_max', 'maxReactions'),
       moreAccounts: DEFAULT_LIMITS.moreAccounts,
+      aiComposeToneSaved: getLimit(appConfig, 'aicompose_tone_saved_limit', 'aiComposeToneSaved'),
     },
+    richMessageLengthLimit: appConfig.rich_message_length_limit ?? DEFAULT_APP_CONFIG.richMessageLengthLimit,
+    richMessageMaxBlocks: appConfig.rich_message_max_blocks ?? DEFAULT_APP_CONFIG.richMessageMaxBlocks,
+    richMessageMaxDepth: appConfig.rich_message_max_depth ?? DEFAULT_APP_CONFIG.richMessageMaxDepth,
+    richMessageMaxMedia: appConfig.rich_message_max_media ?? DEFAULT_APP_CONFIG.richMessageMaxMedia,
+    richMessageMaxTableColumns: appConfig.rich_message_max_table_cols
+      ?? DEFAULT_APP_CONFIG.richMessageMaxTableColumns,
+    contactNoteLimit: appConfig.contact_note_length_limit,
     hash,
     storyViewersExpirePeriod: appConfig.story_viewers_expire_period,
     storyChangelogUserId: appConfig.stories_changelog_user_id?.toString(),
@@ -198,6 +245,7 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
     starsPaidMessageCommissionPermille: appConfig.stars_paid_message_commission_permille,
     starsPaidMessageAmountMax: appConfig.stars_paid_message_amount_max,
     starsUsdWithdrawRateX1000: appConfig.stars_usd_withdraw_rate_x1000,
+    starsUsdSellRateX1000: appConfig.stars_usd_sell_rate_x1000,
     bandwidthPremiumNotifyPeriod: appConfig.upload_premium_speedup_notify_period,
     bandwidthPremiumUploadSpeedup: appConfig.upload_premium_speedup_upload,
     bandwidthPremiumDownloadSpeedup: appConfig.upload_premium_speedup_download,
@@ -217,6 +265,7 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
     starsStargiftResaleAmountMin: appConfig.stars_stargift_resale_amount_min,
     starsStargiftResaleAmountMax: appConfig.stars_stargift_resale_amount_max,
     starsStargiftResaleCommissionPermille: appConfig.stars_stargift_resale_commission_permille,
+    stargiftsCraftAttributePermilles: appConfig.stargifts_craft_attribute_permilles,
     tonStargiftResaleAmountMin: appConfig.ton_stargift_resale_amount_min,
     tonStargiftResaleAmountMax: appConfig.ton_stargift_resale_amount_max,
     tonStargiftResaleCommissionPermille: appConfig.ton_stargift_resale_commission_permille,
@@ -226,12 +275,16 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
     starsSuggestedPostAgeMin: appConfig.stars_suggested_post_age_min,
     starsSuggestedPostFutureMax: appConfig.stars_suggested_post_future_max,
     starsSuggestedPostFutureMin: appConfig.stars_suggested_post_future_min,
+    noForwardsRequestExpirePeriod: appConfig.no_forwards_request_expire_period,
     tonSuggestedPostCommissionPermille: appConfig.ton_suggested_post_commission_permille,
     tonSuggestedPostAmountMax: appConfig.ton_suggested_post_amount_max,
     tonSuggestedPostAmountMin: appConfig.ton_suggested_post_amount_min,
     tonUsdRate: appConfig.ton_usd_rate,
     tonTopupUrl: appConfig.ton_topup_url,
     pollMaxAnswers: appConfig.poll_answers_max,
+    pollClosePeriodMax: appConfig.poll_close_period_max,
+    pollCountriesMax: appConfig.poll_countries_max,
+    phoneCountryIso2: appConfig.phone_country_iso2,
     todoItemsMax: appConfig.todo_items_max,
     todoTitleLengthMax: appConfig.todo_title_length_max,
     todoItemLengthMax: appConfig.todo_item_length_max,
@@ -240,6 +293,16 @@ export function buildAppConfig(json: GramJs.TypeJSONValue, hash: number): ApiApp
     verifyAgeBotUsername: appConfig.verify_age_bot_username,
     verifyAgeCountry: appConfig.verify_age_country,
     verifyAgeMin: appConfig.verify_age_min,
+    typingDraftTtl: appConfig.message_typing_draft_ttl,
+    isMessagePrimaryEditedDateEnabled: appConfig.message_primary_edited_date,
+    whitelistedBotIds: appConfig.whitelisted_bots,
+    arePasskeysAvailable: appConfig.settings_display_passkeys,
+    passkeysMaxCount: appConfig.passkeys_account_passkeys_max,
+    diceEmojies: appConfig.emojies_send_dice,
+    diceEmojiesSuccess: buildDiceEmojiesSuccess(appConfig),
+    aiComposeToneExamplesNum: appConfig.aicompose_tone_examples_num,
+    aiComposeToneTitleLengthMax: appConfig.aicompose_tone_title_length_max,
+    aiComposeTonePromptLengthMax: appConfig.aicompose_tone_prompt_length_max,
   };
 
   return {

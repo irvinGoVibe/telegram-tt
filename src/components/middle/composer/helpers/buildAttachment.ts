@@ -1,4 +1,4 @@
-import type { ApiAttachment } from '../../../../api/types';
+import type { ApiAttachment, ApiVideo } from '../../../../api/types';
 
 import {
   GIF_MIME_TYPE,
@@ -30,6 +30,7 @@ export default async function buildAttachment(
   let previewBlobUrl;
   let shouldSendAsFile;
   const shouldSendInHighQuality = options?.shouldSendInHighQuality;
+  const isRoundVideo = options?.isRoundVideo;
 
   if (SUPPORTED_PHOTO_CONTENT_TYPES.has(mimeType)) {
     const img = await preloadImage(blobUrl);
@@ -67,6 +68,8 @@ export default async function buildAttachment(
     } else {
       previewBlobUrl = blobUrl;
     }
+  } else if (isRoundVideo) {
+    previewBlobUrl = await createPosterForVideo(blobUrl);
   } else if (SUPPORTED_VIDEO_CONTENT_TYPES.has(mimeType)) {
     try {
       const { videoWidth: width, videoHeight: height, duration } = await preloadVideo(blobUrl);
@@ -122,7 +125,7 @@ export function prepareAttachmentsToSend(
 
     return {
       ...attach,
-      shouldSendAsFile: !(attach.voice || attach.audio) || undefined,
+      shouldSendAsFile: !(attach.voice || attach.audio || attach.isRoundVideo) || undefined,
       shouldSendAsSpoiler: undefined,
     };
   });
@@ -131,4 +134,27 @@ export function prepareAttachmentsToSend(
 function validateAspectRatio(width: number, height: number) {
   const maxAspectRatio = Math.max(width, height) / Math.min(width, height);
   return maxAspectRatio <= MAX_ASPECT_RATIO;
+}
+
+export function buildGifAttachment(gif: ApiVideo): ApiAttachment {
+  const {
+    blobUrl,
+    thumbnail,
+    fileName,
+    mimeType,
+    size,
+    width,
+    height,
+    duration,
+  } = gif;
+
+  return {
+    gif,
+    blobUrl: blobUrl || '',
+    previewBlobUrl: thumbnail?.dataUri,
+    filename: fileName,
+    mimeType,
+    size,
+    quick: width && height ? { width, height, duration } : undefined,
+  } satisfies ApiAttachment;
 }

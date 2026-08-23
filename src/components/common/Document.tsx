@@ -1,15 +1,15 @@
 import {
-  memo, useEffect, useRef, useState,
+  memo, useEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { ApiDocument, ApiMessage } from '../../api/types';
+import type { ApiDocument, ApiMessage, MediaContent } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
+import type { MenuItemContextAction } from '../ui/ListItem';
 
 import {
   getDocumentMediaHash,
   getMediaFormat,
-  getMediaThumbUri,
   getMediaTransferState,
   isDocumentVideo,
 } from '../../global/helpers';
@@ -20,7 +20,6 @@ import { preloadDocumentMedia } from './helpers/preloadDocumentMedia';
 import useFlag from '../../hooks/useFlag';
 import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
 import useLastCallback from '../../hooks/useLastCallback';
-import useMedia from '../../hooks/useMedia';
 import useMediaWithLoadProgress from '../../hooks/useMediaWithLoadProgress';
 import useOldLang from '../../hooks/useOldLang';
 
@@ -31,7 +30,7 @@ import File from './File';
 type OwnProps = {
   document: ApiDocument;
   observeIntersection?: ObserveFn;
-  smaller?: boolean;
+  fileSize?: 'small' | 'medium' | 'large';
   isSelected?: boolean;
   isSelectable?: boolean;
   canAutoLoad?: boolean;
@@ -42,14 +41,17 @@ type OwnProps = {
   autoLoadFileMaxSizeMb?: number;
   isDownloading?: boolean;
   shouldWarnAboutFiles?: boolean;
-  onCancelUpload?: () => void;
-  onMediaClick?: () => void;
+  id?: string;
+  onCancelUpload?: NoneToVoidFunction;
+  contextActions?: MenuItemContextAction[];
 } & ({
   message: ApiMessage;
   onDateClick: (arg: ApiMessage) => void;
+  onMediaClick?: (messageId: number) => void;
 } | {
   message?: ApiMessage;
   onDateClick?: never;
+  onMediaClick?: NoneToVoidFunction;
 });
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -57,7 +59,7 @@ const BYTES_PER_MB = 1024 * 1024;
 const Document = ({
   document,
   observeIntersection,
-  smaller,
+  fileSize,
   canAutoLoad,
   autoLoadFileMaxSizeMb,
   uploadProgress,
@@ -69,15 +71,17 @@ const Document = ({
   shouldWarnAboutFiles,
   isDownloading,
   message,
+  id,
   onCancelUpload,
   onMediaClick,
   onDateClick,
+  contextActions,
 }: OwnProps) => {
   const { cancelMediaDownload, downloadMedia, setSharedSettingOption } = getActions();
 
   const ref = useRef<HTMLDivElement>();
 
-  const lang = useOldLang();
+  const oldLang = useOldLang();
   const [isFileIpDialogOpen, openFileIpDialog, closeFileIpDialog] = useFlag();
   const [shouldNotWarnAboutFiles, setShouldNotWarnAboutFiles] = useState(false);
 
@@ -114,9 +118,10 @@ const Document = ({
   );
 
   const hasPreview = getDocumentHasPreview(document);
-  const thumbDataUri = hasPreview ? getMediaThumbUri(document) : undefined;
-  const localBlobUrl = hasPreview ? document.previewBlobUrl : undefined;
-  const previewData = useMedia(getDocumentMediaHash(document, 'pictogram'), !isIntersecting);
+  const previewMedia = useMemo<MediaContent | undefined>(
+    () => (hasPreview ? { document } : undefined),
+    [document, hasPreview],
+  );
 
   const shouldForceDownload = document.innerMediaType === 'photo' && document.mediaSize
     && !document.mediaSize.fromDocumentAttribute && !document.mediaSize.fromPreload;
@@ -161,7 +166,11 @@ const Document = ({
     }
 
     if (withMediaViewer) {
-      onMediaClick();
+      if (message) {
+        onMediaClick?.(message.id);
+      } else if (onMediaClick) {
+        (onMediaClick as NoneToVoidFunction)();
+      }
       return;
     }
 
@@ -187,13 +196,14 @@ const Document = ({
     <>
       <File
         ref={ref}
+        id={id}
         name={fileName}
         extension={extension}
         size={size}
         timestamp={datetime}
-        thumbnailDataUri={thumbDataUri}
-        previewData={localBlobUrl || previewData}
-        smaller={smaller}
+        previewMedia={previewMedia}
+        observeIntersection={observeIntersection}
+        previewSize={fileSize}
         isTransferring={isTransferring}
         isUploading={isUploading}
         transferProgress={transferProgress}
@@ -202,6 +212,7 @@ const Document = ({
         isSelectable={isSelectable}
         isSelected={isSelected}
         actionIcon={withMediaViewer ? (isDocumentVideo(document) ? 'play' : 'eye') : 'download'}
+        contextActions={contextActions}
         onClick={handleClick}
         onDateClick={onDateClick ? handleDateClick : undefined}
       />
@@ -210,11 +221,11 @@ const Document = ({
         onClose={closeFileIpDialog}
         confirmHandler={handleFileIpConfirm}
       >
-        {lang('lng_launch_svg_warning')}
+        {oldLang('lng_launch_svg_warning')}
         <Checkbox
           className="dialog-checkbox"
           checked={shouldNotWarnAboutFiles}
-          label={lang('lng_launch_exe_dont_ask')}
+          label={oldLang('lng_launch_exe_dont_ask')}
           onCheck={setShouldNotWarnAboutFiles}
         />
       </ConfirmDialog>

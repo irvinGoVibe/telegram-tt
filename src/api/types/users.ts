@@ -1,9 +1,15 @@
 import type { API_CHAT_TYPES } from '../../config';
 import type { ApiBotInfo } from './bots';
 import type { ApiBusinessIntro, ApiBusinessLocation, ApiBusinessWorkHours } from './business';
-import type { ApiPeerColor, ApiPeerSettings } from './chats';
-import type { ApiDocument, ApiPhoto } from './messages';
-import type { ApiBotVerification } from './misc';
+import type { ApiAudio, ApiDocument, ApiFormattedText, ApiPhoto } from './messages';
+import type {
+  ApiBotVerification,
+  ApiEmojiStatusType,
+  ApiFakeType,
+  ApiPeerSettings,
+  ApiProfileTab,
+  ApiTypePeerColor,
+} from './peers';
 import type { ApiSavedStarGift, ApiStarsRating } from './stars';
 
 export interface ApiUser {
@@ -34,17 +40,22 @@ export interface ApiUser {
   hasStories?: boolean;
   hasUnreadStories?: boolean;
   maxStoryId?: number;
-  color?: ApiPeerColor;
-  profileColor?: ApiPeerColor;
+  color?: ApiTypePeerColor;
+  profileColor?: ApiTypePeerColor;
   canEditBot?: boolean;
   hasMainMiniApp?: boolean;
   botActiveUsers?: number;
   botVerificationIconId?: string;
   paidMessagesStars?: number;
+  isBotForum?: boolean;
+  canManageBotForumTopics?: boolean;
+  isGuestChatBot?: boolean;
+  isGuardBot?: boolean;
 }
 
 export interface ApiUserFullInfo {
   isBlocked?: boolean;
+  ttlPeriod?: number;
   bio?: string;
   commonChatsCount?: number;
   pinnedMessageId?: number;
@@ -62,6 +73,7 @@ export interface ApiUserFullInfo {
   birthday?: ApiBirthday;
   personalChannelId?: string;
   personalChannelMessageId?: number;
+  privateForwardName?: string;
   businessLocation?: ApiBusinessLocation;
   businessWorkHours?: ApiBusinessWorkHours;
   businessIntro?: ApiBusinessIntro;
@@ -75,9 +87,13 @@ export interface ApiUserFullInfo {
   botVerification?: ApiBotVerification;
   paidMessagesStars?: number;
   settings?: ApiPeerSettings;
+  mainTab?: ApiProfileTab;
+  savedMusic?: ApiAudio;
+  note?: ApiFormattedText;
+  noForwardsMyEnabled?: boolean;
+  noForwardsPeerEnabled?: boolean;
+  isUnofficialSecurityRisk?: boolean;
 }
-
-export type ApiFakeType = 'fake' | 'scam';
 
 export type ApiUserType = 'userTypeBot' | 'userTypeRegular' | 'userTypeDeleted' | 'userTypeUnknown';
 
@@ -95,6 +111,13 @@ export interface ApiUserStatus {
 export interface ApiUserCommonChats {
   ids: string[];
   maxId?: string;
+  isFullyLoaded: boolean;
+}
+
+export interface ApiUserSavedMusic {
+  byId: Record<string, ApiAudio>;
+  ids: string[];
+  count: number;
   isFullyLoaded: boolean;
 }
 
@@ -134,28 +157,6 @@ export type ApiAttachBot = OptionalCombine<ApiAttachBotBase, ApiAttachBotForMenu
 export interface ApiAttachBotIcon {
   name: string;
   document: ApiDocument;
-}
-
-export type ApiEmojiStatusType = ApiEmojiStatus | ApiEmojiStatusCollectible;
-
-export interface ApiEmojiStatus {
-  type: 'regular';
-  documentId: string;
-  until?: number;
-}
-
-export interface ApiEmojiStatusCollectible {
-  type: 'collectible';
-  collectibleId: string;
-  documentId: string;
-  title: string;
-  slug: string;
-  patternDocumentId: string;
-  centerColor: string;
-  edgeColor: string;
-  patternColor: string;
-  textColor: string;
-  until?: number;
 }
 
 export interface ApiBirthday {

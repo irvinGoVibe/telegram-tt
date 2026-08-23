@@ -17,6 +17,7 @@ import type { IconName } from '../../../types/icons/index';
 import type { AnimationLevel, ThemeKey } from '../../../types/index';
 import { MediaViewerOrigin } from '../../../types/index';
 
+import { SERVICE_NOTIFICATIONS_USER_ID } from '../../../config.ts';
 import {
   getUserStatus, isAnonymousForwardsChat, isChatChannel, isSystemBot, isUserOnline,
 } from '../../../global/helpers/index';
@@ -32,19 +33,20 @@ import {
   selectPeerSavedGifts,
   selectTabState,
   selectTheme,
-  selectThreadMessagesCount,
   selectTopic,
   selectUser,
   selectUserFullInfo,
   selectUserStatus,
 } from '../../../global/selectors/index';
 import { selectSharedSettings } from '../../../global/selectors/sharedState';
+import { selectThreadMessagesCount } from '../../../global/selectors/threads.ts';
 import { IS_TOUCH_ENV } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import buildStyle from '../../../util/buildStyle';
 import { captureEvents, SwipeDirection } from '../../../util/captureEvents';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { resolveTransitionName } from '../../../util/resolveTransitionName';
+import { REM } from '../helpers/mediaDimensions.ts';
 import renderText from '../helpers/renderText.tsx';
 
 import { useVtn } from '../../../hooks/animations/useVtn';
@@ -68,10 +70,9 @@ import RadialPatternBackground from './RadialPatternBackground.tsx';
 import './ProfileInfo.scss';
 import styles from './ProfileInfo.module.scss';
 
-const MAX_LEVEL_ICON = 90;
-
 type OwnProps = {
   isExpanded?: boolean;
+  isActive?: boolean;
   peerId: string;
   isForSettings?: boolean;
   canPlayVideo: boolean;
@@ -97,19 +98,24 @@ type StateProps = {
   theme: ThemeKey;
   isPlain?: boolean;
   savedGifts?: ApiSavedGifts;
+  hasAvatar?: boolean;
+  isSystemAccount?: boolean;
 };
+
+const MAX_LEVEL_ICON = 90;
 
 const EMOJI_STATUS_SIZE = 24;
 const EMOJI_TOPIC_SIZE = 120;
 const LOAD_MORE_THRESHOLD = 3;
 const MAX_PHOTO_DASH_COUNT = 30;
 const STATUS_UPDATE_INTERVAL = 1000 * 60; // 1 min
-const PATTERN_COLOR = '#000000';
-const PATTERN_SIZE_FACTOR = 0.75;
-const PATTERN_OPACITY = 0.75;
+
+const PATTERN_Y_SHIFT = 8 * REM;
+const PATTERN_PLAIN_Y_SHIFT = 5.25 * REM;
 
 const ProfileInfo = ({
   isExpanded,
+  isActive,
   isForSettings,
   canPlayVideo,
   user,
@@ -131,6 +137,8 @@ const ProfileInfo = ({
   theme,
   isPlain,
   savedGifts,
+  hasAvatar,
+  isSystemAccount,
   onExpand,
 }: OwnProps & StateProps) => {
   const {
@@ -185,6 +193,8 @@ const ProfileInfo = ({
       storyColors: [...colors.storyColors].reverse(),
     };
   }, [profileColorOption, theme, collectibleEmojiStatus]);
+
+  const hasPatternBackground = profileColorSet?.bgColors || backgroundEmoji;
 
   const pinnedGifts = useMemo(() => {
     return savedGifts?.gifts.filter((gift) => {
@@ -287,7 +297,7 @@ const ProfileInfo = ({
       return;
     }
 
-    onExpand?.();
+    if (hasAvatar) onExpand?.();
   });
 
   function handleSelectFallbackPhoto() {
@@ -351,7 +361,7 @@ const ProfileInfo = ({
     const activeDashIndex = currentPhotoIndex >= MAX_PHOTO_DASH_COUNT ? MAX_PHOTO_DASH_COUNT - 1 : currentPhotoIndex;
 
     return (
-      <div className={styles.photoDashes}>
+      <div className={styles.photoDashes} style={createVtnStyle('photoDashes', true)}>
         {enumerator.map((_, i) => (
           <span className={buildClassName(styles.photoDash, i === activeDashIndex && styles.photoDash_current)} />
         ))}
@@ -359,7 +369,7 @@ const ProfileInfo = ({
     );
   }
 
-  function renderPhoto(isActive?: boolean) {
+  function renderPhoto(isPhotoActive?: boolean) {
     const photo = photos.length > 0
       ? photos[currentPhotoIndex]
       : undefined;
@@ -370,9 +380,10 @@ const ProfileInfo = ({
         user={user}
         chat={chat}
         photo={photo}
-        canPlayVideo={Boolean(isActive && canPlayVideo)}
-        className={buildClassName(isActive && styles.activeProfilePhoto)}
-        style={isActive ? createVtnStyle('avatar', true) : undefined}
+        theme={theme}
+        canPlayVideo={Boolean(isPhotoActive && canPlayVideo)}
+        className={buildClassName(isPhotoActive && styles.activeProfilePhoto)}
+        style={isPhotoActive ? createVtnStyle('avatar', true) : undefined}
         onClick={handleProfilePhotoClick}
       />
     );
@@ -446,7 +457,7 @@ const ProfileInfo = ({
           <span className={styles.userStatus} dir="auto">
             {getUserStatus(oldLang, user, userStatus)}
           </span>
-          {userStatus?.isReadDateRestrictedByMe && (
+          {userStatus?.isReadDateRestrictedByMe && !isSystemAccount && (
             <span className={styles.getStatus} onClick={handleOpenGetReadDateModal}>
               <span>{oldLang('StatusHiddenShow')}</span>
             </span>
@@ -483,23 +494,23 @@ const ProfileInfo = ({
         isPlain && styles.plain,
       )}
       style={buildStyle(
-        profileColorSet && `--rating-outline-color: ${isExpanded ? 'transparent' : profileColorSet?.bgColors[1]}`,
-        profileColorSet && !isExpanded && `--rating-text-color: ${profileColorSet?.bgColors[1]}`,
+        profileColorSet && `--rating-outline-color: ${isExpanded ? 'transparent' : profileColorSet?.bgColors[0]}`,
+        profileColorSet && !isExpanded && `--rating-text-color: ${profileColorSet?.bgColors[0]}`,
         createVtnStyle('profileInfo', true),
       )}
       dir={lang.isRtl ? 'rtl' : undefined}
     >
-      {profileColorSet?.bgColors && (
+      {hasPatternBackground && (
         <RadialPatternBackground
-          backgroundColors={profileColorSet.bgColors}
+          backgroundColors={profileColorSet?.bgColors}
           patternIcon={backgroundEmoji}
-          patternColor={collectibleEmojiStatus?.patternColor || PATTERN_COLOR}
+          patternSize={16}
+          withLinearGradient={!collectibleEmojiStatus}
           className={styles.radialPatternBackground}
-          patternSize={PATTERN_SIZE_FACTOR}
-          patternOpacity={collectibleEmojiStatus ? 1 : PATTERN_OPACITY}
+          yPosition={isPlain ? PATTERN_PLAIN_Y_SHIFT : PATTERN_Y_SHIFT}
         />
       )}
-      {pinnedGifts && (
+      {Boolean(pinnedGifts?.length) && (
         <ProfilePinnedGifts
           peerId={peerId}
           gifts={pinnedGifts}
@@ -576,7 +587,8 @@ const ProfileInfo = ({
           size="jumbo"
           peer={peer}
           style={createVtnStyle('avatar', true)}
-          onClick={handleMinimizedAvatarClick}
+          storyCircleStyle={createVtnStyle('avatarStoryCircle', true)}
+          onClick={hasAvatar ? handleMinimizedAvatarClick : undefined}
         />
       )}
 
@@ -596,6 +608,8 @@ const ProfileInfo = ({
             onEmojiStatusClick={handleStatusClick}
             noLoopLimit
             canCopyTitle
+            isScrolling
+            isScrollingPaused={!isActive}
           />
         )}
         {renderStatus()}
@@ -627,6 +641,10 @@ export default memo(withGlobal<OwnProps>(
 
     const hasBackground = selectPeerHasProfileBackground(global, peerId);
     const savedGifts = selectPeerSavedGifts(global, peerId);
+    const hasAvatar = Boolean(peer?.avatarPhotoId);
+
+    const isAnonymousForwards = isAnonymousForwardsChat(peerId);
+    const isSystemAccount = isSystemBot(peerId) || isAnonymousForwards || peer?.id === SERVICE_NOTIFICATIONS_USER_ID;
 
     return {
       user,
@@ -641,11 +659,13 @@ export default memo(withGlobal<OwnProps>(
       emojiStatus,
       profilePhotos,
       topic,
-      messagesCount: topic ? selectThreadMessagesCount(global, peerId, currentTopicId!) : undefined,
+      messagesCount: topic ? selectThreadMessagesCount(global, peerId, topic.id) : undefined,
       profileColorOption: profileColor,
       theme,
       isPlain: !hasBackground,
       savedGifts,
+      hasAvatar,
+      isSystemAccount,
     };
   },
 )(ProfileInfo));

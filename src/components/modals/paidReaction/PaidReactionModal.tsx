@@ -1,5 +1,4 @@
 import type { FC } from '../../../lib/teact/teact';
-import type React from '../../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useState,
 } from '../../../lib/teact/teact';
@@ -208,7 +207,7 @@ const PaidReactionModal = ({
         color="translucent"
         className={buildClassName(styles.sendAsPeerMenuButton, isOpen ? 'active' : '')}
         onClick={onTrigger}
-        ariaLabel={lang('AccDescrOpenMenu2')}
+        ariaLabel={lang('AriaLabelOpenMenu')}
       >
         <Avatar
           className={styles.sendAsPeerButtonAvatar}
@@ -351,12 +350,13 @@ const PaidReactionModal = ({
         label={oldLang('StarsReactionShowMeInTopSenders')}
       />
       <Button
+        inline
         onClick={handleSend}
       >
         {lang('SendPaidReaction', { amount: starsAmount }, {
           withNodes: true,
           specialReplacement: {
-            [STARS_ICON_PLACEHOLDER]: <Icon className={styles.buttonStar} name="star" />,
+            [STARS_ICON_PLACEHOLDER]: <Icon name="star" className="in-text-icon" />,
           },
         })}
       </Button>

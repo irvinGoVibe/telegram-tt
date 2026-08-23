@@ -1,5 +1,4 @@
-import type { FC } from '../../../lib/teact/teact';
-import { memo, useCallback, useEffect, useMemo } from '../../../lib/teact/teact';
+import { memo, useEffect, useMemo } from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiPrivacySettings } from '../../../api/types';
@@ -12,6 +11,7 @@ import {
   selectIsCurrentUserPremium,
 } from '../../../global/selectors';
 import { selectSharedSettings } from '../../../global/selectors/sharedState';
+import { formatCountdown } from '../../../util/dates/oldDateFormat';
 import { getClosestEntry } from '../../../util/getClosestEntry';
 
 import useHistoryBack from '../../../hooks/useHistoryBack';
@@ -20,6 +20,7 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import StarIcon from '../../common/icons/StarIcon';
+import Island, { IslandTitle } from '../../gili/layout/Island';
 import Button from '../../ui/Button';
 import Checkbox from '../../ui/Checkbox';
 import ListItem from '../../ui/ListItem';
@@ -47,17 +48,22 @@ type StateProps = {
   needAgeVideoVerification?: boolean;
   privacy: GlobalState['settings']['privacy'];
   accountDaysTtl?: number;
+  defaultHistoryTtl?: number;
+  passkeyCount?: number;
+  arePasskeysAvailable?: boolean;
 };
 
 const DAYS_PER_MONTH = 30;
 
-const SettingsPrivacy: FC<OwnProps & StateProps> = ({
+const SettingsPrivacy = ({
   isActive,
   isCurrentUserPremium,
   hasPassword,
   hasPasscode,
   blockedCount,
   webAuthCount,
+  passkeyCount,
+  arePasskeysAvailable,
   isSensitiveEnabled,
   canChangeSensitive,
   canDisplayAutoarchiveSetting,
@@ -68,15 +74,17 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
   canSetPasscode,
   needAgeVideoVerification,
   privacy,
-  onReset,
   isCurrentUserFrozen,
   accountDaysTtl,
-}) => {
+  defaultHistoryTtl,
+  onReset,
+}: OwnProps & StateProps) => {
   const {
     openDeleteAccountModal,
     loadPrivacySettings,
     loadBlockedUsers,
     updateContentSettings,
+    loadDefaultHistoryTtl,
     loadGlobalPrivacySettings,
     updateGlobalPrivacySettings,
     loadWebAuthorizations,
@@ -84,54 +92,79 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
     openSettingsScreen,
     loadAccountDaysTtl,
     openAgeVerificationModal,
+    loadPasskeys,
+    openPasskeyModal,
   } = getActions();
 
   useEffect(() => {
     if (!isCurrentUserFrozen) {
       loadBlockedUsers();
-      loadPrivacySettings();
+      loadPrivacySettings({});
       loadWebAuthorizations();
+      loadPasskeys();
     }
   }, [isCurrentUserFrozen]);
 
   useEffect(() => {
     if (isActive && !isCurrentUserFrozen) {
+      loadDefaultHistoryTtl();
       loadGlobalPrivacySettings();
       loadAccountDaysTtl();
     }
-  }, [isActive, isCurrentUserFrozen, loadGlobalPrivacySettings]);
+  }, [isActive, isCurrentUserFrozen]);
 
   const oldLang = useOldLang();
   const lang = useLang();
+  const defaultHistoryTtlText = defaultHistoryTtl === undefined
+    ? lang('Loading')
+    : defaultHistoryTtl === 0
+      ? lang('SettingsItemPrivacyOff')
+      : formatCountdown(lang, defaultHistoryTtl);
 
   useHistoryBack({
     isActive,
     onBack: onReset,
   });
 
-  const handleArchiveAndMuteChange = useCallback((isEnabled: boolean) => {
+  const handleArchiveAndMuteChange = useLastCallback((isEnabled: boolean) => {
     updateGlobalPrivacySettings({
       shouldArchiveAndMuteNewNonContact: isEnabled,
     });
-  }, [updateGlobalPrivacySettings]);
+  });
 
-  const handleChatInTitleChange = useCallback((isChecked: boolean) => {
+  const handleChatInTitleChange = useLastCallback((isChecked: boolean) => {
     setSharedSettingOption({
       canDisplayChatInTitle: isChecked,
     });
-  }, []);
+  });
 
-  const handleUpdateContentSettings = useCallback((isChecked: boolean) => {
+  const handleUpdateContentSettings = useLastCallback((isChecked: boolean) => {
     updateContentSettings({ isSensitiveEnabled: isChecked });
-  }, [updateContentSettings]);
+  });
 
-  const handleAgeVerification = useCallback(() => {
+  const handleAgeVerification = useLastCallback(() => {
     openAgeVerificationModal();
-  }, [openAgeVerificationModal]);
+  });
 
   const handleOpenDeleteAccountModal = useLastCallback(() => {
     if (!accountDaysTtl) return;
     openDeleteAccountModal({ days: accountDaysTtl });
+  });
+
+  const handleOpenPasskeys = useLastCallback(() => {
+    if (!arePasskeysAvailable || passkeyCount === undefined) return;
+    if (passkeyCount === 0) {
+      openPasskeyModal();
+      return;
+    }
+
+    openSettingsScreen({ screen: SettingsScreens.Passkeys });
+  });
+
+  const handleOpenAutoDeleteMessages = useLastCallback(() => {
+    if (defaultHistoryTtl === undefined) return;
+
+    openSettingsScreen({ screen: SettingsScreens.AutoDeleteMessages });
   });
 
   const dayOption = useMemo(() => {
@@ -180,11 +213,11 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
 
   return (
     <div className="settings-content custom-scroll">
-      <div className="settings-item">
+      <Island>
         <ListItem
-          icon="delete-user"
+          icon="block-filled"
+          iconBg="red"
           narrow
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyBlockedUsers })}
         >
           {oldLang('BlockedUsers')}
@@ -192,9 +225,9 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         </ListItem>
         {canSetPasscode && (
           <ListItem
-            icon="key"
+            icon="lock-filled"
+            iconBg="blue"
             narrow
-
             onClick={() => openSettingsScreen({
               screen: hasPasscode ? SettingsScreens.PasscodeEnabled : SettingsScreens.PasscodeDisabled,
             })}
@@ -202,15 +235,15 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
             <div className="multiline-item">
               <span className="title">{oldLang('Passcode')}</span>
               <span className="subtitle" dir="auto">
-                {oldLang(hasPasscode ? 'PasswordOn' : 'PasswordOff')}
+                {lang(hasPasscode ? 'SettingsItemPrivacyOn' : 'SettingsItemPrivacyOff')}
               </span>
             </div>
           </ListItem>
         )}
         <ListItem
-          icon="lock"
+          icon="2fa-filled"
+          iconBg="green"
           narrow
-
           onClick={() => openSettingsScreen({
             screen: hasPassword ? SettingsScreens.TwoFaEnabled : SettingsScreens.TwoFaDisabled,
           })}
@@ -218,30 +251,58 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
           <div className="multiline-item">
             <span className="title">{oldLang('TwoStepVerification')}</span>
             <span className="subtitle" dir="auto">
-              {oldLang(hasPassword ? 'PasswordOn' : 'PasswordOff')}
+              {lang(hasPassword ? 'SettingsItemPrivacyOn' : 'SettingsItemPrivacyOff')}
             </span>
           </div>
         </ListItem>
+        {arePasskeysAvailable && (
+          <ListItem
+            icon="key-filled"
+            iconBg="gray"
+            narrow
+            onClick={handleOpenPasskeys}
+          >
+            <div className="multiline-item">
+              <span className="title">{lang('SettingsItemPrivacyPasskeys')}</span>
+              <span className="subtitle" dir="auto">
+                {lang(passkeyCount === undefined ? 'Loading'
+                  : passkeyCount > 0 ? 'SettingsItemPrivacyOn' : 'SettingsItemPrivacyOff')}
+              </span>
+            </div>
+          </ListItem>
+        )}
         {webAuthCount > 0 && (
           <ListItem
-            icon="web"
+            icon="web-filled"
+            iconBg="purple"
             narrow
-
             onClick={() => openSettingsScreen({ screen: SettingsScreens.ActiveWebsites })}
           >
             {oldLang('PrivacySettings.WebSessions')}
             <span className="settings-item__current-value">{webAuthCount}</span>
           </ListItem>
         )}
-      </div>
+        {!isCurrentUserFrozen && (
+          <ListItem
+            icon="timer-filled"
+            iconBg="orange"
+            narrow
+            disabled={defaultHistoryTtl === undefined}
+            onClick={handleOpenAutoDeleteMessages}
+          >
+            <div className="multiline-item">
+              <span className="title">{lang('AutoDeleteMessages')}</span>
+              <span className="subtitle" dir="auto">{defaultHistoryTtlText}</span>
+            </div>
+          </ListItem>
+        )}
+      </Island>
 
-      <div className="settings-item">
-        <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>{oldLang('PrivacyTitle')}</h4>
-
+      <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>{oldLang('PrivacyTitle')}</IslandTitle>
+      <Island>
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyPhoneNumber })}
         >
           <div className="multiline-item">
@@ -254,7 +315,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyLastSeen })}
         >
           <div className="multiline-item">
@@ -267,7 +327,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyProfilePhoto })}
         >
           <div className="multiline-item">
@@ -280,7 +339,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyBio })}
         >
           <div className="multiline-item">
@@ -293,7 +351,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyBirthday })}
         >
           <div className="multiline-item">
@@ -306,7 +363,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyGifts })}
         >
           <div className="multiline-item">
@@ -319,7 +375,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyForwarding })}
         >
           <div className="multiline-item">
@@ -332,7 +387,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyPhoneCall })}
         >
           <div className="multiline-item">
@@ -347,7 +401,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
           allowDisabledClick
           rightElement={isCurrentUserPremium && <StarIcon size="big" type="premium" />}
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyVoiceMessages })}
         >
           <div className="multiline-item">
@@ -361,7 +414,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
           narrow
           rightElement={isCurrentUserPremium && <StarIcon size="big" type="premium" />}
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyMessages })}
         >
           <div className="multiline-item">
@@ -377,7 +429,6 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
         <ListItem
           narrow
           className="no-icon"
-
           onClick={() => openSettingsScreen({ screen: SettingsScreens.PrivacyGroupChats })}
         >
           <div className="multiline-item">
@@ -387,65 +438,68 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
             </span>
           </div>
         </ListItem>
-      </div>
+      </Island>
 
       {canChangeSensitive && (
-        <div className="settings-item fluid-container">
-          <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>
+        <>
+          <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>
             {oldLang('lng_settings_sensitive_title')}
-          </h4>
-          <Checkbox
-            label={oldLang('lng_settings_sensitive_disable_filtering')}
-            subLabel={oldLang('lng_settings_sensitive_about')}
-            checked={Boolean(isSensitiveEnabled)}
-            disabled={!canChangeSensitive || (!isSensitiveEnabled && needAgeVideoVerification)}
-            onCheck={handleUpdateContentSettings}
-          />
-          {!isSensitiveEnabled && needAgeVideoVerification && (
-            <Button
-              color="primary"
-              fluid
-              noForcedUpperCase
-              className="settings-unlock-button"
-              onClick={handleAgeVerification}
-            >
-              <span className="settings-unlock-button-title">
-                {lang('ButtonAgeVerification')}
-              </span>
-            </Button>
-          )}
-        </div>
+          </IslandTitle>
+          <Island>
+            <Checkbox
+              label={oldLang('lng_settings_sensitive_disable_filtering')}
+              subLabel={oldLang('lng_settings_sensitive_about')}
+              checked={Boolean(isSensitiveEnabled)}
+              disabled={!canChangeSensitive || (!isSensitiveEnabled && needAgeVideoVerification)}
+              onCheck={handleUpdateContentSettings}
+            />
+            {!isSensitiveEnabled && needAgeVideoVerification && (
+              <Button
+                color="primary"
+                noForcedUpperCase
+                className="settings-unlock-button"
+                onClick={handleAgeVerification}
+              >
+                <span className="settings-unlock-button-title">
+                  {lang('ButtonAgeVerification')}
+                </span>
+              </Button>
+            )}
+          </Island>
+        </>
       )}
 
       {canDisplayAutoarchiveSetting && (
-        <div className="settings-item">
-          <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>
+        <>
+          <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>
             {oldLang('NewChatsFromNonContacts')}
-          </h4>
-          <Checkbox
-            label={oldLang('ArchiveAndMute')}
-            subLabel={oldLang('ArchiveAndMuteInfo')}
-            checked={Boolean(shouldArchiveAndMuteNewNonContact)}
-            onCheck={handleArchiveAndMuteChange}
-          />
-        </div>
+          </IslandTitle>
+          <Island>
+            <Checkbox
+              label={oldLang('ArchiveAndMute')}
+              subLabel={oldLang('ArchiveAndMuteInfo')}
+              checked={Boolean(shouldArchiveAndMuteNewNonContact)}
+              onCheck={handleArchiveAndMuteChange}
+            />
+          </Island>
+        </>
       )}
 
-      <div className="settings-item">
-        <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>
-          {oldLang('lng_settings_window_system')}
-        </h4>
+      <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>
+        {oldLang('lng_settings_window_system')}
+      </IslandTitle>
+      <Island>
         <Checkbox
           label={oldLang('lng_settings_title_chat_name')}
           checked={Boolean(canDisplayChatInTitle)}
           onCheck={handleChatInTitleChange}
         />
-      </div>
+      </Island>
 
-      <div className="settings-item">
-        <h4 className="settings-item-header" dir={oldLang.isRtl ? 'rtl' : undefined}>
-          {lang('DeleteMyAccount')}
-        </h4>
+      <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>
+        {lang('DeleteMyAccount')}
+      </IslandTitle>
+      <Island>
         <ListItem
           narrow
           onClick={handleOpenDeleteAccountModal}
@@ -455,7 +509,7 @@ const SettingsPrivacy: FC<OwnProps & StateProps> = ({
             {lang('Months', { count: dayOption }, { pluralValue: 1 })}
           </span>
         </ListItem>
-      </div>
+      </Island>
     </div>
   );
 };
@@ -466,10 +520,11 @@ export default memo(withGlobal<OwnProps>(
       settings: {
         byKey: {
           hasPassword, isSensitiveEnabled, canChangeSensitive, shouldArchiveAndMuteNewNonContact,
-          shouldNewNonContactPeersRequirePremium, nonContactPeersPaidStars,
+          shouldNewNonContactPeersRequirePremium, nonContactPeersPaidStars, defaultHistoryTtl,
         },
         privacy,
         accountDaysTtl,
+        passkeys,
       },
       blocked,
       passcode: {
@@ -501,6 +556,9 @@ export default memo(withGlobal<OwnProps>(
       canSetPasscode: selectCanSetPasscode(global),
       isCurrentUserFrozen,
       accountDaysTtl,
+      defaultHistoryTtl,
+      passkeyCount: passkeys?.length,
+      arePasskeysAvailable: appConfig.arePasskeysAvailable,
     };
   },
 )(SettingsPrivacy));

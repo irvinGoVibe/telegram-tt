@@ -11,6 +11,7 @@ import { MESSAGE_LIST_SENSITIVE_AREA } from '../../../util/browser/windowEnviron
 import { debounce } from '../../../util/schedulers';
 
 import { useDebouncedSignal } from '../../../hooks/useAsyncResolvers';
+import useDebouncedCallback from '../../../hooks/useDebouncedCallback';
 import { useIntersectionObserver, useOnIntersect } from '../../../hooks/useIntersectionObserver';
 import useLastCallback from '../../../hooks/useLastCallback';
 import { useSignalEffect } from '../../../hooks/useSignalEffect';
@@ -19,19 +20,30 @@ import useSyncEffect from '../../../hooks/useSyncEffect';
 const FAB_THRESHOLD = 50;
 const NOTCH_THRESHOLD = 1; // Notch has zero height so we at least need a 1px margin to intersect
 const CONTAINER_HEIGHT_DEBOUNCE = 200;
+const SCROLL_TOOLS_DEBOUNCE = 100;
 const TOOLS_FREEZE_TIMEOUT = 350; // Approximate message sending animation duration
 
-export default function useScrollHooks(
-  type: MessageListType,
-  containerRef: ElementRef<HTMLDivElement>,
-  messageIds: number[],
-  getContainerHeight: Signal<number | undefined>,
-  isViewportNewest: boolean,
-  isUnread: boolean,
-  onScrollDownToggle: BooleanToVoidFunction | undefined,
-  onNotchToggle: AnyToVoidFunction | undefined,
-  isReady: boolean,
-) {
+export default function useScrollHooks({
+  type,
+  containerRef,
+  messageIds,
+  getContainerHeight,
+  isViewportNewest,
+  isUnread,
+  isReady,
+  isReplacingHistoryRef,
+  onScrollDownToggle,
+}: {
+  type: MessageListType;
+  containerRef: ElementRef<HTMLDivElement>;
+  messageIds: number[];
+  getContainerHeight: Signal<number | undefined>;
+  isViewportNewest: boolean;
+  isUnread: boolean;
+  isReady: boolean;
+  isReplacingHistoryRef: { current: boolean };
+  onScrollDownToggle: BooleanToVoidFunction | undefined;
+}) {
   const { loadViewportMessages } = getActions();
 
   const [loadMoreBackwards, loadMoreForwards] = useMemo(
@@ -47,19 +59,25 @@ export default function useScrollHooks(
   const forwardsTriggerRef = useRef<HTMLDivElement>();
   const fabTriggerRef = useRef<HTMLDivElement>();
 
-  const toggleScrollTools = useLastCallback(() => {
+  const toggleScrollTools = useLastCallback((scrollDown: boolean) => {
+    onScrollDownToggle?.(scrollDown);
+  });
+
+  const toggleScrollToolsDebounced = useDebouncedCallback(
+    toggleScrollTools, [toggleScrollTools], SCROLL_TOOLS_DEBOUNCE, true, false,
+  );
+
+  const updateScrollTools = useLastCallback(() => {
     if (!isReady) return;
 
     if (!messageIds?.length) {
-      onScrollDownToggle?.(false);
-      onNotchToggle?.(false);
+      toggleScrollTools(false);
 
       return;
     }
 
     if (!isViewportNewest) {
-      onScrollDownToggle?.(true);
-      onNotchToggle?.(true);
+      toggleScrollToolsDebounced(true);
 
       return;
     }
@@ -76,8 +94,7 @@ export default function useScrollHooks(
 
     if (scrollHeight === 0) return;
 
-    onScrollDownToggle?.(isUnread ? !isAtBottom : !isNearBottom);
-    onNotchToggle?.(!isAtBottom);
+    toggleScrollToolsDebounced(isUnread ? !isAtBottom : !isNearBottom);
   });
 
   const {
@@ -87,6 +104,10 @@ export default function useScrollHooks(
     margin: MESSAGE_LIST_SENSITIVE_AREA,
   }, (entries) => {
     if (!loadMoreForwards || !loadMoreBackwards) {
+      return;
+    }
+
+    if (isReplacingHistoryRef.current) {
       return;
     }
 
@@ -116,7 +137,7 @@ export default function useScrollHooks(
     rootRef: containerRef,
     margin: FAB_THRESHOLD * 2,
     throttleScheduler: requestMeasure,
-  }, toggleScrollTools);
+  }, updateScrollTools);
 
   useOnIntersect(fabTriggerRef, observeIntersectionForFab);
 
@@ -128,15 +149,28 @@ export default function useScrollHooks(
     rootRef: containerRef,
     margin: NOTCH_THRESHOLD,
     throttleScheduler: requestMeasure,
-  }, toggleScrollTools);
+  }, updateScrollTools);
 
   useOnIntersect(fabTriggerRef, observeIntersectionForNotch);
 
   useEffect(() => {
     if (isReady) {
-      toggleScrollTools();
+      updateScrollTools();
     }
-  }, [isReady, toggleScrollTools]);
+  }, [isReady]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('scroll', updateScrollTools);
+    container.addEventListener('scrollend', updateScrollTools);
+
+    return () => {
+      container.removeEventListener('scroll', updateScrollTools);
+      container.removeEventListener('scrollend', updateScrollTools);
+    };
+  }, [containerRef]);
 
   const freezeShortly = useLastCallback(() => {
     freezeForFab();

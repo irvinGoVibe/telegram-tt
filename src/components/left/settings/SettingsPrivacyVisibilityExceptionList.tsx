@@ -23,7 +23,6 @@ import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLang from '../../../hooks/useLang';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import PeerPicker from '../../common/pickers/PeerPicker';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 
@@ -184,7 +183,7 @@ const SettingsPrivacyVisibilityExceptionList: FC<OwnProps & StateProps> = ({
   }
 
   return (
-    <div className="NewChat-inner step-1">
+    <div className="Picker settings-picker-islands">
       <PeerPicker
         categories={getCustomCategory()}
         itemIds={displayedIds || []}
@@ -202,15 +201,15 @@ const SettingsPrivacyVisibilityExceptionList: FC<OwnProps & StateProps> = ({
         itemInputType="checkbox"
         withDefaultPadding
         withStatus
+        withIslands
       />
 
       <FloatingActionButton
         isShown={isSubmitShown}
         onClick={handleSubmit}
         ariaLabel={isAllowList ? oldLang('AlwaysAllow') : oldLang('NeverAllow')}
-      >
-        <Icon name="check" />
-      </FloatingActionButton>
+        iconName="check"
+      />
     </div>
   );
 };

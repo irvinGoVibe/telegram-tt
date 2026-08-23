@@ -9,6 +9,7 @@ import type {
   ApiUser,
 } from '../../../api/types';
 
+import ensureLovelyChart from '../../../lib/lovelyChartWithStyles';
 import { selectChatFullInfo, selectTabState } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { callApi } from '../../../api/gramjs';
@@ -25,19 +26,6 @@ import StatisticsOverview from './StatisticsOverview';
 import StatisticsStoryPublicForward from './StatisticsStoryPublicForward';
 
 import styles from './Statistics.module.scss';
-
-type ILovelyChart = { create: (el: HTMLElement, params: AnyLiteral) => void };
-let lovelyChartPromise: Promise<ILovelyChart> | undefined;
-let LovelyChart: ILovelyChart;
-
-async function ensureLovelyChart() {
-  if (!lovelyChartPromise) {
-    lovelyChartPromise = import('../../../lib/lovely-chart/LovelyChart') as Promise<ILovelyChart>;
-    LovelyChart = await lovelyChartPromise;
-  }
-
-  return lovelyChartPromise;
-}
 
 const GRAPH_TITLES = {
   viewsGraph: 'Stats.StoryInteractionsTitle',
@@ -70,8 +58,8 @@ function StoryStatistics({
   const lang = useOldLang();
   const containerRef = useRef<HTMLDivElement>();
   const [isReady, setIsReady] = useState(false);
-  const loadedCharts = useRef<Set<string>>(new Set());
-  const errorCharts = useRef<Set<string>>(new Set());
+  const loadedChartsRef = useRef<Set<string>>(new Set());
+  const errorChartsRef = useRef<Set<string>>(new Set());
 
   const { loadStoryStatistics, loadStoryPublicForwards, loadStatisticsAsyncGraph } = getActions();
   const forceUpdate = useForceUpdate();
@@ -84,8 +72,8 @@ function StoryStatistics({
 
   useEffect(() => {
     if (!isActive || storyId) {
-      loadedCharts.current.clear();
-      errorCharts.current.clear();
+      loadedChartsRef.current.clear();
+      errorChartsRef.current.clear();
       setIsReady(false);
     }
   }, [isActive, storyId]);
@@ -111,7 +99,7 @@ function StoryStatistics({
 
   useEffect(() => {
     (async () => {
-      await ensureLovelyChart();
+      const LovelyChart = await ensureLovelyChart();
 
       if (!isReady) {
         setIsReady(true);
@@ -130,32 +118,29 @@ function StoryStatistics({
         const isAsync = graph.graphType === 'async';
         const isError = graph.graphType === 'error';
 
-        if (isAsync || loadedCharts.current.has(name)) {
+        if (isAsync || loadedChartsRef.current.has(name)) {
           return;
         }
 
         if (isError) {
-          loadedCharts.current.add(name);
-          errorCharts.current.add(name);
+          loadedChartsRef.current.add(name);
+          errorChartsRef.current.add(name);
 
           return;
         }
 
         const { zoomToken } = graph;
 
-        LovelyChart.create(
-          containerRef.current!.children[index] as HTMLElement,
-          {
-            title: lang((GRAPH_TITLES as Record<string, string>)[name]),
-            ...zoomToken ? {
-              onZoom: (x: number) => callApi('fetchStatisticsAsyncGraph', { token: zoomToken, x, dcId }),
-              zoomOutLabel: lang('Graph.ZoomOut'),
-            } : {},
-            ...graph,
-          },
-        );
+        new LovelyChart(containerRef.current!.children[index] as HTMLElement, {
+          ...graph,
+          title: lang((GRAPH_TITLES as Record<string, string>)[name]),
+          onZoom: zoomToken
+            ? (x: number) => callApi('fetchStatisticsAsyncGraph', { token: zoomToken, x, dcId })
+            : undefined,
+          zoomOutLabel: zoomToken ? lang('Graph.ZoomOut') : undefined,
+        });
 
-        loadedCharts.current.add(name);
+        loadedChartsRef.current.add(name);
       });
 
       forceUpdate();
@@ -181,11 +166,11 @@ function StoryStatistics({
     >
       <StatisticsOverview statistics={statistics} type="story" title={lang('StatisticOverview')} />
 
-      {!loadedCharts.current.size && <Loading />}
+      {!loadedChartsRef.current.size && <Loading />}
 
-      <div ref={containerRef}>
+      <div ref={containerRef} data-stricterdom-ignore>
         {GRAPHS.map((graph) => {
-          const isGraphReady = loadedCharts.current.has(graph) && !errorCharts.current.has(graph);
+          const isGraphReady = loadedChartsRef.current.has(graph) && !errorChartsRef.current.has(graph);
           return (
             <div className={buildClassName(styles.graph, !isGraphReady && styles.hidden)} />
           );

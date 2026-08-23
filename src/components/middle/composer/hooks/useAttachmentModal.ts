@@ -3,6 +3,7 @@ import { getActions } from '../../../../global';
 
 import type { ApiAttachment, ApiMessage } from '../../../../api/types';
 
+import { GIF_MIME_TYPE } from '../../../../config';
 import { canReplaceMessageMedia, getAttachmentMediaType } from '../../../../global/helpers';
 import { MEMO_EMPTY_ARRAY } from '../../../../util/memo';
 import buildAttachment from '../helpers/buildAttachment';
@@ -13,27 +14,25 @@ import useLastCallback from '../../../../hooks/useLastCallback';
 export default function useAttachmentModal({
   attachments,
   fileSizeLimit,
-  setHtml,
   setAttachments,
   chatId,
+  canAttachFiles,
   canSendAudios,
   canSendVideos,
   canSendPhotos,
   canSendDocuments,
-  insertNextText,
   editedMessage,
   shouldSendInHighQuality,
 }: {
   attachments: ApiAttachment[];
   fileSizeLimit: number;
-  setHtml: (html: string) => void;
   setAttachments: (attachments: ApiAttachment[]) => void;
   chatId: string;
+  canAttachFiles: boolean;
   canSendAudios?: boolean;
   canSendVideos?: boolean;
   canSendPhotos?: boolean;
   canSendDocuments?: boolean;
-  insertNextText: VoidFunction;
   editedMessage: ApiMessage | undefined;
   shouldSendInHighQuality?: boolean;
 }) {
@@ -44,7 +43,6 @@ export default function useAttachmentModal({
 
   const handleClearAttachments = useLastCallback(() => {
     setAttachments(MEMO_EMPTY_ARRAY);
-    insertNextText();
   });
 
   const handleSetAttachments = useLastCallback(
@@ -52,6 +50,10 @@ export default function useAttachmentModal({
       const newAttachments = typeof newValue === 'function' ? newValue(attachments) : newValue;
       if (!newAttachments.length) {
         handleClearAttachments();
+        return;
+      }
+
+      if (!canAttachFiles) {
         return;
       }
 
@@ -85,7 +87,16 @@ export default function useAttachmentModal({
   );
 
   const handleAppendFiles = useLastCallback(async (files: File[], isSpoiler?: boolean) => {
+    if (!canAttachFiles) {
+      return;
+    }
+
     if (editedMessage) {
+      if (editedMessage.groupedId && files[0].type === GIF_MIME_TYPE) {
+        showNotification({ message: lang('MediaReplaceInvalidError', undefined, { pluralValue: 1 }) });
+        return;
+      }
+
       const newAttachment = await buildAttachment(files[0].name, files[0]);
       const canReplace = editedMessage && canReplaceMessageMedia(editedMessage, newAttachment);
 
@@ -108,7 +119,16 @@ export default function useAttachmentModal({
   });
 
   const handleFileSelect = useLastCallback(async (files: File[]) => {
+    if (!canAttachFiles) {
+      return;
+    }
+
     if (editedMessage) {
+      if (editedMessage.groupedId && files[0].type === GIF_MIME_TYPE) {
+        showNotification({ message: lang('MediaReplaceInvalidError', undefined, { pluralValue: 1 }) });
+        return;
+      }
+
       const newAttachment = await buildAttachment(files[0].name, files[0]);
       const canReplace = editedMessage && canReplaceMessageMedia(editedMessage, newAttachment);
 
@@ -129,8 +149,10 @@ export default function useAttachmentModal({
   });
 
   const handleUpdateAttachmentsQuality = useLastCallback(async () => {
-    const newAttachments = await Promise.all(attachments.map((attachment) =>
-      buildAttachment(attachment.filename, attachment.blob, { shouldSendInHighQuality })));
+    const newAttachments = await Promise.all(attachments.map(async (attachment) => {
+      if (!attachment.blob) return attachment;
+      return buildAttachment(attachment.filename, attachment.blob, { shouldSendInHighQuality });
+    }));
     handleSetAttachments(newAttachments);
   });
 
@@ -141,7 +163,6 @@ export default function useAttachmentModal({
   return {
     handleAppendFiles,
     handleFileSelect,
-    onCaptionUpdate: setHtml,
     handleClearAttachments,
     handleSetAttachments,
     shouldForceCompression,

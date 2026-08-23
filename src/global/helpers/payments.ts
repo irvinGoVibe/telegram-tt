@@ -13,7 +13,7 @@ import type { LangFn } from '../../util/localization';
 import type { GlobalState } from '../types';
 
 import { STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../config';
-import arePropsShallowEqual from '../../util/arePropsShallowEqual';
+import { areRecordsShallowEqual } from '../../util/areShallowEqual';
 import { convertTonFromNanos } from '../../util/formatCurrency';
 import { selectChat, selectPeer, selectUser } from '../selectors';
 
@@ -79,8 +79,10 @@ export function getRequestInputInvoice<T extends GlobalState>(
 
   if (inputInvoice.type === 'stars') {
     const {
-      stars, amount, currency,
+      stars, amount, currency, spendPurposePeerId,
     } = inputInvoice;
+
+    const spendPurposePeer = spendPurposePeerId ? selectPeer(global, spendPurposePeerId) : undefined;
 
     return {
       type: 'stars',
@@ -89,6 +91,7 @@ export function getRequestInputInvoice<T extends GlobalState>(
         stars,
         amount,
         currency,
+        spendPurposePeer,
       },
     };
   }
@@ -232,6 +235,46 @@ export function getRequestInputInvoice<T extends GlobalState>(
       type: 'stargiftTransfer',
       inputSavedGift: savedGift,
       recipient: peer,
+    };
+  }
+
+  if (inputInvoice.type === 'stargiftDropOriginalDetails') {
+    const { inputSavedGift } = inputInvoice;
+    const savedGift = getRequestInputSavedStarGift(global, inputSavedGift);
+    if (!savedGift) return undefined;
+
+    return {
+      type: 'stargiftDropOriginalDetails',
+      inputSavedGift: savedGift,
+    };
+  }
+
+  if (inputInvoice.type === 'stargiftPrepaidUpgrade') {
+    const { peerId, hash } = inputInvoice;
+    const peer = selectPeer(global, peerId);
+    if (!peer) return undefined;
+
+    return {
+      type: 'stargiftPrepaidUpgrade',
+      peer,
+      hash,
+    };
+  }
+
+  if (inputInvoice.type === 'stargiftAuctionBid') {
+    const {
+      giftId, bidAmount, peerId, message, shouldHideName, isUpdateBid,
+    } = inputInvoice;
+    const peer = peerId ? selectPeer(global, peerId) : undefined;
+
+    return {
+      type: 'stargiftAuctionBid',
+      giftId,
+      bidAmount,
+      peer,
+      message,
+      shouldHideName,
+      isUpdateBid,
     };
   }
 
@@ -451,5 +494,5 @@ export function getPrizeStarsTransactionFromGiveaway(message: ApiMessage): ApiSt
 }
 
 export function areInputSavedGiftsEqual(one: ApiInputSavedStarGift, two: ApiInputSavedStarGift) {
-  return arePropsShallowEqual(one, two);
+  return areRecordsShallowEqual(one, two);
 }

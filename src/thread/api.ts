@@ -90,7 +90,7 @@ export type LinearCatalog = {
   projects: { id: string; name: string; teamIds: string[] }[];
 };
 
-const API_BASE = String(process.env.THREAD_API_URL || '').replace(/\/+$/, '');
+const API_BASE = String(import.meta.env.TG_THREAD_API_URL || '').replace(/\/+$/, '');
 
 export class ThreadApiError extends Error {
   status: number;

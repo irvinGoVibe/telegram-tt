@@ -2,32 +2,30 @@ import type { FC } from '../../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo, useRef, useState,
 } from '../../../lib/teact/teact';
-import { withGlobal } from '../../../global';
+import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiUser } from '../../../api/types';
-import type { GroupCallParticipant as TypeGroupCallParticipant } from '../../../lib/secret-sauce';
+import type { GroupCallParticipant as TypeGroupCallParticipant } from '../../../lib/vibecalls';
 import type { VideoLayout, VideoParticipant } from './hooks/useGroupCallVideoLayout';
 
 import { GROUP_CALL_DEFAULT_VOLUME } from '../../../config';
 import fastBlur from '../../../lib/fastBlur';
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
-import { getUserStreams, THRESHOLD } from '../../../lib/secret-sauce';
+import { getUserStreams, THRESHOLD } from '../../../lib/vibecalls';
 import { selectChat, selectUser } from '../../../global/selectors';
 import { animate } from '../../../util/animation';
 import { IS_CANVAS_FILTER_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 import { fastRaf } from '../../../util/schedulers';
+import { downloadVideoBlob, isVideoRecordingSupported, startVideoRecording } from '../../../util/videoRecording';
 import formatGroupCallVolume from './helpers/formatGroupCallVolume';
 
 import useInterval from '../../../hooks/schedulers/useInterval';
 import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
-import { startVideoRecording, downloadVideoBlob, isVideoRecordingSupported } from '../../../util/videoRecording';
-import { getActions } from '../../../global';
 
 import FullNameTitle from '../../common/FullNameTitle';
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import Skeleton from '../../ui/placeholder/Skeleton';
 import GroupCallParticipantMenu from './GroupCallParticipantMenu';
@@ -151,7 +149,7 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
     stop: () => Promise<{ blob: Blob; duration: number; filename: string }>;
     pause: () => void;
     resume: () => void;
-  } | null>(null);
+  }>();
 
   const handleCanPlay = useLastCallback(() => {
     setIsLoading(false);
@@ -255,33 +253,32 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
         const result = await recordingController.stop();
         downloadVideoBlob(result.blob, result.filename);
         setIsRecording(false);
-        setRecordingController(null);
-        
+        setRecordingController(undefined);
+
         showNotification({
-          message: `Video saved as ${result.filename}`,
+          message: lang('GroupCallRecordingSaved', { filename: result.filename }),
           icon: 'download',
         });
       } else {
         // Start recording
         const participantName = user?.firstName || chat?.title || 'Participant';
         const filename = `group_call_${participantName}`;
-        
-        const controller = await startVideoRecording(stream, filename);
+
+        const controller = startVideoRecording(stream, filename);
         setRecordingController(controller);
         setIsRecording(true);
-        
+
         showNotification({
-          message: 'Recording started',
+          message: lang('GroupCallRecordingStarted'),
           icon: 'video',
         });
       }
-    } catch (error) {
-      console.error('Video recording error:', error);
+    } catch {
       setIsRecording(false);
-      setRecordingController(null);
-      
+      setRecordingController(undefined);
+
       showNotification({
-        message: 'Failed to record video',
+        message: lang('GroupCallRecordingFailed'),
       });
     }
   });
@@ -307,7 +304,7 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
         )}
       >
         {isLoading && (
-          <Skeleton className={buildClassName(styles.video, styles.loader)} />
+          <Skeleton className={buildClassName(styles.video, styles.loader)} animation="wave" />
         )}
         {stream && (
           <video
@@ -339,9 +336,8 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
             className={styles.pinButton}
             ariaLabel={lang(isPinned ? 'lng_group_call_context_unpin_camera' : 'lng_group_call_context_pin_camera')}
             onClick={handleClickPin}
-          >
-            <Icon name={isPinned ? 'unpin' : 'pin'} />
-          </Button>
+            iconName={isPinned ? 'unpin' : 'pin'}
+          />
         )}
         {stream && isVideoRecordingSupported() && (
           <Button
@@ -352,9 +348,8 @@ const GroupCallParticipantVideo: FC<OwnProps & StateProps> = ({
             className={buildClassName(styles.downloadButton, isRecording && styles.recording)}
             ariaLabel={isRecording ? lang('Stop') : lang('MediaDownload')}
             onClick={handleDownloadVideo}
-          >
-            <Icon name={isRecording ? 'stop' : 'download'} />
-          </Button>
+            iconName={isRecording ? 'stop' : 'download'}
+          />
         )}
         <div className={styles.bottomPanel}>
           <div className={styles.info}>

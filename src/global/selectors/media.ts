@@ -3,7 +3,6 @@ import type {
 } from '../types';
 import {
   type ApiMessage,
-  ApiMessageEntityTypes,
   type MediaContainer,
   type SizeTarget,
 } from '../../api/types';
@@ -16,11 +15,13 @@ import {
   getMessageInvoice,
   getMessageMediaHash,
   getMessagePhoto,
+  getMessageSingleCustomEmoji,
+  getMessageSingleRegularEmoji,
   getMessageSticker,
-  getMessageText,
   getMessageVideo,
   getMessageVoice,
   getWebPageAudio,
+  getWebPageDocument,
   getWebPagePhoto,
   getWebPageVideo,
 } from '../helpers';
@@ -31,7 +32,7 @@ import {
   selectWebPageFromMessage,
 } from './messages';
 import { selectSettingsKeys } from './settings';
-import { selectCustomEmoji } from './symbols';
+import { selectAnimatedEmoji, selectCustomEmoji } from './symbols';
 
 export function selectIsMediaNsfw<T extends GlobalState>(global: T, message: ApiMessage) {
   const { isSensitiveEnabled } = selectSettingsKeys(global);
@@ -46,25 +47,21 @@ export function selectIsMediaNsfw<T extends GlobalState>(global: T, message: Api
 }
 
 export function selectMessageDownloadableMedia<T extends GlobalState>(global: T, message: MediaContainer) {
-  const text = getMessageText(message);
-  const firstEntity = text?.entities?.[0];
-  const isSingleCustomEmoji = firstEntity
-    && text.entities?.length === 1
-    && firstEntity.type === ApiMessageEntityTypes.CustomEmoji
-    && firstEntity.offset === 0
-    && firstEntity.length === text.text.length;
-
-  const customEmoji = isSingleCustomEmoji ? selectCustomEmoji(global, firstEntity.documentId) : undefined;
+  const singleEmoji = getMessageSingleRegularEmoji(message);
+  const animatedEmoji = singleEmoji && selectAnimatedEmoji(global, singleEmoji);
+  const animatedCustomEmojiId = getMessageSingleCustomEmoji(message);
+  const customEmoji = animatedCustomEmojiId && selectCustomEmoji(global, animatedCustomEmojiId);
 
   const webPage = selectWebPageFromMessage(global, message);
   return (
-    customEmoji
+    customEmoji || animatedEmoji
+    || getMessageDocument(message)
     || getMessagePhoto(message)
     || getMessageVideo(message)
-    || getMessageDocument(message)
     || getMessageSticker(message)
     || getMessageAudio(message)
     || getMessageVoice(message)
+    || getWebPageDocument(webPage)
     || getWebPagePhoto(webPage)
     || getWebPageVideo(webPage)
     || getWebPageAudio(webPage)

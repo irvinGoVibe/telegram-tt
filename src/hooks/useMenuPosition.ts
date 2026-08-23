@@ -19,6 +19,7 @@ interface StaticPositionOptions {
 
 interface DynamicPositionOptions {
   anchor: IAnchorPosition;
+  positionY?: 'top' | 'bottom';
   getTriggerElement: () => HTMLElement | undefined | null;
   getRootElement: () => HTMLElement | undefined | null;
   getMenuElement: () => HTMLElement | undefined | null;
@@ -33,7 +34,6 @@ export type MenuPositionOptions =
 export interface Layout {
   extraPaddingX?: number;
   extraTopPadding?: number;
-  extraMarginTop?: number;
   menuElMinWidth?: number;
   deltaX?: number;
   topShiftY?: number;
@@ -121,6 +121,7 @@ function processDynamically(
   bubbleRef: ElementRef<HTMLDivElement>,
   {
     anchor,
+    positionY: requestedPositionY,
     getRootElement,
     getMenuElement,
     getTriggerElement,
@@ -133,6 +134,8 @@ function processDynamically(
   let { x, y } = anchor;
   const anchorX = x;
   const anchorY = y;
+  const anchorWidth = anchor.width || 0;
+  const anchorHeight = anchor.height || 0;
 
   const menuEl = getMenuElement();
   const rootEl = getRootElement();
@@ -140,7 +143,6 @@ function processDynamically(
   const {
     extraPaddingX = 0,
     extraTopPadding = 0,
-    extraMarginTop = 0,
     topShiftY = 0,
     menuElMinWidth = 0,
     deltaX = 0,
@@ -149,7 +151,7 @@ function processDynamically(
     isDense = false,
   } = getLayout?.() || {};
 
-  const marginTop = menuEl ? parseInt(getComputedStyle(menuEl).marginTop, 10) + extraMarginTop : undefined;
+  const marginTop = menuEl ? parseInt(getComputedStyle(menuEl).marginTop, 10) : undefined;
   const { offsetWidth: menuElWidth, offsetHeight: menuElHeight } = menuEl || { offsetWidth: 0, offsetHeight: 0 };
   const menuRect = menuEl ? {
     width: Math.max(menuElWidth, menuElMinWidth),
@@ -163,9 +165,9 @@ function processDynamically(
   if (isDense || (x + menuRect.width + extraPaddingX < rootRect.width + rootRect.left)) {
     x += 3;
     positionX = 'left';
-  } else if (x - menuRect.width - rootRect.left > 0) {
+  } else if (x - anchorWidth - menuRect.width - rootRect.left > 0) {
     positionX = 'right';
-    x -= 3;
+    x = x - anchorWidth - 3;
   } else {
     positionX = 'left';
     x = 16;
@@ -180,10 +182,16 @@ function processDynamically(
     y = yWithTopShift;
   } else {
     positionY = 'bottom';
+    y = y + anchorHeight;
 
     if (y - menuRect.height < rootRect.top + extraTopPadding) {
       y = rootRect.top + rootRect.height;
     }
+  }
+
+  if (requestedPositionY) {
+    positionY = requestedPositionY;
+    y = requestedPositionY === 'top' ? yWithTopShift : anchorY + anchorHeight;
   }
 
   const triggerRect = triggerEl.getBoundingClientRect();
@@ -201,6 +209,25 @@ function processDynamically(
       : leftWithPossibleNegative)
     : (x - triggerRect.left)) + addedXForPortalPositioning;
   let top = y - triggerRect.top + addedYForPortalPositioning;
+
+  // When portalled, `left`/`top` are in viewport coords. The container has width 0 — its anchor
+  // is the bubble's left edge for `positionX='left'` and right edge for `positionX='right'`
+  // (same for `top`/`bottom`). Clamp the anchor so the bubble fits the viewport on either side.
+  if (withPortal) {
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const margin = MENU_POSITION_VISUAL_COMFORT_SPACE_PX;
+    if (positionX === 'left') {
+      left = Math.max(margin, Math.min(left, viewportWidth - menuRect.width - margin));
+    } else {
+      left = Math.max(menuRect.width + margin, Math.min(left, viewportWidth - margin));
+    }
+    if (positionY === 'top') {
+      top = Math.max(margin, Math.min(top, viewportHeight - menuRect.height - margin));
+    } else {
+      top = Math.max(menuRect.height + margin, Math.min(top, viewportHeight - margin));
+    }
+  }
 
   if (isDense) {
     left = Math.min(left, rootRect.width - menuRect.width - MENU_POSITION_VISUAL_COMFORT_SPACE_PX);

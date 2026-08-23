@@ -1,19 +1,25 @@
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type {
-  ApiEmojiInteraction, ApiSticker, ApiStickerSet, ApiStickerSetInfo, GramJsEmojiInteraction,
+  ApiEmojiGroup, ApiEmojiInteraction, ApiSticker, ApiStickerSet, ApiStickerSetInfo, GramJsEmojiInteraction,
 } from '../../types';
 
 import { LOTTIE_STICKER_MIME_TYPE, VIDEO_STICKER_MIME_TYPE } from '../../../config';
 import { compact } from '../../../util/iteratees';
+import { addDocumentToLocalDb } from '../helpers/localDb';
 import localDb from '../localDb';
 import { buildApiPhotoPreviewSizes, buildApiThumbnailFromCached, buildApiThumbnailFromPath } from './common';
+import { pathBytesToSvg } from './pathBytesToSvg';
+
+const PATH_THUMB_SIZE = 512;
 
 export function buildStickerFromDocument(document: GramJs.TypeDocument,
   isNoPremium?: boolean, isPremium?: boolean): ApiSticker | undefined {
   if (document instanceof GramJs.DocumentEmpty) {
     return undefined;
   }
+
+  addDocumentToLocalDb(document);
 
   const { mimeType, videoThumbs } = document;
   const stickerAttribute = document.attributes
@@ -47,7 +53,7 @@ export function buildStickerFromDocument(document: GramJs.TypeDocument,
   const stickerOrEmojiAttribute = (stickerAttribute || customEmojiAttribute)!;
   const stickerSetInfo = buildApiStickerSetInfo(stickerOrEmojiAttribute?.stickerset);
   const emoji = stickerOrEmojiAttribute?.alt;
-  const isFree = Boolean(customEmojiAttribute?.free ?? true) && !isPremium;
+  const isFree = (customEmojiAttribute ? Boolean(customEmojiAttribute.free) : true) && !isPremium;
 
   const cachedThumb = document.thumbs && document.thumbs.find(
     (s): s is GramJs.PhotoCachedSize => s instanceof GramJs.PhotoCachedSize,
@@ -115,9 +121,16 @@ export function buildStickerSet(set: GramJs.StickerSet): ApiStickerSet {
   const hasStaticThumb = thumbs?.some((thumb) => thumb.type === 's');
   const hasAnimatedThumb = thumbs?.some((thumb) => thumb.type === 'a');
   const hasVideoThumb = thumbs?.some((thumb) => thumb.type === 'v');
-  const thumbCustomEmojiId = thumbDocumentId && String(thumbDocumentId);
+  const thumbCustomEmojiId = thumbDocumentId !== undefined ? String(thumbDocumentId) : undefined;
 
   const hasThumbnail = hasStaticThumb || hasAnimatedThumb || hasVideoThumb || Boolean(thumbCustomEmojiId);
+
+  const pathThumb = thumbs?.find((thumb): thumb is GramJs.PhotoPathSize => thumb instanceof GramJs.PhotoPathSize);
+  const thumbnail = pathThumb ? {
+    dataUri: `data:image/svg+xml;utf8,${pathBytesToSvg(pathThumb.bytes, PATH_THUMB_SIZE, PATH_THUMB_SIZE)}`,
+    width: PATH_THUMB_SIZE,
+    height: PATH_THUMB_SIZE,
+  } : undefined;
 
   return {
     isArchived: archived,
@@ -130,6 +143,7 @@ export function buildStickerSet(set: GramJs.StickerSet): ApiStickerSet {
     hasAnimatedThumb,
     hasVideoThumb,
     hasThumbnail,
+    thumbnail,
     thumbCustomEmojiId,
     count,
     shortName,
@@ -202,15 +216,22 @@ export function processStickerResult(stickers: GramJs.TypeDocument[]) {
   return stickers
     .map((document) => {
       if (document instanceof GramJs.Document) {
-        const sticker = buildStickerFromDocument(document);
-        if (sticker) {
-          localDb.documents[String(document.id)] = document;
-
-          return sticker;
-        }
+        return buildStickerFromDocument(document);
       }
 
       return undefined;
     })
     .filter(Boolean);
+}
+
+export function buildApiEmojiGroup(group: GramJs.TypeEmojiGroup): ApiEmojiGroup | undefined {
+  if (group instanceof GramJs.EmojiGroupPremium || !group.emoticons?.length) {
+    return undefined;
+  }
+
+  return {
+    title: group.title,
+    iconEmojiId: group.iconEmojiId.toString(),
+    emoticons: group.emoticons,
+  };
 }

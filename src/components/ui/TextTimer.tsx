@@ -1,31 +1,54 @@
-import { type FC, memo, useEffect } from '../../lib/teact/teact';
+import { useEffect } from '../../lib/teact/teact';
 
-import { formatMediaDuration } from '../../util/dates/dateFormat';
+import { formatCountdown } from '../../util/dates/oldDateFormat';
+import { formatClockDuration, formatCountdownDateTime, secondsToDate } from '../../util/localization/dateFormat';
 import { getServerTime } from '../../util/serverTime';
 
 import useInterval from '../../hooks/schedulers/useInterval';
+import useTimeout from '../../hooks/schedulers/useTimeout';
 import useForceUpdate from '../../hooks/useForceUpdate';
 import useLang from '../../hooks/useLang';
-import useOldLang from '../../hooks/useOldLang';
 
 import AnimatedCounter from '../common/AnimatedCounter';
 
 type OwnProps = {
-  langKey: string;
+  className?: string;
   endsAt: number;
+  mode?: 'clock' | 'countdown' | 'rounded';
+  shouldShowZeroOnEnd?: boolean;
   onEnd?: NoneToVoidFunction;
 };
 
+const DAY_IN_SECONDS = 24 * 60 * 60;
 const UPDATE_FREQUENCY = 500; // Sometimes second gets skipped if using 1000
+const SECOND_IN_MS = 1000;
 
-const TextTimer: FC<OwnProps> = ({ langKey, endsAt, onEnd }) => {
-  const lang = useLang();
-  const oldLang = useOldLang();
+const TextTimer = ({
+  className,
+  endsAt,
+  mode = 'clock',
+  shouldShowZeroOnEnd,
+  onEnd,
+}: OwnProps) => {
   const forceUpdate = useForceUpdate();
+  const lang = useLang();
 
   const serverTime = getServerTime();
   const isActive = serverTime < endsAt;
-  useInterval(forceUpdate, isActive ? UPDATE_FREQUENCY : undefined);
+  const timeLeft = Math.max(0, endsAt - serverTime);
+  const shouldUseClock = mode === 'clock' || timeLeft < DAY_IN_SECONDS;
+  const switchToClockDelay = isActive && mode !== 'clock' && !shouldUseClock
+    ? ((timeLeft - DAY_IN_SECONDS) * SECOND_IN_MS) + UPDATE_FREQUENCY
+    : undefined;
+  const nextUpdateDelay = mode === 'rounded' && switchToClockDelay !== undefined
+    ? Math.min(
+      switchToClockDelay,
+      (((timeLeft % DAY_IN_SECONDS) || DAY_IN_SECONDS) * SECOND_IN_MS) + UPDATE_FREQUENCY,
+    )
+    : switchToClockDelay;
+
+  useTimeout(forceUpdate, nextUpdateDelay);
+  useInterval(forceUpdate, isActive && shouldUseClock ? UPDATE_FREQUENCY : undefined);
 
   useEffect(() => {
     if (!isActive) {
@@ -33,38 +56,43 @@ const TextTimer: FC<OwnProps> = ({ langKey, endsAt, onEnd }) => {
     }
   }, [isActive, onEnd]);
 
-  if (!isActive) return undefined;
+  if (!isActive && !shouldShowZeroOnEnd) return undefined;
 
-  const timeLeft = endsAt - serverTime;
-  const time = formatMediaDuration(timeLeft);
+  if (mode === 'rounded' && !shouldUseClock) {
+    return <span className={className}>{formatCountdown(lang, timeLeft)}</span>;
+  }
 
-  const timeParts = time.split(':');
-  const timeCounter = (
-    <span style="font-variant-numeric: tabular-nums;">
-      {timeParts.map((part, index) => (
-        <>
-          {index > 0 && ':'}
-          <AnimatedCounter key={index} text={part} />
-        </>
-      ))}
-    </span>
-  );
-
-  const isTypedKey = langKey === 'UnlockTimerPublicPostsSearch';
-
-  if (isTypedKey) {
+  if (mode === 'countdown' && !shouldUseClock) {
     return (
-      <span>
-        {lang(langKey, { time: timeCounter }, { withNodes: true })}
+      <span className={className}>
+        {formatCountdownDateTime(lang, secondsToDate(endsAt), {
+          anchorDate: secondsToDate(serverTime),
+        })}
       </span>
     );
   }
 
+  const time = formatClockDuration(timeLeft);
+
+  const timeParts = time.split(':');
+  const clockNode = (
+    <>
+      {timeParts.map((part, index) => (
+        <span key={index}>
+          {index > 0 && ':'}
+          <AnimatedCounter text={part} />
+        </span>
+      ))}
+    </>
+  );
+
   return (
-    <span>
-      {oldLang(langKey, time)}
+    <span className={className} style="font-variant-numeric: tabular-nums;">
+      {mode === 'countdown'
+        ? lang('TimeIn', { time: clockNode }, { withNodes: true })
+        : clockNode}
     </span>
   );
 };
 
-export default memo(TextTimer);
+export default TextTimer;

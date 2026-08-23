@@ -1,5 +1,4 @@
-import type { FC } from '../../lib/teact/teact';
-import { memo } from '../../lib/teact/teact';
+import { memo, useEffect, useRef } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
 import type { GlobalState } from '../../global/types';
@@ -13,17 +12,17 @@ import useForumPanelRender from '../../hooks/useForumPanelRender';
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
+import useScrolledState from '../../hooks/useScrolledState';
 import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 import useLeftHeaderButtonRtlForumTransition from './main/hooks/useLeftHeaderButtonRtlForumTransition';
 
-import Icon from '../common/icons/Icon';
 import StoryRibbon from '../story/StoryRibbon';
 import StoryToggler from '../story/StoryToggler';
 import Button from '../ui/Button';
 import DropdownMenu from '../ui/DropdownMenu';
 import MenuItem from '../ui/MenuItem';
 import ChatList from './main/ChatList';
-import ForumPanel from './main/ForumPanel';
+import ForumPanel from './main/forum/ForumPanel';
 
 import './ArchivedChats.scss';
 
@@ -37,7 +36,7 @@ export type OwnProps = {
   foldersDispatch: FolderEditDispatch;
 };
 
-const ArchivedChats: FC<OwnProps> = ({
+const ArchivedChats = ({
   isActive,
   isForumPanelOpen,
   archiveSettings,
@@ -45,9 +44,12 @@ const ArchivedChats: FC<OwnProps> = ({
   onReset,
   onTopicSearch,
   foldersDispatch,
-}) => {
+}: OwnProps) => {
   const { updateArchiveSettings } = getActions();
+  const containerRef = useRef<HTMLDivElement>();
   const lang = useOldLang();
+  const { isAtBeginning, handleScroll, updateScrollState } = useScrolledState();
+  const isScrolled = !isAtBeginning;
 
   useHistoryBack({
     isActive,
@@ -82,9 +84,21 @@ const ArchivedChats: FC<OwnProps> = ({
     isStoryRibbonShown, undefined, undefined, '', false, ANIMATION_DURATION + ANIMATION_END_DELAY,
   );
 
+  useEffect(() => {
+    if (!isActive) return;
+
+    const chatList = containerRef.current?.querySelector<HTMLElement>('.chat-list') ?? undefined;
+    updateScrollState(chatList);
+  }, [isActive, shouldRenderStoryRibbon, updateScrollState]);
+
   return (
-    <div className="ArchivedChats">
-      <div className={buildClassName('left-header', !shouldRenderStoryRibbon && 'left-header-shadow')}>
+    <div ref={containerRef} className="ArchivedChats">
+      <div
+        className={buildClassName(
+          'left-header',
+          !shouldRenderStoryRibbon && isScrolled && 'left-header-shadow',
+        )}
+      >
         {lang.isRtl && <div className="DropdownMenuFiller" />}
         <Button
           round
@@ -98,9 +112,8 @@ const ArchivedChats: FC<OwnProps> = ({
             shouldDisableDropdownMenuTransitionRef.current && lang.isRtl && 'disable-transition',
           )}
           onTransitionEnd={handleDropdownMenuTransitionEnd}
-        >
-          <Icon name="arrow-left" />
-        </Button>
+          iconName="arrow-left"
+        />
         {shouldRenderTitle && <h3 className={titleClassNames}>{lang('ArchivedChats')}</h3>}
         <div className="story-toggler-wrapper">
           <StoryToggler canShow isArchived />
@@ -125,7 +138,11 @@ const ArchivedChats: FC<OwnProps> = ({
         )}
       >
         {shouldRenderStoryRibbon && (
-          <StoryRibbon isArchived className="left-header-shadow" isClosing={isStoryRibbonClosing} />
+          <StoryRibbon
+            isArchived
+            className={buildClassName(isScrolled && 'left-header-shadow')}
+            isClosing={isStoryRibbonClosing}
+          />
         )}
         <ChatList
           folderType="archived"
@@ -134,6 +151,8 @@ const ArchivedChats: FC<OwnProps> = ({
           isMainList
           foldersDispatch={foldersDispatch}
           archiveSettings={archiveSettings}
+          isStoryRibbonShown={isStoryRibbonShown}
+          onScroll={handleScroll}
         />
       </div>
       {shouldRenderForumPanel && (

@@ -1,5 +1,5 @@
 # Terms:
-# "build" - Compile web project using webpack.
+# "build" - Compile web project using Vite.
 # "package" - Produce a distributive package for a specific platform as a workflow artifact.
 # "publish" - Send a package to corresponding store and GitHub release page.
 # "release" - build + package + publish
@@ -37,7 +37,7 @@ jobs:
       should-publish: ${{ steps.extract-version.outputs.should-publish }}
       release-name: ${{ steps.extract-version.outputs.release-name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract version and tag
         id: extract-version
@@ -74,7 +74,7 @@ jobs:
 
           echo "Checking if release already exists for tag: $TAG_NAME"
 
-          RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+          RESPONSE=$(curl -sS -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/repos/$PUBLISH_REPO/releases/tags/$TAG_NAME")
 
           if echo "$RESPONSE" | jq -e '.tag_name' > /dev/null; then
@@ -86,20 +86,24 @@ jobs:
               echo "📝 Draft release exists for version $PACKAGE_VERSION, will continue"
               echo "should-skip=false" >> $GITHUB_OUTPUT
             fi
-          else
+          elif echo "$RESPONSE" | jq -e '.message == "Not Found"' > /dev/null; then
             echo "🆕 No release found for version $PACKAGE_VERSION, will create new release"
             echo "should-skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "Error: Failed to retrieve release $TAG_NAME. Response was: $RESPONSE"
+            exit 1
           fi
 
   create-release:
     runs-on: ubuntu-latest
     needs: [get-version, check-version]
-    if: needs.get-version.outputs.should-publish != '' && needs.check-version.outputs.should-skip != 'true'
+    if: needs.check-version.outputs.should-skip != 'true'
     outputs:
       releaseId: ${{ steps.create-release.outputs.releaseId }}
     steps:
       - name: Create draft release
         id: create-release
+        if: needs.get-version.outputs.should-publish != ''
         env:
           PACKAGE_VERSION: ${{ needs.get-version.outputs.package-version }}
           TAG_NAME: ${{ needs.get-version.outputs.tag-name }}
@@ -107,22 +111,17 @@ jobs:
         run: |
           echo "Creating draft release for tag: $TAG_NAME"
           echo "Repository: $PUBLISH_REPO"
-          RESPONSE=$(curl -X POST \
+          RESPONSE=$(curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: token $GH_TOKEN" \
             -d '{"tag_name": "'"$TAG_NAME"'", "name": "'"$RELEASE_NAME"'", "draft": true}' \
             "https://api.github.com/repos/$PUBLISH_REPO/releases")
-          RELEASE_ID=$(echo "$RESPONSE" | jq -r '.id')
+          RELEASE_ID=$(echo "$RESPONSE" | jq -er '.id')
           echo "Extracted Release ID: $RELEASE_ID"
-          if [ "$RELEASE_ID" = "null" ]; then
-            echo "Error: Failed to create release. Response was: $RESPONSE"
-            exit 1
-          fi
           echo "releaseId=$RELEASE_ID" >> $GITHUB_OUTPUT
 
   package-tauri:
     name: Build, package and publish Tauri
     needs: [get-version, check-version, create-release]
-    if: ${{ always() && needs.check-version.outputs.should-skip != 'true' }}
     permissions:
       contents: write
     strategy:
@@ -138,7 +137,7 @@ jobs:
     runs-on: ${{ matrix.settings.platform }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set Xcode version
         if: matrix.settings.platform == 'macos-latest'
@@ -147,7 +146,7 @@ jobs:
           xcode-version: latest-stable
 
       - name: Setup Node.js ${{ vars.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ vars.NODE_VERSION }}
 
@@ -164,7 +163,7 @@ jobs:
 
       - name: Cache node modules
         id: npm-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: node_modules
           key: ${{ runner.os }}-build-${{ hashFiles('**/package-lock.json') }}
@@ -183,9 +182,27 @@ jobs:
           echo "owner=${PUBLISH_REPO%%/*}" >> $GITHUB_OUTPUT
           echo "repo=${PUBLISH_REPO#*/}" >> $GITHUB_OUTPUT
 
+      # Windows code signing setup
+      - name: Setup certificate and environment variables (Windows)
+        if: matrix.settings.platform == 'windows-latest'
+        shell: bash
+        run: |
+          echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
+          echo "SM_HOST=${{ secrets.SM_HOST }}" >> "$GITHUB_ENV"
+          echo "SM_API_KEY=${{ secrets.SM_API_KEY }}" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "KEYPAIR_ALIAS=${{ secrets.KEYPAIR_ALIAS }}" >> "$GITHUB_ENV"
+
+      - name: Install DigiCert Client tools (Windows)
+        if: matrix.settings.platform == 'windows-latest'
+        uses: digicert/code-signing-software-trust-action@v1.2.0
+        with:
+          simple-signing-mode: true
+
       - name: Define Tauri configuration overrides
         id: config-overrides
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           BASE_URL: ${{ vars.BASE_URL }}
           UPDATER_PUBLIC_KEY: ${{ secrets.UPDATER_PUBLIC_KEY }}
@@ -261,74 +278,15 @@ jobs:
 
       - name: Upload artifact (MacOS)
         if: matrix.settings.platform == 'macos-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.file-info.outputs.name }}-${{ steps.file-info.outputs.architecture }}.dmg
           path: ${{ steps.file-info.outputs.path }}/${{ steps.file-info.outputs.name }}.dmg
 
       # Windows release
-      - name: Install DigiCert Client tools
-        uses: digicert/ssm-code-signing@v1.1.1
-      - name: Setup certificate and set environment variables (Windows)
-        if: matrix.settings.platform == 'windows-latest'
-        shell: bash
-        run: |
-          echo "${{ secrets.SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
-          echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          echo "SM_HOST=${{ secrets.SM_HOST }}" >> "$GITHUB_ENV"
-          echo "SM_API_KEY=${{ secrets.SM_API_KEY }}" >> "$GITHUB_ENV"
-          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
-          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.SM_CLIENT_CERT_PASSWORD }}" >> "$GITHUB_ENV"
-          echo "C:\Program Files (x86)\Windows Kits\10\App Certification Kit" >> $GITHUB_PATH
-          echo "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools" >> $GITHUB_PATH
-          echo "C:\Program Files\DigiCert\DigiCert One Signing Manager Tools" >> $GITHUB_PATH
-
-      - name: Sign package (Windows)
-        if: matrix.settings.platform == 'windows-latest'
-        env:
-          KEYPAIR_ALIAS: ${{ secrets.KEYPAIR_ALIAS }}
-          FILE_PATH: ${{ steps.file-info.outputs.path }}/${{ steps.file-info.outputs.filename }}
-        shell: cmd
-        run: smctl.exe sign --keypair-alias=%KEYPAIR_ALIAS% --input "%FILE_PATH%"
-
-      - name: Update release asset (Windows)
-        if: matrix.settings.platform == 'windows-latest' && needs.get-version.outputs.should-publish != ''
-        shell: bash
-        run: |
-          PUBLISH_FILE_NAME=$(echo "${{ steps.file-info.outputs.filename }}" | sed 's/ /./g')
-          FILE_PATH="${{ steps.file-info.outputs.path }}/${{ steps.file-info.outputs.filename }}"
-          RELEASE_ID="${{ needs.create-release.outputs.releaseId }}"
-          echo "Updating release asset for file: $PUBLISH_FILE_NAME"
-          echo "File path: $FILE_PATH"
-          echo "Release ID: $RELEASE_ID"
-          echo "Repository: $PUBLISH_REPO"
-
-          echo "Fetching existing assets..."
-          ASSETS_RESPONSE=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$PUBLISH_REPO/releases/$RELEASE_ID/assets")
-          echo "Assets API Response:"
-          echo "$ASSETS_RESPONSE"
-
-          ASSET_ID=$(echo "$ASSETS_RESPONSE" | jq -r --arg PUBLISH_FILE_NAME "$PUBLISH_FILE_NAME" '.[] | select(.name == $PUBLISH_FILE_NAME) | .id')
-          echo "Found Asset ID: $ASSET_ID"
-
-          if [ "$ASSET_ID" != "null" ] && [ "$ASSET_ID" != "" ]; then
-            echo "Deleting existing asset with ID: $ASSET_ID"
-            DELETE_RESPONSE=$(curl -w "HTTP_STATUS:%{http_code}" -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$PUBLISH_REPO/releases/assets/$ASSET_ID")
-            echo "Delete response: $DELETE_RESPONSE"
-          else
-            echo "No existing asset found to delete"
-          fi
-
-          echo "Uploading new asset..."
-          UPLOAD_RESPONSE=$(curl -w "HTTP_STATUS:%{http_code}" -s -X POST -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary "@$FILE_PATH" \
-            "https://uploads.github.com/repos/$PUBLISH_REPO/releases/$RELEASE_ID/assets?name=$PUBLISH_FILE_NAME")
-          echo "Upload response: $UPLOAD_RESPONSE"
-
       - name: Upload Windows artifact (Windows)
         if: matrix.settings.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.file-info.outputs.filename }}
           path: ${{ steps.file-info.outputs.path }}/${{ steps.file-info.outputs.filename }}
@@ -336,7 +294,7 @@ jobs:
       # Linux release
       - name: Upload Linux artifact (Linux)
         if: matrix.settings.platform == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.file-info.outputs.filename }}
           path: ${{ steps.file-info.outputs.path }}/${{ steps.file-info.outputs.filename }}
@@ -348,7 +306,7 @@ jobs:
     env:
       RELEASE_ID: ${{ needs.create-release.outputs.releaseId }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Publish release
         run: |

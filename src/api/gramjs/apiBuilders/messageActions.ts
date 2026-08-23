@@ -3,12 +3,14 @@ import { Api as GramJs } from '../../../lib/gramjs';
 import type { ApiPhoneCallDiscardReason } from '../../types';
 import type { ApiMessageAction } from '../../types/messageActions';
 
+import { toJSNumber } from '../../../util/numbers';
 import { buildApiBotApp } from './bots';
 import { buildApiFormattedText, buildApiPhoto } from './common';
 import { buildApiStarGift } from './gifts';
-import { buildTodoItem } from './messageContent';
+import { buildPollAnswer, buildTodoItem } from './messageContent';
 import { buildApiCurrencyAmount } from './payments';
 import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
+import { buildApiBirthday } from './users';
 
 const UNSUPPORTED_ACTION: ApiMessageAction = {
   mediaType: 'action',
@@ -97,6 +99,14 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       chatId: buildApiPeerId(chatId, 'chat'),
     };
   }
+  if (action instanceof GramJs.MessageActionChangeCommunity) {
+    const { communityId } = action;
+    return {
+      mediaType: 'action',
+      type: 'changeCommunity',
+      communityId: communityId !== undefined ? buildApiPeerId(communityId, 'channel') : undefined,
+    };
+  }
   if (action instanceof GramJs.MessageActionPinMessage) {
     return {
       mediaType: 'action',
@@ -107,6 +117,16 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
     return {
       mediaType: 'action',
       type: 'historyClear',
+    };
+  }
+  if (action instanceof GramJs.MessageActionSetMessagesTTL) {
+    const { period, autoSettingFrom } = action;
+
+    return {
+      mediaType: 'action',
+      type: 'setMessagesTtl',
+      period,
+      autoSettingFromId: autoSettingFrom?.toString(),
     };
   }
   if (action instanceof GramJs.MessageActionGameScore) {
@@ -128,7 +148,7 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       isRecurringInit: recurringInit,
       isRecurringUsed: recurringUsed,
       currency,
-      totalAmount: totalAmount.toJSNumber(),
+      totalAmount: toJSNumber(totalAmount),
       invoiceSlug,
       subscriptionUntilDate,
     };
@@ -248,16 +268,16 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
   }
   if (action instanceof GramJs.MessageActionGiftPremium) {
     const {
-      currency, amount, months, cryptoCurrency, cryptoAmount, message,
+      currency, amount, days, cryptoCurrency, cryptoAmount, message,
     } = action;
     return {
       mediaType: 'action',
       type: 'giftPremium',
       currency,
-      amount: amount.toJSNumber(),
-      months,
+      amount: toJSNumber(amount),
+      days,
       cryptoCurrency,
-      cryptoAmount: cryptoAmount?.toJSNumber(),
+      cryptoAmount: toJSNumber(cryptoAmount),
       message: message && buildApiFormattedText(message),
     };
   }
@@ -295,9 +315,16 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       photo: buildApiPhoto(photo),
     };
   }
+  if (action instanceof GramJs.MessageActionSuggestBirthday) {
+    return {
+      mediaType: 'action',
+      type: 'suggestBirthday',
+      birthday: buildApiBirthday(action.birthday),
+    };
+  }
   if (action instanceof GramJs.MessageActionGiftCode) {
     const {
-      viaGiveaway, unclaimed, boostPeer, months, slug, currency, amount, cryptoCurrency, cryptoAmount, message,
+      viaGiveaway, unclaimed, boostPeer, days, slug, currency, amount, cryptoCurrency, cryptoAmount, message,
     } = action;
     return {
       mediaType: 'action',
@@ -305,12 +332,12 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       isViaGiveaway: viaGiveaway,
       isUnclaimed: unclaimed,
       boostPeerId: boostPeer && getApiChatIdFromMtpPeer(boostPeer),
-      months,
+      days,
       slug,
       currency,
-      amount: amount?.toJSNumber(),
+      amount: toJSNumber(amount),
       cryptoCurrency,
-      cryptoAmount: cryptoAmount?.toJSNumber(),
+      cryptoAmount: toJSNumber(cryptoAmount),
       message: message && buildApiFormattedText(message),
     };
   }
@@ -319,7 +346,7 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
     return {
       mediaType: 'action',
       type: 'giveawayLaunch',
-      stars: stars?.toJSNumber(),
+      stars: toJSNumber(stars),
     };
   }
   if (action instanceof GramJs.MessageActionGiveawayResults) {
@@ -341,7 +368,7 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       type: 'paymentRefunded',
       peerId: getApiChatIdFromMtpPeer(peer),
       currency,
-      totalAmount: totalAmount.toJSNumber(),
+      totalAmount: toJSNumber(totalAmount),
     };
   }
   if (action instanceof GramJs.MessageActionGiftStars) {
@@ -352,10 +379,10 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       mediaType: 'action',
       type: 'giftStars',
       currency,
-      amount: amount.toJSNumber(),
-      stars: stars.toJSNumber(),
+      amount: toJSNumber(amount),
+      stars: toJSNumber(stars),
       cryptoCurrency,
-      cryptoAmount: cryptoAmount?.toJSNumber(),
+      cryptoAmount: toJSNumber(cryptoAmount),
       transactionId,
     };
   }
@@ -367,9 +394,9 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       mediaType: 'action',
       type: 'giftTon',
       currency,
-      amount: amount.toJSNumber(),
+      amount: toJSNumber(amount),
       cryptoCurrency,
-      cryptoAmount: cryptoAmount.toJSNumber(),
+      cryptoAmount: toJSNumber(cryptoAmount),
       transactionId,
     };
   }
@@ -381,7 +408,7 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       mediaType: 'action',
       type: 'prizeStars',
       isUnclaimed: unclaimed,
-      stars: stars.toJSNumber(),
+      stars: toJSNumber(stars),
       transactionId,
       boostPeerId: getApiChatIdFromMtpPeer(boostPeer),
       giveawayMsgId,
@@ -389,8 +416,9 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
   }
   if (action instanceof GramJs.MessageActionStarGift) {
     const {
-      nameHidden, saved, converted, upgraded, refunded, canUpgrade, gift, message, convertStars, upgradeMsgId,
-      upgradeStars, fromId, peer, savedId,
+      nameHidden, saved, converted, upgraded, refunded, canUpgrade, prepaidUpgrade, auctionAcquired,
+      gift, message, convertStars, upgradeMsgId, giftMsgId, upgradeStars, fromId, peer, savedId,
+      prepaidUpgradeHash, toId, giftNum,
     } = action;
 
     const starGift = buildApiStarGift(gift);
@@ -405,20 +433,26 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       isUpgraded: upgraded,
       isRefunded: refunded,
       canUpgrade,
+      isPrepaidUpgrade: prepaidUpgrade,
+      isAuctionAcquired: auctionAcquired,
       gift: starGift,
       message: message && buildApiFormattedText(message),
-      starsToConvert: convertStars?.toJSNumber(),
+      starsToConvert: toJSNumber(convertStars),
       upgradeMsgId,
-      alreadyPaidUpgradeStars: upgradeStars?.toJSNumber(),
+      giftMsgId,
+      alreadyPaidUpgradeStars: toJSNumber(upgradeStars),
       fromId: fromId && getApiChatIdFromMtpPeer(fromId),
       peerId: peer && getApiChatIdFromMtpPeer(peer),
-      savedId: savedId && buildApiPeerId(savedId, 'user'),
+      savedId: savedId !== undefined ? buildApiPeerId(savedId, 'user') : undefined,
+      prepaidUpgradeHash,
+      toId: toId && getApiChatIdFromMtpPeer(toId),
+      giftNumber: giftNum,
     };
   }
   if (action instanceof GramJs.MessageActionStarGiftUnique) {
     const {
       upgrade, transferred, saved, refunded, gift, canExportAt, transferStars, fromId, peer, savedId,
-      resaleAmount,
+      resaleAmount, prepaidUpgrade, dropOriginalDetailsStars, fromOffer, canCraftAt,
     } = action;
 
     const starGift = buildApiStarGift(gift);
@@ -431,13 +465,19 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       isTransferred: transferred,
       isSaved: saved,
       isRefunded: refunded,
+      isPrepaidUpgrade: prepaidUpgrade,
+      isFromOffer: fromOffer,
       gift: starGift,
       canExportAt,
-      transferStars: transferStars?.toJSNumber(),
+      transferStars: toJSNumber(transferStars),
       fromId: fromId && getApiChatIdFromMtpPeer(fromId),
       peerId: peer && getApiChatIdFromMtpPeer(peer),
-      savedId: savedId && buildApiPeerId(savedId, 'user'),
+      savedId: savedId !== undefined ? buildApiPeerId(savedId, 'user') : undefined,
       resaleAmount: resaleAmount ? buildApiCurrencyAmount(resaleAmount) : undefined,
+      dropOriginalDetailsStars: dropOriginalDetailsStars !== undefined
+        ? toJSNumber(dropOriginalDetailsStars)
+        : undefined,
+      canCraftAt,
     };
   }
   if (action instanceof GramJs.MessageActionPaidMessagesPrice) {
@@ -448,7 +488,7 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       mediaType: 'action',
       type: 'paidMessagesPrice',
       isAllowedInChannel: broadcastMessagesAllowed,
-      stars: stars.toJSNumber(),
+      stars: toJSNumber(stars),
     };
   }
   if (action instanceof GramJs.MessageActionPaidMessagesRefunded) {
@@ -458,7 +498,7 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
     return {
       mediaType: 'action',
       type: 'paidMessagesRefunded',
-      stars: stars.toJSNumber(),
+      stars: toJSNumber(stars),
       count,
     };
   }
@@ -509,6 +549,93 @@ export function buildApiMessageAction(action: GramJs.TypeMessageAction): ApiMess
       mediaType: 'action',
       type: 'todoAppendTasks',
       items: list.map(buildTodoItem),
+    };
+  }
+  if (action instanceof GramJs.MessageActionPollAppendAnswer) {
+    const answer = buildPollAnswer(action.answer);
+    if (!answer) return UNSUPPORTED_ACTION;
+
+    return {
+      mediaType: 'action',
+      type: 'pollAppendAnswer',
+      answer,
+    };
+  }
+  if (action instanceof GramJs.MessageActionPollDeleteAnswer) {
+    const answer = buildPollAnswer(action.answer);
+    if (!answer) return UNSUPPORTED_ACTION;
+
+    return {
+      mediaType: 'action',
+      type: 'pollDeleteAnswer',
+      answer,
+    };
+  }
+  if (action instanceof GramJs.MessageActionStarGiftPurchaseOffer) {
+    const {
+      accepted, declined, gift, price, expiresAt,
+    } = action;
+
+    const starGift = buildApiStarGift(gift);
+    if (starGift.type !== 'starGiftUnique') return UNSUPPORTED_ACTION;
+
+    return {
+      mediaType: 'action',
+      type: 'starGiftPurchaseOffer',
+      isAccepted: accepted,
+      isDeclined: declined,
+      gift: starGift,
+      price: buildApiCurrencyAmount(price),
+      expiresAt,
+    };
+  }
+  if (action instanceof GramJs.MessageActionStarGiftPurchaseOfferDeclined) {
+    const { expired, gift, price } = action;
+
+    const starGift = buildApiStarGift(gift);
+    if (starGift.type !== 'starGiftUnique') return UNSUPPORTED_ACTION;
+
+    return {
+      mediaType: 'action',
+      type: 'starGiftPurchaseOfferDeclined',
+      isExpired: expired,
+      gift: starGift,
+      price: buildApiCurrencyAmount(price),
+    };
+  }
+  if (action instanceof GramJs.MessageActionNewCreatorPending) {
+    const { newCreatorId } = action;
+    return {
+      mediaType: 'action',
+      type: 'newCreatorPending',
+      newCreatorId: buildApiPeerId(newCreatorId, 'user'),
+    };
+  }
+  if (action instanceof GramJs.MessageActionChangeCreator) {
+    const { newCreatorId } = action;
+    return {
+      mediaType: 'action',
+      type: 'changeCreator',
+      newCreatorId: buildApiPeerId(newCreatorId, 'user'),
+    };
+  }
+  if (action instanceof GramJs.MessageActionNoForwardsToggle) {
+    const { prevValue, newValue } = action;
+    return {
+      mediaType: 'action',
+      type: 'noForwardsToggle',
+      prevValue: Boolean(prevValue),
+      newValue: Boolean(newValue),
+    };
+  }
+  if (action instanceof GramJs.MessageActionNoForwardsRequest) {
+    const { expired, prevValue, newValue } = action;
+    return {
+      mediaType: 'action',
+      type: 'noForwardsRequest',
+      isExpired: expired,
+      prevValue: Boolean(prevValue),
+      newValue: Boolean(newValue),
     };
   }
 

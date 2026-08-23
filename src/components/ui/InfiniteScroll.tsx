@@ -1,6 +1,5 @@
 import type { UIEvent } from 'react';
 import type { ElementRef, FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   useEffect, useLayoutEffect, useMemo, useRef,
 } from '../../lib/teact/teact';
@@ -15,7 +14,7 @@ import { debounce } from '../../util/schedulers';
 
 import useLastCallback from '../../hooks/useLastCallback';
 
-type OwnProps = {
+export type OwnProps = {
   ref?: ElementRef<HTMLDivElement>;
   style?: string;
   className?: string;
@@ -37,8 +36,6 @@ type OwnProps = {
   onWheel?: (e: React.WheelEvent<HTMLDivElement>) => void;
   onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onKeyDown?: (e: React.KeyboardEvent<any>) => void;
-  onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void;
 };
 
 const DEFAULT_LIST_SELECTOR = '.ListItem';
@@ -69,8 +66,6 @@ const InfiniteScroll: FC<OwnProps> = ({
   onWheel,
   onClick,
   onKeyDown,
-  onDragOver,
-  onDragLeave,
 }: OwnProps) => {
   let containerRef = useRef<HTMLDivElement>();
   if (ref) {
@@ -270,13 +265,11 @@ const InfiniteScroll: FC<OwnProps> = ({
     <div
       ref={containerRef}
       className={className}
-      onWheel={onWheel}
-      teactFastList={!noFastList && !withAbsolutePositioning}
-      onKeyDown={onKeyDown}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onClick={onClick}
       style={style}
+      teactFastList={!noFastList && !withAbsolutePositioning}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      onWheel={onWheel}
     >
       {beforeChildren}
       {withAbsolutePositioning && items?.length ? (

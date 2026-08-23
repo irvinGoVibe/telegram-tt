@@ -1,8 +1,8 @@
 import { requestMeasure } from '../lib/fasterdom/fasterdom';
 
-export type VideoRecordingResult = { 
-  blob: Blob; 
-  duration: number; 
+export type VideoRecordingResult = {
+  blob: Blob;
+  duration: number;
   filename: string;
 };
 
@@ -12,11 +12,11 @@ const VIDEO_BLOB_PARAMS = { type: 'video/webm' };
 let mediaRecorder: MediaRecorder | undefined;
 let recordingChunks: Blob[] = [];
 
-export async function startVideoRecording(stream: MediaStream, filename: string): Promise<{
+export function startVideoRecording(stream: MediaStream, filename: string): {
   stop: () => Promise<VideoRecordingResult>;
   pause: () => void;
   resume: () => void;
-}> {
+} {
   if (!stream) {
     throw new Error('No stream provided for recording');
   }
@@ -78,10 +78,10 @@ export async function startVideoRecording(stream: MediaStream, filename: string)
 
       mediaRecorder.onstop = () => {
         const duration = Math.round(((pausedAt || Date.now()) - startedAt) / 1000);
-        const blob = new Blob(recordingChunks, { 
-          type: mimeType || VIDEO_BLOB_PARAMS.type 
+        const blob = new Blob(recordingChunks, {
+          type: mimeType || VIDEO_BLOB_PARAMS.type,
         });
-        
+
         resolve({
           blob,
           duration,
@@ -90,7 +90,7 @@ export async function startVideoRecording(stream: MediaStream, filename: string)
       };
 
       mediaRecorder.onerror = (event) => {
-        reject(new Error(`Recording error: ${event}`));
+        reject(new Error(`Recording error: ${event.message}`));
       };
 
       const delayStop = Math.max(0, startedAt + MIN_RECORDING_TIME - Date.now());
@@ -122,7 +122,7 @@ export function downloadVideoBlob(blob: Blob, filename: string) {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
-  
+
   requestMeasure(() => {
     document.body.appendChild(link);
     link.click();
@@ -133,8 +133,8 @@ export function downloadVideoBlob(blob: Blob, filename: string) {
 
 export function isVideoRecordingSupported(): boolean {
   return Boolean(
-    window.MediaRecorder && 
-    window.navigator.mediaDevices && 
-    'getUserMedia' in window.navigator.mediaDevices
+    window.MediaRecorder &&
+    window.navigator.mediaDevices &&
+    'getUserMedia' in window.navigator.mediaDevices,
   );
 }

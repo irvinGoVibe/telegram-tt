@@ -2,6 +2,7 @@ import { memo, useState } from '@teact';
 
 import { requestMutation } from '../../../lib/fasterdom/fasterdom.ts';
 import { animateSingle } from '../../../util/animation.ts';
+import buildClassName from '../../../util/buildClassName';
 import { LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets.ts';
 
 import useLastCallback from '../../../hooks/useLastCallback.ts';
@@ -13,6 +14,7 @@ import styles from './SpeedingDiamond.module.scss';
 import diamondPreviewUrl from '../../../assets/diamond.png';
 
 interface OwnProps {
+  className?: string;
   onMouseMove: NoneToVoidFunction;
 }
 
@@ -23,8 +25,9 @@ const SLOWDOWN_DURATION = 1500;
 
 let slowdownTimeout: number | undefined;
 let isAnimating = true;
+const ANIMATION_INSTANCE = { isCancelled: false };
 
-function SpeedingDiamond({ onMouseMove }: OwnProps) {
+function SpeedingDiamond({ className, onMouseMove }: OwnProps) {
   const [speed, setSpeed] = useState(MIN_SPEED);
 
   const handleMouseMove = useLastCallback(() => {
@@ -49,7 +52,7 @@ function SpeedingDiamond({ onMouseMove }: OwnProps) {
         isAnimating = t < 1 && newSpeed > 1;
 
         return isAnimating;
-      }, requestMutation);
+      }, requestMutation, ANIMATION_INSTANCE);
     }, SLOWDOWN_DELAY);
 
     isAnimating = false;
@@ -58,7 +61,7 @@ function SpeedingDiamond({ onMouseMove }: OwnProps) {
   });
 
   return (
-    <div className={styles.root}>
+    <div className={buildClassName(styles.root, className)}>
       <div
         className={styles.diamond}
         onMouseMove={handleMouseMove}

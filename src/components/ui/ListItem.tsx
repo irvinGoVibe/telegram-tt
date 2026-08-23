@@ -1,5 +1,4 @@
 import type { ElementRef, TeactNode } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import { useRef } from '../../lib/teact/teact';
 
 import type { IconName } from '../../types/icons';
@@ -12,10 +11,11 @@ import renderText from '../common/helpers/renderText';
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
 import { useFastClick } from '../../hooks/useFastClick';
 import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useOldLang from '../../hooks/useOldLang';
 
 import Icon from '../common/icons/Icon';
+import IconBackdrop, { type IconBackdropColor } from '../gili/primitives/IconBackdrop';
 import Button from './Button';
 import Menu from './Menu';
 import MenuItem from './MenuItem';
@@ -45,6 +45,7 @@ interface OwnProps {
   buttonRef?: ElementRef<HTMLDivElement | HTMLAnchorElement>;
   icon?: IconName;
   iconClassName?: string;
+  iconBg?: IconBackdropColor;
   leftElement?: TeactNode;
   secondaryIcon?: IconName;
   secondaryIconClassName?: string;
@@ -69,13 +70,14 @@ interface OwnProps {
   withPortalForMenu?: boolean;
   menuBubbleClassName?: string;
   href?: string;
-  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  nonInteractive?: boolean;
   onClick?: (e: React.MouseEvent<HTMLElement>, arg?: any) => void;
-  onContextMenu?: (e: React.MouseEvent<HTMLElement>) => void;
   clickArg?: any;
+  onMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onContextMenu?: (e: React.MouseEvent<HTMLElement>) => void;
   onSecondaryIconClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onDragEnter?: (e: React.DragEvent<HTMLDivElement>) => void;
-  nonInteractive?: boolean;
+  onDragLeave?: NoneToVoidFunction;
 }
 
 const ListItem = ({
@@ -83,6 +85,7 @@ const ListItem = ({
   buttonRef,
   icon,
   iconClassName,
+  iconBg,
   leftElement,
   buttonClassName,
   menuBubbleClassName,
@@ -107,18 +110,20 @@ const ListItem = ({
   contextActions,
   withPortalForMenu,
   href,
-  onMouseDown,
+  nonInteractive,
   onClick,
-  onContextMenu,
   clickArg,
+  onMouseDown,
+  onContextMenu,
   onSecondaryIconClick,
   onDragEnter,
-  nonInteractive,
+  onDragLeave,
 }: OwnProps) => {
   let containerRef = useRef<HTMLDivElement>();
   if (ref) {
     containerRef = ref;
   }
+  const menuRef = useRef<HTMLDivElement>();
   const [isTouched, markIsTouched, unmarkIsTouched] = useFlag();
 
   const {
@@ -129,10 +134,7 @@ const ListItem = ({
 
   const getTriggerElement = useLastCallback(() => containerRef.current);
   const getRootElement = useLastCallback(() => containerRef.current!.closest('.custom-scroll'));
-  const getMenuElement = useLastCallback(() => {
-    return (withPortalForMenu ? document.querySelector('#portals') : containerRef.current)!
-      .querySelector('.ListItem-context-menu .bubble');
-  });
+  const getMenuElement = useLastCallback(() => menuRef.current);
   const getLayout = useLastCallback(() => ({ withPortal: withPortalForMenu }));
 
   const handleClickEvent = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
@@ -199,7 +201,7 @@ const ListItem = ({
     }
   });
 
-  const lang = useOldLang();
+  const lang = useLang();
 
   const fullClassName = buildClassName(
     'ListItem',
@@ -229,6 +231,7 @@ const ListItem = ({
       style={style}
       onMouseDown={onMouseDown}
       onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
     >
       <ButtonElementTag
         className={buildClassName('ListItem-button', isTouched && 'active', buttonClassName)}
@@ -247,9 +250,11 @@ const ListItem = ({
           <RippleEffect />
         )}
         {leftElement}
-        {icon && (
+        {icon && (iconBg ? (
+          <IconBackdrop className={buildClassName('ListItem-main-icon', iconClassName)} color={iconBg} icon={icon} />
+        ) : (
           <Icon name={icon} className={buildClassName('ListItem-main-icon', iconClassName)} />
-        )}
+        ))}
         {multiline && (<div className="multiline-item">{children}</div>)}
         {!multiline && children}
         {secondaryIcon && (
@@ -261,14 +266,14 @@ const ListItem = ({
             size="smaller"
             onClick={handleSecondaryIconClick}
             onMouseDown={handleSecondaryIconMouseDown}
-          >
-            <Icon name={secondaryIcon} />
-          </Button>
+            iconName={secondaryIcon}
+          />
         )}
         {rightElement}
       </ButtonElementTag>
       {contextActions && contextMenuAnchor !== undefined && (
         <Menu
+          ref={menuRef}
           isOpen={isContextMenuOpen}
           anchor={contextMenuAnchor}
           getTriggerElement={getTriggerElement}

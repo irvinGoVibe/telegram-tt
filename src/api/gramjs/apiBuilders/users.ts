@@ -10,14 +10,24 @@ import type {
   ApiUserType,
 } from '../../types';
 
+import { toJSNumber } from '../../../util/numbers';
+import { addDocumentToLocalDb, addSavedMusicRepairInfo } from '../helpers/localDb';
 import { buildApiBotInfo } from './bots';
 import { buildApiBusinessIntro, buildApiBusinessLocation, buildApiBusinessWorkHours } from './business';
 import {
-  buildApiBotVerification, buildApiPhoto, buildApiUsernames, buildAvatarPhotoId,
+  buildApiFormattedText, buildApiPhoto, buildApiUsernames,
 } from './common';
 import { buildApiDisallowedGiftsSettings } from './gifts';
 import { omitVirtualClassFields } from './helpers';
-import { buildApiEmojiStatus, buildApiPeerColor, buildApiPeerId } from './peers';
+import { buildApiAudioFromDocument } from './media';
+import {
+  buildApiBotVerification,
+  buildApiEmojiStatus,
+  buildApiPeerColor,
+  buildApiPeerId,
+  buildApiProfileTab,
+  buildAvatarPhotoId,
+} from './peers';
 
 export function buildApiUserFullInfo(mtpUserFull: GramJs.users.UserFull): ApiUserFullInfo {
   const {
@@ -28,7 +38,9 @@ export function buildApiUserFullInfo(mtpUserFull: GramJs.users.UserFull): ApiUse
       contactRequirePremium, businessWorkHours, businessLocation, businessIntro,
       birthday, personalChannelId, personalChannelMessage, sponsoredEnabled, stargiftsCount, botVerification,
       botCanManageEmojiStatus, settings, sendPaidMessagesStars, displayGiftsButton, disallowedGifts,
-      starsRating, starsMyPendingRating, starsMyPendingRatingDate,
+      starsRating, starsMyPendingRating, starsMyPendingRatingDate, mainTab, savedMusic, note,
+      noforwardsMyEnabled, noforwardsPeerEnabled, unofficialSecurityRisk, privateForwardName,
+      ttlPeriod,
     },
     users,
   } = mtpUserFull;
@@ -37,6 +49,7 @@ export function buildApiUserFullInfo(mtpUserFull: GramJs.users.UserFull): ApiUse
 
   return {
     bio: about,
+    ttlPeriod,
     commonChatsCount,
     pinnedMessageId: pinnedMsgId,
     isBlocked: Boolean(blocked),
@@ -54,8 +67,10 @@ export function buildApiUserFullInfo(mtpUserFull: GramJs.users.UserFull): ApiUse
     businessLocation: businessLocation && buildApiBusinessLocation(businessLocation),
     businessWorkHours: businessWorkHours && buildApiBusinessWorkHours(businessWorkHours),
     businessIntro: businessIntro && buildApiBusinessIntro(businessIntro),
-    personalChannelId: personalChannelId && buildApiPeerId(personalChannelId, 'channel'),
+    personalChannelId: personalChannelId !== undefined
+      ? buildApiPeerId(personalChannelId, 'channel') : undefined,
     personalChannelMessageId: personalChannelMessage,
+    privateForwardName,
     botVerification: botVerification && buildApiBotVerification(botVerification),
     areAdsEnabled: sponsoredEnabled,
     starGiftCount: stargiftsCount,
@@ -64,8 +79,14 @@ export function buildApiUserFullInfo(mtpUserFull: GramJs.users.UserFull): ApiUse
     starsMyPendingRatingDate,
     isBotCanManageEmojiStatus: botCanManageEmojiStatus,
     hasScheduledMessages: hasScheduled,
-    paidMessagesStars: sendPaidMessagesStars?.toJSNumber(),
+    paidMessagesStars: toJSNumber(sendPaidMessagesStars),
     settings: buildApiPeerSettings(settings),
+    mainTab: mainTab && buildApiProfileTab(mainTab),
+    savedMusic: savedMusic && buildApiSavedMusic(savedMusic, userId),
+    note: note && buildApiFormattedText(note),
+    noForwardsMyEnabled: noforwardsMyEnabled,
+    noForwardsPeerEnabled: noforwardsPeerEnabled,
+    isUnofficialSecurityRisk: unofficialSecurityRisk,
   };
 }
 
@@ -89,7 +110,7 @@ export function buildApiPeerSettings({
     phoneCountry,
     nameChangeDate,
     photoChangeDate,
-    chargedPaidMessageStars: chargePaidMessageStars?.toJSNumber(),
+    chargedPaidMessageStars: toJSNumber(chargePaidMessageStars),
   };
 }
 
@@ -99,10 +120,12 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
   }
 
   const {
-    id, firstName, lastName, fake, scam, support, closeFriend, storiesUnavailable, storiesMaxId,
+    id, firstName, lastName, fake, scam, support, closeFriend, storiesUnavailable,
     bot, botActiveUsers, botVerificationIcon, botInlinePlaceholder, botAttachMenu, botCanEdit,
-    sendPaidMessagesStars, profileColor,
+    sendPaidMessagesStars, profileColor, botForumView, botForumCanManageTopics, botGuestchat,
+    botGuard,
   } = mtpUser;
+  const storiesMaxId = mtpUser.storiesMaxId?.maxId;
   const hasVideoAvatar = mtpUser.photo instanceof GramJs.UserProfilePhoto ? Boolean(mtpUser.photo.hasVideo) : undefined;
   const avatarPhotoId = mtpUser.photo && buildAvatarPhotoId(mtpUser.photo);
   const userType = buildApiUserType(mtpUser);
@@ -143,7 +166,11 @@ export function buildApiUser(mtpUser: GramJs.TypeUser): ApiUser | undefined {
     botVerificationIconId: botVerificationIcon?.toString(),
     color: mtpUser.color && buildApiPeerColor(mtpUser.color),
     profileColor: profileColor && buildApiPeerColor(profileColor),
-    paidMessagesStars: sendPaidMessagesStars?.toJSNumber(),
+    paidMessagesStars: toJSNumber(sendPaidMessagesStars),
+    isBotForum: botForumView,
+    canManageBotForumTopics: botForumCanManageTopics,
+    isGuestChatBot: botGuestchat,
+    isGuardBot: bot && botGuard,
   };
 }
 
@@ -193,8 +220,18 @@ export function buildApiBirthday(birthday: GramJs.TypeBirthday): ApiBirthday {
 export function buildApiStarsRating(starsRating: GramJs.StarsRating): ApiStarsRating {
   return {
     level: starsRating.level,
-    currentLevelStars: starsRating.currentLevelStars.toJSNumber(),
-    stars: starsRating.stars.toJSNumber(),
-    nextLevelStars: starsRating.nextLevelStars?.toJSNumber(),
+    currentLevelStars: toJSNumber(starsRating.currentLevelStars),
+    stars: toJSNumber(starsRating.stars),
+    nextLevelStars: toJSNumber(starsRating.nextLevelStars),
   };
+}
+
+function buildApiSavedMusic(document: GramJs.TypeDocument, peerId: string) {
+  if (!(document instanceof GramJs.Document)) {
+    return undefined;
+  }
+
+  addDocumentToLocalDb(addSavedMusicRepairInfo(document, peerId));
+
+  return buildApiAudioFromDocument(document);
 }

@@ -25,6 +25,7 @@ import {
 } from '../../../global/selectors';
 import { selectPremiumLimit } from '../../../global/selectors/limits';
 import buildClassName from '../../../util/buildClassName';
+import { formatCountdownDays } from '../../../util/dates/oldDateFormat';
 import { formatCurrency } from '../../../util/formatCurrency';
 import { getStickerFromGift } from '../../common/helpers/gifts';
 import { REM } from '../../common/helpers/mediaDimensions';
@@ -37,18 +38,20 @@ import useOldLang from '../../../hooks/useOldLang';
 import useSyncEffect from '../../../hooks/useSyncEffect';
 
 import CustomEmoji from '../../common/CustomEmoji';
-import Icon from '../../common/icons/Icon';
 import ParticlesHeader from '../../modals/common/ParticlesHeader.tsx';
 import Button from '../../ui/Button';
 import Modal from '../../ui/Modal';
 import Transition from '../../ui/Transition';
 import PremiumFeatureItem from './PremiumFeatureItem';
-import PremiumFeatureModal, { PREMIUM_FEATURE_DESCRIPTIONS, PREMIUM_FEATURE_TITLES } from './PremiumFeatureModal';
+import PremiumFeatureModal, {
+  NEW_LANG_SECTIONS, PREMIUM_FEATURE_DESCRIPTIONS, PREMIUM_FEATURE_TITLES,
+} from './PremiumFeatureModal';
 import PremiumSubscriptionOption from './PremiumSubscriptionOption';
 
 import styles from './PremiumMainModal.module.scss';
 
 import PremiumAds from '../../../assets/premium/PremiumAds.svg';
+import PremiumAi from '../../../assets/premium/PremiumAi.svg';
 import PremiumBadge from '../../../assets/premium/PremiumBadge.svg';
 import PremiumChats from '../../../assets/premium/PremiumChats.svg';
 import PremiumEffects from '../../../assets/premium/PremiumEffects.svg';
@@ -57,11 +60,14 @@ import PremiumFile from '../../../assets/premium/PremiumFile.svg';
 import PremiumLastSeen from '../../../assets/premium/PremiumLastSeen.svg';
 import PremiumLimits from '../../../assets/premium/PremiumLimits.svg';
 import PremiumMessagePrivacy from '../../../assets/premium/PremiumMessagePrivacy.svg';
+import PremiumNoforwards from '../../../assets/premium/PremiumNoForwardsPrivacy.svg';
 import PremiumReactions from '../../../assets/premium/PremiumReactions.svg';
+import PremiumRichFormatting from '../../../assets/premium/PremiumRichFormatting.svg';
 import PremiumSpeed from '../../../assets/premium/PremiumSpeed.svg';
 import PremiumStatus from '../../../assets/premium/PremiumStatus.svg';
 import PremiumStickers from '../../../assets/premium/PremiumStickers.svg';
 import PremiumTags from '../../../assets/premium/PremiumTags.svg';
+import PremiumTodo from '../../../assets/premium/PremiumTodo.svg';
 import PremiumTranslate from '../../../assets/premium/PremiumTranslate.svg';
 import PremiumVideo from '../../../assets/premium/PremiumVideo.svg';
 import PremiumVoice from '../../../assets/premium/PremiumVoice.svg';
@@ -88,7 +94,10 @@ const PREMIUM_FEATURE_COLOR_ICONS: Record<ApiPremiumSection, string> = {
   last_seen: PremiumLastSeen,
   message_privacy: PremiumMessagePrivacy,
   effects: PremiumEffects,
-  todo: PremiumBadge,
+  ai_compose: PremiumAi,
+  rich_formatting: PremiumRichFormatting,
+  todo: PremiumTodo,
+  pm_noforwards: PremiumNoforwards,
 };
 
 export type OwnProps = {
@@ -106,7 +115,7 @@ type StateProps = {
   isPremium?: boolean;
   isSuccess?: boolean;
   isGift?: boolean;
-  monthsAmount?: number;
+  daysAmount?: number;
   gift?: ApiStarGift;
   limitChannels: number;
   limitPins: number;
@@ -137,7 +146,7 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
   isSuccess,
   isGift,
   toUser,
-  monthsAmount,
+  daysAmount,
   premiumPromoOrder,
   gift,
 }) => {
@@ -148,13 +157,13 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
-  const [isHeaderHidden, setHeaderHidden] = useState(true);
+  const [isHeaderHidden, setIsHeaderHidden] = useState(true);
   const [currentSection, setCurrentSection] = useState<ApiPremiumSection | undefined>(initialSection);
-  const [selectedSubscriptionOption, setSubscriptionOption] = useState<ApiPremiumSubscriptionOption>();
+  const [selectedSubscriptionOption, setSelectedSubscriptionOption] = useState<ApiPremiumSubscriptionOption>();
 
   useEffect(() => {
     if (!isOpen) {
-      setHeaderHidden(true);
+      setIsHeaderHidden(true);
       setCurrentSection(undefined);
     } else if (initialSection) {
       setCurrentSection(initialSection);
@@ -172,7 +181,7 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const { scrollTop } = e.currentTarget;
 
-    setHeaderHidden(scrollTop <= 150);
+    setIsHeaderHidden(scrollTop <= 150);
   }
 
   const handleClickWithStartParam = useLastCallback((startParam?: string) => {
@@ -202,7 +211,7 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
 
   const handleChangeSubscriptionOption = useLastCallback((months: number) => {
     const foundOption = promo?.options.find((option) => option.months === months);
-    setSubscriptionOption(foundOption);
+    setSelectedSubscriptionOption(foundOption);
   });
 
   const showConfetti = useLastCallback(() => {
@@ -248,7 +257,7 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
 
   useEffect(() => {
     const [defaultOption] = promo?.options ?? [];
-    setSubscriptionOption(defaultOption);
+    setSelectedSubscriptionOption(defaultOption);
   }, [promo]);
 
   const handleOpenStatusSet = useLastCallback(() => {
@@ -288,10 +297,11 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
     }
 
     if (isGift) {
+      const formattedDuration = daysAmount ? formatCountdownDays(lang, daysAmount) : '';
       return renderText(
         fromUser?.id === currentUserId
-          ? oldLang('TelegramPremiumUserGiftedPremiumOutboundDialogTitle', [getUserFullName(toUser), monthsAmount])
-          : oldLang('TelegramPremiumUserGiftedPremiumDialogTitle', [getUserFullName(fromUser), monthsAmount]),
+          ? lang('DialogTitlePremiumGiftSentTo', { user: getUserFullName(toUser), amount: formattedDuration })
+          : lang('DialogTitlePremiumGiftReceivedFrom', { user: getUserFullName(fromUser), amount: formattedDuration }),
         ['simple_markdown', 'emoji'],
       );
     }
@@ -394,7 +404,7 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
     }
 
     return (
-      <div className={styles.footerText} dir={oldLang.isRtl ? 'rtl' : undefined}>
+      <div className={styles.footerText} dir={lang.isRtl ? 'rtl' : undefined}>
         {renderTextWithEntities({
           text: promo.statusText,
           entities: promo.statusEntities,
@@ -424,23 +434,15 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
   return (
     <Modal
       className={styles.root}
+      dialogClassName="premium-main-modal-dialog"
       onClose={closePremiumModal}
       isOpen={isOpen}
       dialogRef={dialogRef}
+      hasAbsoluteCloseButton={!currentSection}
     >
       <Transition name="slide" activeKey={currentSection ? 1 : 0} className={styles.transition}>
         {!currentSection ? (
           <div className={buildClassName(styles.main, 'custom-scroll')} onScroll={handleScroll}>
-            <Button
-              round
-              size="smaller"
-              className={styles.closeButton}
-              color="translucent"
-              onClick={() => closePremiumModal()}
-              ariaLabel={oldLang('Close')}
-            >
-              <Icon name="close" />
-            </Button>
             {renderHeader()}
             {!isPremium && !isGift && renderSubscriptionOptions()}
             <div className={buildClassName(styles.header, isHeaderHidden && styles.hiddenHeader)}>
@@ -450,7 +452,7 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
             </div>
             <div className={buildClassName(styles.list, isPremium && styles.noButton)}>
               {filteredSections.map((section, index) => {
-                const shouldUseNewLang = section === 'todo';
+                const shouldUseNewLang = NEW_LANG_SECTIONS.includes(section);
                 return (
                   <PremiumFeatureItem
                     key={section}
@@ -473,7 +475,7 @@ const PremiumMainModal: FC<OwnProps & StateProps> = ({
               })}
               <div
                 className={buildClassName(styles.footerText, styles.primaryFooterText)}
-                dir={oldLang.isRtl ? 'rtl' : undefined}
+                dir={lang.isRtl ? 'rtl' : undefined}
               >
                 <p>
                   {renderText(oldLang('AboutPremiumDescription'), ['simple_markdown'])}
@@ -525,7 +527,7 @@ export default memo(withGlobal<OwnProps>((global): Complete<StateProps> => {
     promo: premiumModal?.promo,
     isSuccess: premiumModal?.isSuccess,
     isGift: premiumModal?.isGift,
-    monthsAmount: premiumModal?.monthsAmount,
+    daysAmount: premiumModal?.daysAmount,
     gift: premiumModal?.gift,
     fromUser,
     fromUserStatusEmoji,

@@ -2,6 +2,7 @@ import { Api as GramJs, errors } from '../../../lib/gramjs';
 
 import type { RegularLangKey } from '../../../types/language';
 import type { RegularLangFnParameters } from '../../../util/localization';
+import type { ApiError } from '../../types';
 
 import { DEBUG } from '../../../config';
 import {
@@ -23,6 +24,7 @@ const LOG_SUFFIX = {
   'UNEXPECTED UPDATE': '#9C9C9C',
   'UNEXPECTED RESPONSE': '#D1191C',
 };
+const SERIALIZE_BYTES_CHUNK_SIZE = 0x8000;
 
 const ERROR_KEYS: Record<string, RegularLangKey> = {
   PHONE_NUMBER_INVALID: 'ErrorPhoneNumberInvalid',
@@ -36,7 +38,12 @@ const ERROR_KEYS: Record<string, RegularLangKey> = {
   SRP_PASSWORD_CHANGED: 'ErrorPasswordChanged',
   CODE_INVALID: 'ErrorEmailCodeInvalid',
   PASSWORD_MISSING: 'ErrorPasswordMissing',
+  PASSKEY_CREDENTIAL_NOT_FOUND: 'ErrorPasskeyUnknown',
 };
+
+function resolveErrorKey(errorMessage: string) {
+  return ERROR_KEYS[errorMessage] || ERROR_KEYS[errorMessage.replace(/_\d+$/, '')];
+}
 
 export type MessageRepairContext = Pick<GramJs.TypeMessage, 'peerId' | 'id'>;
 export type MediaRepairContext = MessageRepairContext;
@@ -61,12 +68,16 @@ export function isChatFolder(
   return filter instanceof GramJs.DialogFilter || filter instanceof GramJs.DialogFilterChatlist;
 }
 
-export function serializeBytes(value: Buffer) {
-  return String.fromCharCode(...value);
+export function serializeBytes(value: Uint8Array) {
+  let result = '';
+  for (let i = 0; i < value.length; i += SERIALIZE_BYTES_CHUNK_SIZE) {
+    result += String.fromCharCode(...value.subarray(i, i + SERIALIZE_BYTES_CHUNK_SIZE));
+  }
+  return result;
 }
 
 export function deserializeBytes(value: string) {
-  return Buffer.from(value, 'binary');
+  return Uint8Array.from(value, (char) => char.charCodeAt(0));
 }
 
 export function log(suffix: keyof typeof LOG_SUFFIX, ...data: any) {
@@ -101,6 +112,20 @@ export function checkErrorType(error: unknown): error is Error {
   return true;
 }
 
+export function buildApiError(error: Error): Pick<ApiError, 'message' | 'code' | 'hasErrorKey'> {
+  if (error instanceof errors.RPCError) {
+    return {
+      message: error.errorMessage,
+      code: error.code,
+      hasErrorKey: true,
+    };
+  }
+
+  return {
+    message: error.message,
+  };
+}
+
 export function wrapError<T extends Error>(error: T): WrappedError<T> {
   let messageKey: RegularLangFnParameters | undefined;
 
@@ -116,10 +141,18 @@ export function wrapError<T extends Error>(error: T): WrappedError<T> {
       key: 'ErrorPasswordFresh',
       variables: { time: formatWait(error.seconds) },
     };
-  } else if (error instanceof errors.RPCError) {
+  } else if (error instanceof errors.SessionFreshError) {
     messageKey = {
-      key: ERROR_KEYS[error.errorMessage],
+      key: 'ErrorSessionFresh',
+      variables: { time: formatWait(error.seconds) },
     };
+  } else if (error instanceof errors.RPCError) {
+    const key = resolveErrorKey(error.errorMessage);
+    if (key) {
+      messageKey = {
+        key,
+      };
+    }
   }
 
   if (!messageKey) {

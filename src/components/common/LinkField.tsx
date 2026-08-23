@@ -6,13 +6,13 @@ import buildClassName from '../../util/buildClassName';
 import { copyTextToClipboard } from '../../util/clipboard';
 
 import useAppLayout from '../../hooks/useAppLayout';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 
 import Button from '../ui/Button';
 import DropdownMenu from '../ui/DropdownMenu';
 import MenuItem from '../ui/MenuItem';
-import Icon from './icons/Icon';
 
 import styles from './LinkField.module.scss';
 
@@ -22,6 +22,7 @@ type OwnProps = {
   isDisabled?: boolean;
   className?: string;
   withShare?: boolean;
+  noTitle?: boolean;
   onRevoke?: VoidFunction;
 };
 
@@ -31,9 +32,11 @@ const InviteLink: FC<OwnProps> = ({
   isDisabled,
   className,
   withShare,
+  noTitle,
   onRevoke,
 }) => {
-  const lang = useOldLang();
+  const lang = useLang();
+  const oldLang = useOldLang();
   const { showNotification, openChatWithDraft } = getActions();
 
   const { isMobile } = useAppLayout();
@@ -66,19 +69,20 @@ const InviteLink: FC<OwnProps> = ({
         size="smaller"
         color="translucent"
         className={isOpen ? 'active' : ''}
+        iconName="more"
         onClick={onTrigger}
-        ariaLabel={lang('AccDescrOpenMenu2')}
-      >
-        <Icon name="more" />
-      </Button>
+        ariaLabel={lang('AriaLabelOpenMenu')}
+      />
     );
   }, [isMobile, lang]);
 
   return (
     <div className={className}>
-      <p className={styles.title}>
-        {lang(title || 'InviteLink.InviteLink')}
-      </p>
+      {!noTitle && (
+        <p className={styles.title}>
+          {oldLang(title || 'InviteLink.InviteLink')}
+        </p>
+      )}
       <div className={styles.primaryLink}>
         <input
           className={buildClassName('form-control', styles.input)}
@@ -92,20 +96,19 @@ const InviteLink: FC<OwnProps> = ({
             className={styles.copy}
             size="smaller"
             round
+            iconName="copy"
             disabled={isDisabled}
             onClick={handleCopyClick}
-          >
-            <Icon name="copy" />
-          </Button>
+          />
         ) : (
           <DropdownMenu
             className={styles.moreMenu}
             trigger={PrimaryLinkMenuButton}
             positionX="right"
           >
-            <MenuItem icon="copy" onClick={handleCopyClick} disabled={isDisabled}>{lang('Copy')}</MenuItem>
+            <MenuItem icon="copy" onClick={handleCopyClick} disabled={isDisabled}>{oldLang('Copy')}</MenuItem>
             {onRevoke && (
-              <MenuItem icon="delete" onClick={onRevoke} destructive>{lang('RevokeButton')}</MenuItem>
+              <MenuItem icon="delete" onClick={onRevoke} destructive>{oldLang('RevokeButton')}</MenuItem>
             )}
           </DropdownMenu>
         )}
@@ -116,7 +119,7 @@ const InviteLink: FC<OwnProps> = ({
           onClick={handleShare}
           className={styles.share}
         >
-          {lang('FolderLinkScreen.LinkActionShare')}
+          {oldLang('FolderLinkScreen.LinkActionShare')}
         </Button>
       )}
     </div>

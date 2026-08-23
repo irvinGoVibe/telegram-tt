@@ -3,15 +3,17 @@ import { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type { ApiPeer } from '../../api/types';
-import type { CustomPeer } from '../../types';
+import type { CustomPeer, ThemeKey } from '../../types';
 import type { IconName } from '../../types/icons';
 
 import { getPeerTitle, isApiPeerChat } from '../../global/helpers/peers';
-import { selectPeer, selectUser } from '../../global/selectors';
+import { selectPeer, selectTheme, selectUser } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import { getPeerColorClass } from './helpers/peerColor';
+import buildStyle from '../../util/buildStyle';
+import { REM } from './helpers/mediaDimensions';
 
-import useOldLang from '../../hooks/useOldLang';
+import useLang from '../../hooks/useLang';
+import usePeerColor from '../../hooks/usePeerColor';
 
 import Avatar from './Avatar';
 import FullNameTitle from './FullNameTitle';
@@ -19,10 +21,14 @@ import Icon from './icons/Icon';
 
 import styles from './PeerChip.module.scss';
 
+const CHIP_SIZE_SMALL = 1.875 * REM;
+const CHIP_SIZE_MEDIUM = 2 * REM;
+
+export type PeerChipSize = 'small' | 'medium';
+
 type OwnProps<T = undefined> = {
-
   peerId?: string;
-
+  size?: PeerChipSize;
   forceShowSelf?: boolean;
   customPeer?: CustomPeer;
   mockPeer?: ApiPeer;
@@ -32,21 +38,23 @@ type OwnProps<T = undefined> = {
   canClose?: boolean;
   isCloseNonDestructive?: boolean;
   className?: string;
+  itemClassName?: string;
   withPeerColors?: boolean;
   withEmojiStatus?: boolean;
   clickArg?: T;
   onClick?: (arg: T) => void;
-  itemClassName?: string;
 };
 
 type StateProps = {
   peer?: ApiPeer;
+  theme: ThemeKey;
   isSavedMessages?: boolean;
 };
 
 const PeerChip = <T,>({
   icon,
   title,
+  size = 'medium',
   isMinimized,
   canClose,
   isCloseNonDestructive,
@@ -55,16 +63,22 @@ const PeerChip = <T,>({
   mockPeer,
   customPeer,
   className,
+  itemClassName,
   isSavedMessages,
   withPeerColors,
   withEmojiStatus,
+  theme,
   onClick,
-  itemClassName,
 }: OwnProps<T> & StateProps) => {
-  const lang = useOldLang();
+  const lang = useLang();
 
   const apiPeer = mockPeer || peer;
   const anyPeer = customPeer || apiPeer;
+
+  const { className: peerColorClass, style: peerColorStyle } = usePeerColor({
+    peer: anyPeer,
+    theme,
+  });
 
   const chat = apiPeer && isApiPeerChat(apiPeer) ? apiPeer : undefined;
 
@@ -98,18 +112,27 @@ const PeerChip = <T,>({
 
   const fullClassName = buildClassName(
     styles.root,
+    size === 'small' && styles.small,
     (chat?.isForum || customPeer?.isAvatarSquare) && styles.squareAvatar,
     isMinimized && styles.minimized,
     canClose && styles.closeable,
     isCloseNonDestructive && styles.nonDestructive,
     !onClick && styles.notClickable,
-    withPeerColors && getPeerColorClass(customPeer || peer),
+    withPeerColors && peerColorClass,
     className,
+  );
+
+  const chipSize = size === 'small' ? CHIP_SIZE_SMALL : CHIP_SIZE_MEDIUM;
+
+  const style = buildStyle(
+    `--chip-size: ${chipSize}px`,
+    withPeerColors && peerColorStyle,
   );
 
   return (
     <div
       className={fullClassName}
+      style={style}
       onClick={() => onClick?.(clickArg!)}
       title={isMinimized ? titleText : undefined}
       dir={lang.isRtl ? 'rtl' : undefined}
@@ -131,10 +154,12 @@ const PeerChip = <T,>({
 
 export default memo(withGlobal<OwnProps>(
   (global, { peerId, forceShowSelf }): Complete<StateProps> => {
+    const theme = selectTheme(global);
     if (!peerId) {
       return {
         peer: undefined,
         isSavedMessages: undefined,
+        theme,
       };
     }
 
@@ -145,6 +170,7 @@ export default memo(withGlobal<OwnProps>(
     return {
       peer,
       isSavedMessages,
+      theme,
     };
   },
-)(PeerChip)) as typeof PeerChip;
+)(PeerChip)) as <T>(props: OwnProps<T>) => ReturnType<typeof PeerChip<T>>;

@@ -1,5 +1,5 @@
-import bigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
+import { RPCError } from '../../../lib/gramjs/errors';
 
 import type { GiftProfileFilterOptions, ResaleGiftsFilterOptions } from '../../../types';
 import type {
@@ -15,8 +15,17 @@ import { buildApiChatFromPreview } from '../apiBuilders/chats';
 import {
   buildApiFormattedText,
 } from '../apiBuilders/common';
-import { buildApiResaleGifts, buildApiSavedStarGift, buildApiStarGift,
-  buildApiStarGiftAttribute, buildApiStarGiftCollection, buildInputResaleGiftsAttributes } from '../apiBuilders/gifts';
+import {
+  buildApiResaleGifts,
+  buildApiSavedStarGift,
+  buildApiStarGift,
+  buildApiStarGiftAttribute,
+  buildApiStarGiftAuctionAcquiredGift,
+  buildApiStarGiftAuctionState,
+  buildApiStarGiftCollection,
+  buildApiStarGiftUpgradePreview,
+  buildInputResaleGiftsAttributes,
+} from '../apiBuilders/gifts';
 import {
   buildApiCurrencyAmount,
   buildApiStarsGiftOptions,
@@ -39,7 +48,7 @@ import { getPassword } from './twoFaSettings';
 
 export async function fetchCheckCanSendGift({ giftId }: { giftId: string }) {
   const result = await invokeRequest(new GramJs.payments.CheckCanSendGift({
-    giftId: bigInt(giftId),
+    giftId: BigInt(giftId),
   }));
 
   if (!result) {
@@ -81,7 +90,7 @@ export async function fetchStarGifts() {
 
   // Right now, only regular star gifts can be bought, but API are not specific
   const gifts
-   = result.gifts.map(buildApiStarGift).filter((gift): gift is ApiStarGiftRegular => gift.type === 'starGift');
+    = result.gifts.map(buildApiStarGift).filter((gift): gift is ApiStarGiftRegular => gift.type === 'starGift');
 
   return {
     gifts,
@@ -96,40 +105,42 @@ export async function fetchResaleGifts({
   limit = DEFAULT_PRIMITIVES.INT,
   attributesHash,
   filter,
+  forCraft,
 }: {
   giftId: string;
   offset?: string;
   limit?: number;
   attributesHash?: string;
   filter?: ResaleGiftsFilterOptions;
+  forCraft?: boolean;
 }) {
-   type GetResaleStarGifts = ConstructorParameters<typeof GramJs.payments.GetResaleStarGifts>[0];
+  type GetResaleStarGifts = ConstructorParameters<typeof GramJs.payments.GetResaleStarGifts>[0];
 
-   const attributes: ApiStarGiftAttributeId[] = [
-     ...(filter?.backdropAttributes ?? []),
-     ...(filter?.modelAttributes ?? []),
-     ...(filter?.patternAttributes ?? []),
-   ];
+  const attributes: ApiStarGiftAttributeId[] = [
+    ...(filter?.backdropAttributes ?? []),
+    ...(filter?.modelAttributes ?? []),
+    ...(filter?.patternAttributes ?? []),
+  ];
 
-   const params: GetResaleStarGifts = {
-     giftId: bigInt(giftId),
-     offset,
-     limit,
-     attributesHash: attributesHash ? bigInt(attributesHash) : DEFAULT_PRIMITIVES.BIGINT,
-     attributes: buildInputResaleGiftsAttributes(attributes),
-     ...(filter && {
-       sortByPrice: filter.sortType === 'byPrice' || undefined,
-       sortByNum: filter.sortType === 'byNumber' || undefined,
-     } satisfies Partial<GetResaleStarGifts>),
-   };
+  const params: GetResaleStarGifts = {
+    giftId: BigInt(giftId),
+    offset,
+    limit,
+    attributesHash: attributesHash ? BigInt(attributesHash) : DEFAULT_PRIMITIVES.BIGINT,
+    attributes: buildInputResaleGiftsAttributes(attributes),
+    forCraft: forCraft || undefined,
+    sortByPrice: filter?.sortType === 'byPrice' || undefined,
+    sortByNum: filter?.sortType === 'byNumber' || undefined,
+    starsOnly: filter?.starsOnly || undefined,
+  };
 
-   const result = await invokeRequest(new GramJs.payments.GetResaleStarGifts(params));
+  const result = await invokeRequest(new GramJs.payments.GetResaleStarGifts(params));
 
-   if (!result) {
-     return undefined;
-   }
+  if (!result) {
+    return undefined;
+  }
 
-   return buildApiResaleGifts(result);
+  return buildApiResaleGifts(result);
 }
 
 export async function fetchSavedStarGifts({
@@ -200,7 +211,7 @@ export function convertStarGift({
   }));
 }
 
-export async function getStarsGiftOptions({
+export async function fetchStarsGiftOptions({
   chat,
 }: {
   chat?: ApiChat;
@@ -382,13 +393,22 @@ export async function fetchStarsTopupOptions() {
 export async function fetchUniqueStarGift({ slug }: {
   slug: string;
 }) {
-  const result = await invokeRequest(new GramJs.payments.GetUniqueStarGift({ slug }));
+  try {
+    const result = await invokeRequest(new GramJs.payments.GetUniqueStarGift({ slug }), {
+      shouldThrow: true,
+    });
 
-  if (!result) return undefined;
+    if (!result) return undefined;
 
-  const gift = buildApiStarGift(result.gift);
-  if (gift.type !== 'starGiftUnique') return undefined;
-  return gift;
+    const gift = buildApiStarGift(result.gift);
+    if (gift.type !== 'starGiftUnique') return undefined;
+    return gift;
+  } catch (err) {
+    if (err instanceof RPCError) {
+      return wrapError(err);
+    }
+    return undefined;
+  }
 }
 
 export async function fetchStarGiftUpgradePreview({
@@ -397,14 +417,73 @@ export async function fetchStarGiftUpgradePreview({
   giftId: string;
 }) {
   const result = await invokeRequest(new GramJs.payments.GetStarGiftUpgradePreview({
-    giftId: bigInt(giftId),
+    giftId: BigInt(giftId),
   }));
 
   if (!result) {
     return undefined;
   }
 
-  return result.sampleAttributes.map(buildApiStarGiftAttribute).filter(Boolean);
+  return buildApiStarGiftUpgradePreview(result);
+}
+
+export async function fetchStarGiftAuctionState({
+  giftId,
+  slug,
+  version = 0,
+}: {
+  giftId?: string;
+  slug?: string;
+  version?: number;
+}) {
+  if (!giftId && !slug) return undefined;
+
+  const auction = slug
+    ? new GramJs.InputStarGiftAuctionSlug({ slug })
+    : new GramJs.InputStarGiftAuction({ giftId: BigInt(giftId!) });
+
+  const result = await invokeRequest(new GramJs.payments.GetStarGiftAuctionState({
+    auction,
+    version,
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return buildApiStarGiftAuctionState(result);
+}
+
+export async function fetchStarGiftAuctionAcquiredGifts({
+  giftId,
+}: {
+  giftId: string;
+}) {
+  const result = await invokeRequest(new GramJs.payments.GetStarGiftAuctionAcquiredGifts({
+    giftId: BigInt(giftId),
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return {
+    gifts: result.gifts.map(buildApiStarGiftAuctionAcquiredGift),
+  };
+}
+
+export async function fetchStarGiftActiveAuctions() {
+  const result = await invokeRequest(new GramJs.payments.GetStarGiftActiveAuctions({
+    hash: DEFAULT_PRIMITIVES.BIGINT,
+  }));
+
+  if (!result || result instanceof GramJs.payments.StarGiftActiveAuctionsNotModified) {
+    return undefined;
+  }
+
+  return {
+    auctions: result.auctions.map(buildApiStarGiftAuctionState).filter(Boolean),
+  };
 }
 
 export function upgradeStarGift({
@@ -527,7 +606,7 @@ export async function fetchStarGiftCollections({
 }) {
   const result = await invokeRequest(new GramJs.payments.GetStarGiftCollections({
     peer: buildInputPeer(peer.id, peer.accessHash),
-    hash: hash ? bigInt(hash) : DEFAULT_PRIMITIVES.BIGINT,
+    hash: hash ? BigInt(hash) : DEFAULT_PRIMITIVES.BIGINT,
   }));
 
   if (!result || result instanceof GramJs.payments.StarGiftCollectionsNotModified) {
@@ -536,5 +615,86 @@ export async function fetchStarGiftCollections({
 
   return {
     collections: result.collections.map(buildApiStarGiftCollection).filter(Boolean),
+  };
+}
+
+export function resolveStarGiftOffer({
+  offerMsgId,
+  shouldDecline,
+}: {
+  offerMsgId: number;
+  shouldDecline?: boolean;
+}) {
+  return invokeRequest(new GramJs.payments.ResolveStarGiftOffer({
+    offerMsgId,
+    decline: shouldDecline || undefined,
+  }), {
+    shouldReturnTrue: true,
+  });
+}
+
+export async function fetchCraftStarGifts({
+  giftId,
+  peerId,
+  offset = DEFAULT_PRIMITIVES.STRING,
+  limit = DEFAULT_PRIMITIVES.INT,
+}: {
+  giftId: string;
+  peerId: string;
+  offset?: string;
+  limit?: number;
+}) {
+  const result = await invokeRequest(new GramJs.payments.GetCraftStarGifts({
+    giftId: BigInt(giftId),
+    offset,
+    limit,
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return {
+    gifts: result.gifts.map((g) => buildApiSavedStarGift(g, peerId)),
+    nextOffset: result.nextOffset,
+    count: result.count,
+  };
+}
+
+export async function craftStarGift({
+  inputSavedGifts,
+}: {
+  inputSavedGifts: ApiRequestInputSavedStarGift[];
+}) {
+  try {
+    await invokeRequest(new GramJs.payments.CraftStarGift({
+      stargift: inputSavedGifts.map(buildInputSavedStarGift),
+    }), {
+      shouldThrow: true,
+    });
+    return undefined;
+  } catch (err) {
+    if (err instanceof RPCError) {
+      return { error: err.errorMessage };
+    }
+    throw err;
+  }
+}
+
+export async function fetchStarGiftUpgradeAttributes({
+  giftId,
+}: {
+  giftId: string;
+}) {
+  const result = await invokeRequest(new GramJs.payments.GetStarGiftUpgradeAttributes({
+    giftId: BigInt(giftId),
+  }));
+
+  if (!result) {
+    return undefined;
+  }
+
+  return {
+    attributes: result.attributes.map(buildApiStarGiftAttribute).filter(Boolean),
   };
 }

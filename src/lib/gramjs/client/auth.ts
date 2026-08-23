@@ -1,11 +1,16 @@
-import bigInt from 'big-integer';
-
+import type { ApiPasskeyOption } from '../../../api/types';
 import type TelegramClient from './TelegramClient';
 import type { Update } from './TelegramClient';
 
+import { DEBUG } from '../../../config';
+import { base64UrlToString } from '../../../util/encoding/base64';
+import { tryParseBigInt } from '../../../util/numbers';
 import { getServerTime } from '../../../util/serverTime';
 import { DEFAULT_PRIMITIVES } from '../../../api/gramjs/gramjsBuilders';
-import { RPCError } from '../errors';
+import { buildInputPasskeyCredential } from '../../../api/gramjs/gramjsBuilders/passkeys';
+import {
+  PasskeyCredentialNotFoundError, PasskeyLoginRequestedError, RPCError, UserAlreadyAuthorizedError,
+} from '../errors';
 import Api from '../tl/api';
 
 import { sleep } from '../Helpers';
@@ -15,16 +20,18 @@ import { getDisplayName } from '../Utils';
 export interface UserAuthParams {
   phoneNumber: string | (() => Promise<string>);
   webAuthTokenFailed: () => void;
+  onPasskeyOption: (passkeyOption: ApiPasskeyOption) => void;
   phoneCode: (isCodeViaApp?: boolean) => Promise<string>;
   password: (hint?: string, noReset?: boolean) => Promise<string>;
   firstAndLastNames: () => Promise<[string, string?]>;
-  qrCode: (qrCode: { token: Buffer; expires: number }) => Promise<void>;
+  qrCode: (qrCode: { token: Uint8Array; expires: number }) => Promise<void>;
   onError: (err: Error) => void;
   forceSMS?: boolean;
   initialMethod?: 'phoneNumber' | 'qrCode';
   shouldThrowIfUnauthorized?: boolean;
   webAuthToken?: string;
   accountIds?: string[];
+  hasPasskeySupport?: boolean;
   mockScenario?: string;
 }
 
@@ -37,7 +44,9 @@ interface ApiCredentials {
   apiHash: string;
 }
 
-const DEFAULT_INITIAL_METHOD = 'phoneNumber';
+type AuthMethod = 'phoneNumber' | 'qrCode';
+const DEFAULT_INITIAL_METHOD: AuthMethod = 'phoneNumber';
+let lastUsedMethod: AuthMethod = DEFAULT_INITIAL_METHOD;
 
 export async function authFlow(
   client: TelegramClient,
@@ -62,11 +71,29 @@ export function signInUserWithPreferredMethod(
 ): Promise<Api.TypeUser> {
   const { initialMethod = DEFAULT_INITIAL_METHOD } = authParams;
 
+  refreshPasskeyLoginOption(client, apiCredentials, authParams);
+
   if (initialMethod === 'phoneNumber') {
     return signInUser(client, apiCredentials, authParams);
   } else {
     return signInUserWithQrCode(client, apiCredentials, authParams);
   }
+}
+
+function refreshPasskeyLoginOption(
+  client: TelegramClient, apiCredentials: ApiCredentials, authParams: UserAuthParams,
+) {
+  if (!authParams.hasPasskeySupport) return;
+  obtainPasskeyLoginOption(client, apiCredentials).then((passkeyOption) => {
+    if (passkeyOption) {
+      authParams.onPasskeyOption(passkeyOption);
+    }
+  }).catch((err: unknown) => {
+    if (DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to obtain passkey login option:', err);
+    }
+  });
 }
 
 export async function checkAuthorization(client: TelegramClient, shouldThrow = false) {
@@ -114,7 +141,8 @@ async function signInUser(
 ): Promise<Api.TypeUser> {
   let phoneNumber;
   let phoneCodeHash;
-  let isCodeViaApp = false;
+  let isCodeViaApp;
+  lastUsedMethod = 'phoneNumber';
 
   while (true) {
     try {
@@ -123,7 +151,11 @@ async function signInUser(
           phoneNumber = await authParams.phoneNumber();
         } catch (err: unknown) {
           if (err instanceof Error && err.message === 'RESTART_AUTH_WITH_QR') {
-            return signInUserWithQrCode(client, apiCredentials, authParams);
+            return await signInUserWithQrCode(client, apiCredentials, authParams);
+          }
+
+          if (err instanceof PasskeyLoginRequestedError) {
+            return await signInUserWithPasskey(client, apiCredentials, authParams, err.credentialJson);
           }
 
           throw err;
@@ -150,7 +182,7 @@ async function signInUser(
   }
 
   let phoneCode;
-  let isRegistrationRequired = false;
+  let isRegistrationRequired;
   let termsOfService;
 
   // eslint-disable-next-line no-constant-condition
@@ -234,6 +266,9 @@ async function signInUserWithQrCode(
   let isScanningComplete = false;
 
   const { apiId, apiHash } = apiCredentials;
+  const exceptIds = authParams.accountIds?.map((id) => tryParseBigInt(id)).filter(Boolean) || [];
+
+  lastUsedMethod = 'qrCode';
 
   const inputPromise = (async () => {
     // eslint-disable-next-line no-constant-condition
@@ -245,7 +280,7 @@ async function signInUserWithQrCode(
       const result = await client.invoke(new Api.auth.ExportLoginToken({
         apiId,
         apiHash,
-        exceptIds: authParams.accountIds?.map((id) => bigInt(id)) || [],
+        exceptIds,
       }));
       if (!(result instanceof Api.auth.LoginToken)) {
         throw new Error('Unexpected');
@@ -277,6 +312,10 @@ async function signInUserWithQrCode(
       return await signInUser(client, apiCredentials, authParams);
     }
 
+    if (err instanceof PasskeyLoginRequestedError) {
+      return await signInUserWithPasskey(client, apiCredentials, authParams, err.credentialJson);
+    }
+
     throw err;
   } finally {
     isScanningComplete = true;
@@ -286,7 +325,7 @@ async function signInUserWithQrCode(
     const result2 = await client.invoke(new Api.auth.ExportLoginToken({
       apiId,
       apiHash,
-      exceptIds: authParams.accountIds?.map((id) => bigInt(id)) || [],
+      exceptIds,
     }));
 
     if (result2 instanceof Api.auth.LoginTokenSuccess && result2.authorization instanceof Api.auth.Authorization) {
@@ -315,12 +354,108 @@ async function signInUserWithQrCode(
   throw undefined;
 }
 
+export async function obtainPasskeyLoginOption(
+  client: TelegramClient, apiCredentials: ApiCredentials,
+): Promise<ApiPasskeyOption | undefined> {
+  const { apiId, apiHash } = apiCredentials;
+  const passkeyLoginOptions = await client.invoke(new Api.auth.InitPasskeyLogin({
+    apiId,
+    apiHash,
+  }));
+
+  if (!passkeyLoginOptions) return undefined;
+
+  try {
+    return JSON.parse(passkeyLoginOptions.options.data) as ApiPasskeyOption;
+  } catch (err: unknown) {
+    if (DEBUG) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to parse passkey login options:', err);
+    }
+  }
+  return undefined;
+}
+
+export async function signInUserWithPasskey(
+  client: TelegramClient,
+  apiCredentials: ApiCredentials,
+  authParams: UserAuthParams,
+  credentialJson: AuthenticationResponseJSON,
+): Promise<Api.TypeUser> {
+  try {
+    if (!credentialJson.response.userHandle) {
+      throw new Error('User handle is empty');
+    }
+
+    const userHandle = base64UrlToString(credentialJson.response.userHandle);
+    const [userDcIdStr, userId] = userHandle.split(':');
+    if (!userDcIdStr || !userId || isNaN(Number(userDcIdStr))) {
+      throw new Error('Unexpected user handle format');
+    }
+
+    const userDcId = Number(userDcIdStr);
+    if (authParams.accountIds?.includes(userId)) {
+      throw new UserAlreadyAuthorizedError(userId);
+    }
+
+    const fromDcId = client.session.dcId;
+    const unsignedFromAuthKeyId = client.session.getAuthKey(fromDcId).keyId; // Auth key id bytes are stored as unsigned 64-bit integer, long is signed
+    const signedFromAuthKeyId = unsignedFromAuthKeyId ? BigInt.asIntN(64, unsignedFromAuthKeyId) : undefined;
+
+    const isSwitchingDc = fromDcId !== userDcId;
+    if (isSwitchingDc) {
+      await client._switchDC(userDcId);
+    }
+
+    const result = await client.invoke(new Api.auth.FinishPasskeyLogin({
+      credential: buildInputPasskeyCredential(credentialJson),
+      fromDcId: isSwitchingDc ? fromDcId : undefined,
+      fromAuthKeyId: isSwitchingDc ? signedFromAuthKeyId : undefined,
+    }));
+
+    if (result instanceof Api.auth.Authorization) {
+      return result.user;
+    }
+
+    throw new Error('Unexpected sign up in passkey login');
+  } catch (err: unknown) {
+    // We cannot call finishPasskeyLogin again with the same challenge
+    refreshPasskeyLoginOption(client, apiCredentials, authParams);
+
+    const isPasskeyUnknownError = err instanceof PasskeyCredentialNotFoundError;
+
+    if (isPasskeyUnknownError) {
+      authParams.onError(err);
+    }
+
+    if (err instanceof Error) {
+      if (err.message === 'RESTART_AUTH' || (isPasskeyUnknownError && lastUsedMethod === 'phoneNumber')) {
+        return signInUser(client, apiCredentials, authParams);
+      }
+
+      if (err.message === 'RESTART_AUTH_WITH_QR' || (isPasskeyUnknownError && lastUsedMethod === 'qrCode')) {
+        return signInUserWithQrCode(client, apiCredentials, authParams);
+      }
+    }
+
+    if (err instanceof RPCError && err.errorMessage === 'SESSION_PASSWORD_NEEDED') {
+      return signInWithPassword(client, apiCredentials, authParams);
+    }
+
+    if (err instanceof Error) {
+      authParams.onError(err);
+    }
+
+    throw err;
+  }
+}
+
 async function sendCode(
   client: TelegramClient, apiCredentials: ApiCredentials, phoneNumber: string, forceSMS = false,
 ): Promise<{
-    phoneCodeHash: string;
-    isCodeViaApp: boolean;
-  }> {
+  phoneCodeHash: string;
+  isCodeViaApp: boolean;
+}> {
   try {
     const { apiId, apiHash } = apiCredentials;
     const sendResult = await client.invoke(new Api.auth.SendCode({

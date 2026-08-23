@@ -3,23 +3,9 @@ import type { ActionReturnType } from '../../types';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { addTabStateResetterAction } from '../../helpers/meta';
 import { addActionHandler } from '../../index';
-import { closeNewContactDialog, updateUserSearch } from '../../reducers';
+import { closeNewContactDialog } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
 import { selectIsCurrentUserFrozen } from '../../selectors';
-
-addActionHandler('setUserSearchQuery', (global, actions, payload): ActionReturnType => {
-  const {
-    query,
-    tabId = getCurrentTabId(),
-  } = payload;
-
-  return updateUserSearch(global, {
-    globalUserIds: undefined,
-    localUserIds: undefined,
-    fetchingStatus: Boolean(query),
-    query,
-  }, tabId);
-});
 
 addActionHandler('openAddContactDialog', (global, actions, payload): ActionReturnType => {
   const { userId, tabId = getCurrentTabId() } = payload;
@@ -65,6 +51,16 @@ addActionHandler('closeSuggestedStatusModal', (global, actions, payload): Action
 
 addTabStateResetterAction('closeChatRefundModal', 'chatRefundModal');
 
+addActionHandler('openDisableSharingAboutModal', (global, actions, payload): ActionReturnType => {
+  const { userId, tabId = getCurrentTabId() } = payload;
+
+  return updateTabState(global, {
+    disableSharingAboutModal: { userId },
+  }, tabId);
+});
+
+addTabStateResetterAction('closeDisableSharingAboutModal', 'disableSharingAboutModal');
+
 addActionHandler('openProfileRatingModal', (global, actions, payload): ActionReturnType => {
   const { userId, level, tabId = getCurrentTabId() } = payload;
 
@@ -77,3 +73,23 @@ addActionHandler('openProfileRatingModal', (global, actions, payload): ActionRet
 });
 
 addTabStateResetterAction('closeProfileRatingModal', 'profileRatingModal');
+
+addActionHandler('openRankModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId(), ...rest } = payload;
+
+  return updateTabState(global, {
+    rankModal: rest,
+  }, tabId);
+});
+
+addTabStateResetterAction('closeRankModal', 'rankModal');
+
+addActionHandler('openEditRankModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId(), ...rest } = payload;
+
+  return updateTabState(global, {
+    editRankModal: rest,
+  }, tabId);
+});
+
+addTabStateResetterAction('closeEditRankModal', 'editRankModal');

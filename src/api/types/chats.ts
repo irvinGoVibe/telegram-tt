@@ -1,31 +1,43 @@
 import type { ApiBotCommand } from './bots';
 import type {
-  ApiChatReactions, ApiFormattedText, ApiInputMessageReplyInfo, ApiInputSuggestedPostInfo, ApiPhoto, ApiStickerSet,
+  ApiChatReactions, ApiFormattedText, ApiInputDraftReplyInfo, ApiInputSuggestedPostInfo, ApiPhoto, ApiStickerSet,
 } from './messages';
-import type { ApiBotVerification, ApiChatInviteImporter, ApiPeerNotifySettings, ApiRestrictionReason } from './misc';
+import type { ApiChatInviteImporter, ApiRestrictionReason } from './misc';
 import type {
-  ApiEmojiStatusType, ApiFakeType, ApiUser, ApiUsername,
+  ApiBotVerification,
+  ApiEmojiStatusType,
+  ApiFakeType,
+  ApiProfileTab,
+  ApiSendAsPeerId,
+  ApiTypePeerColor,
+} from './peers';
+import type { ApiInputRichMessage } from './richMessage';
+import type {
+  ApiUser, ApiUsername,
 } from './users';
 
 type ApiChatType = (
   'chatTypePrivate' | 'chatTypeSecret' |
   'chatTypeBasicGroup' | 'chatTypeSuperGroup' |
-  'chatTypeChannel'
+  'chatTypeChannel' | 'chatTypeCommunity'
 );
 
 export type ApiPeer = ApiChat | ApiUser;
+
+export type ApiChatInviteJoinWebView = {
+  type: 'webView';
+  botId: string;
+  url: string;
+  queryId?: string;
+  isFullscreen: boolean;
+  isSameOrigin?: true;
+};
 
 export interface ApiChat {
   id: string;
   folderId?: number;
   type: ApiChatType;
   title: string;
-  hasUnreadMark?: boolean;
-  lastReadOutboxMessageId?: number;
-  lastReadInboxMessageId?: number;
-  unreadCount?: number;
-  unreadMentionsCount?: number;
-  unreadReactionsCount?: number;
   isVerified?: true;
   areSignaturesShown?: boolean;
   areProfilesShown?: boolean;
@@ -40,17 +52,19 @@ export interface ApiChat {
   membersCount?: number;
   creationDate?: number;
   isSupport?: true;
-  draftDate?: number;
   isProtected?: boolean;
   fakeType?: ApiFakeType;
-  color?: ApiPeerColor;
-  profileColor?: ApiPeerColor;
+  color?: ApiTypePeerColor;
+  profileColor?: ApiTypePeerColor;
   emojiStatus?: ApiEmojiStatusType;
   isForum?: boolean;
   isForumAsMessages?: true;
   isMonoforum?: boolean;
+  isBotForum?: boolean;
   withForumTabs?: boolean;
   linkedMonoforumId?: string;
+  linkedCommunityId?: string;
+  isCollapsedInDialogs?: boolean;
   areChannelMessagesAllowed?: boolean;
   boostLevel?: number;
   botVerificationIconId?: string;
@@ -84,9 +98,6 @@ export interface ApiChat {
   sendPaidReactionsAsPeerIds?: ApiSendAsPeerId[];
   sendPaidReactionsPeer?: ApiSendAsPeerId;
 
-  unreadReactions?: number[];
-  unreadMentions?: number[];
-
   // Stories
   areStoriesHidden?: boolean;
   hasStories?: boolean;
@@ -99,17 +110,36 @@ export interface ApiChat {
   detectedLanguage?: string;
 
   paidMessagesStars?: number;
+  ttlPeriod?: number;
 }
 
-export interface ApiTypingStatus {
-  userId?: string;
-  action: string;
+type ApiTypingStatusBase = {
   timestamp: number;
-  emoji?: string;
+};
+
+type ApiTypingStatusSimple = ApiTypingStatusBase & {
+  type: 'typing' | 'recordVideo' | 'uploadVideo' | 'recordAudio' | 'uploadAudio'
+    | 'uploadPhoto' | 'uploadFile' | 'playingGame' | 'recordRound' | 'uploadRound'
+    | 'chooseSticker' | 'chooseLocation' | 'chooseContact';
+};
+
+type ApiTypingStatusWatchingAnimations = ApiTypingStatusBase & {
+  type: 'watchingAnimations';
+  emoji: string;
+};
+
+export type ApiTypingStatus = ApiTypingStatusSimple | ApiTypingStatusWatchingAnimations;
+
+export interface ApiCommunityLinkedPeer {
+  peerId: string;
+  canViewHistory?: boolean;
+  // `false` means the peer is hidden and cannot be joined without an invite
+  isVisible?: boolean;
 }
 
 export interface ApiChatFullInfo {
   about?: string;
+  ttlPeriod?: number;
   onlineCount?: number;
   members?: ApiChatMember[];
   kickedMembers?: ApiChatMember[];
@@ -156,17 +186,25 @@ export interface ApiChatFullInfo {
   boostsApplied?: number;
   boostsToUnrestrict?: number;
   botVerification?: ApiBotVerification;
+  mainTab?: ApiProfileTab;
+  guardBotId?: string;
+
+  // Community
+  linkedPeers?: ApiCommunityLinkedPeer[];
+  adminsCount?: number;
+  kickedCount?: number;
+  peerLinkRequestsCount?: number;
 }
 
 export interface ApiChatMember {
   userId: string;
+  rank?: string;
   inviterId?: string;
   joinedDate?: number;
   kickedByUserId?: string;
   promotedByUserId?: string;
   bannedRights?: ApiChatBannedRights;
   adminRights?: ApiChatAdminRights;
-  customTitle?: string;
   isAdmin?: true;
   isOwner?: true;
   isViaRequest?: true;
@@ -182,11 +220,14 @@ export interface ApiChatAdminRights {
   pinMessages?: true;
   addAdmins?: true;
   anonymous?: true;
+  other?: true;
   manageCall?: true;
   manageTopics?: true;
   postStories?: true;
   editStories?: true;
   deleteStories?: true;
+  manageDirectMessages?: true;
+  manageRanks?: true;
 }
 
 export interface ApiChatBannedRights {
@@ -210,6 +251,8 @@ export interface ApiChatBannedRights {
   sendVoices?: true;
   sendDocs?: true;
   sendPlain?: true;
+  editRank?: true;
+  sendReactions?: true;
   untilDate?: number;
 }
 
@@ -235,44 +278,6 @@ export interface ApiChatFolder {
   hasMyInvites?: true;
 }
 
-export interface ApiPeerSettings {
-  isAutoArchived?: boolean;
-  canReportSpam?: boolean;
-  canAddContact?: boolean;
-  canBlockContact?: boolean;
-  chargedPaidMessageStars?: number;
-  registrationMonth?: string;
-  phoneCountry?: string;
-  nameChangeDate?: number;
-  photoChangeDate?: number;
-}
-
-export interface ApiSendAsPeerId {
-  id: string;
-  isPremium?: boolean;
-}
-
-export interface ApiTopic {
-  id: number;
-  isClosed?: boolean;
-  isPinned?: boolean;
-  isHidden?: boolean;
-  isOwner?: boolean;
-
-  // TODO[forums] https://github.com/telegramdesktop/tdesktop/blob/1aece79a471d99a8b63d826b1bce1f36a04d7293/Telegram/SourceFiles/data/data_forum_topic.cpp#L318
-  isMin?: boolean;
-  date: number;
-  title: string;
-  iconColor: number;
-  iconEmojiId?: string;
-  lastMessageId: number;
-  unreadCount: number;
-  unreadMentionsCount: number;
-  unreadReactionsCount: number;
-  fromId: string;
-  notifySettings: ApiPeerNotifySettings;
-}
-
 export interface ApiChatlistInviteNew {
   title: ApiFormattedText;
   noTitleAnimations?: true;
@@ -296,11 +301,6 @@ export interface ApiChatlistExportedInvite {
   peerIds: string[];
 }
 
-export interface ApiPeerColor {
-  color?: number;
-  backgroundEmojiId?: string;
-}
-
 export interface ApiMissingInvitedUser {
   id: string;
   isRequiringPremiumToInvite?: boolean;
@@ -314,7 +314,8 @@ export interface ApiChatLink {
 
 export type ApiDraft = {
   text?: ApiFormattedText;
-  replyInfo?: ApiInputMessageReplyInfo;
+  richMessage?: ApiInputRichMessage;
+  replyInfo?: ApiInputDraftReplyInfo;
   suggestedPostInfo?: ApiInputSuggestedPostInfo;
   date?: number;
   effectId?: string;

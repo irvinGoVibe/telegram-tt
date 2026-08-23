@@ -1,13 +1,12 @@
 import type { ChangeEvent } from 'react';
 import type { FC, TeactNode } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   memo,
   useRef,
   useState,
 } from '../../lib/teact/teact';
 
-import type { ApiUser } from '../../api/types';
+import type { ApiPeer } from '../../api/types';
 import type { IconName } from '../../types/icons';
 import type { IRadioOption } from './CheckboxGroup';
 
@@ -16,8 +15,8 @@ import { REM } from '../common/helpers/mediaDimensions';
 import renderText from '../common/helpers/renderText';
 
 import useCurrentOrPrev from '../../hooks/useCurrentOrPrev';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useOldLang from '../../hooks/useOldLang';
 
 import Avatar from '../common/Avatar';
 import Icon from '../common/icons/Icon';
@@ -30,7 +29,7 @@ type OwnProps = {
   id?: string;
   name?: string;
   value?: string;
-  user?: ApiUser;
+  peer?: ApiPeer;
   label?: TeactNode;
   labelText?: TeactNode;
   subLabel?: string;
@@ -62,7 +61,7 @@ const Checkbox: FC<OwnProps> = ({
   name,
   value,
   label,
-  user,
+  peer,
   labelText,
   subLabel,
   checked,
@@ -85,18 +84,23 @@ const Checkbox: FC<OwnProps> = ({
   onCheck,
   onClickLabel,
 }) => {
-  const lang = useOldLang();
+  const lang = useLang();
   const labelRef = useRef<HTMLLabelElement>();
+  const inputRef = useRef<HTMLInputElement>();
   const [showNested, setShowNested] = useState(false);
-  const renderingUser = useCurrentOrPrev(user, true);
+  const renderingPeer = useCurrentOrPrev(peer, true);
 
-  const handleChange = useLastCallback((event: ChangeEvent<HTMLInputElement>) => {
+  const handleChange = useLastCallback((
+    event: ChangeEvent<HTMLInputElement>,
+    childNestedOptionList?: IRadioOption[],
+  ) => {
     if (disabled) {
       return;
     }
 
     if (onChange) {
-      onChange(event, nestedOptionList);
+      const isOwnInput = event.target === inputRef.current;
+      onChange(event, isOwnInput ? nestedOptionList : childNestedOptionList);
     }
 
     if (onCheck) {
@@ -136,7 +140,6 @@ const Checkbox: FC<OwnProps> = ({
 
   return (
     <>
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <label
         className={labelClassName}
         dir={lang.isRtl ? 'rtl' : undefined}
@@ -144,6 +147,7 @@ const Checkbox: FC<OwnProps> = ({
         ref={labelRef}
       >
         <input
+          ref={inputRef}
           type="checkbox"
           id={id}
           name={name}
@@ -159,10 +163,10 @@ const Checkbox: FC<OwnProps> = ({
           Boolean(leftElement) && 'Nested-avatar-list',
         )}
         >
-          <div className={buildClassName('user-avatar', renderingUser && 'user-avatar-visible')}>
-            {renderingUser && (
+          <div className={buildClassName('user-avatar', renderingPeer && 'user-avatar-visible')}>
+            {renderingPeer && (
               <Avatar
-                peer={renderingUser}
+                peer={renderingPeer}
                 size={AVATAR_SIZE}
               />
             )}

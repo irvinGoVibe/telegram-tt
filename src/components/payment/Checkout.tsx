@@ -159,7 +159,7 @@ const Checkout: FC<OwnProps> = ({
   function renderTos(url: string) {
     return (
       <Checkbox
-        label={renderTosLink(url, oldLang.isRtl)}
+        label={renderTosLink(url, lang.isRtl)}
         name="checkout_tos"
         checked={Boolean(isTosAccepted)}
         className={styles.tosCheckbox}
@@ -188,6 +188,7 @@ const Checkout: FC<OwnProps> = ({
             width={photo.dimensions?.width}
             height={photo.dimensions?.height}
             className={styles.checkoutPicture}
+            animation="pulse"
             forceAspectRatio
           />
         )}

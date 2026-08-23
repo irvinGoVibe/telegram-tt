@@ -4,10 +4,11 @@ import type { GlobalState, TabArgs } from '../types';
 import { SERVICE_NOTIFICATIONS_USER_ID } from '../../config';
 import { isUserId } from '../../util/entities/ids';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
-import { isChatAdmin, isDeletedUser } from '../helpers';
-import { selectChat, selectChatFullInfo } from './chats';
+import { getHasAdminRight, isChatAdmin, isChatChannel, isDeletedUser } from '../helpers';
+import { selectChat, selectChatFullInfo, selectIsMonoforumAdmin } from './chats';
 import { type ProfileCollectionKey } from './payments';
 import { selectTabState } from './tabs';
+import { selectPeerProfileColor } from './ui';
 import { selectBot, selectUser, selectUserFullInfo } from './users';
 
 export function selectPeer<T extends GlobalState>(global: T, peerId: string): ApiPeer | undefined {
@@ -66,11 +67,35 @@ export function selectPeerPaidMessagesStars<T extends GlobalState>(
 
   const chat = selectChat(global, peerId);
   if (!chat) return undefined;
-  if (isChatAdmin(chat)) return undefined;
+  if (isChatAdmin(chat) || selectIsMonoforumAdmin(global, chat.id)) return undefined;
   return chat.paidMessagesStars;
 }
 
 export function selectPeerHasProfileBackground<T extends GlobalState>(global: T, peerId: string) {
   const peer = selectPeer(global, peerId);
-  return Boolean(peer?.profileColor || peer?.emojiStatus?.type === 'collectible');
+  if (!peer) return false;
+  const profileColor = selectPeerProfileColor(global, peer);
+
+  if (peer.profileColor?.type === 'collectible') return true;
+  if (peer.emojiStatus?.type === 'collectible') return true;
+  return Boolean(profileColor);
+}
+
+export function selectCanUpdateMainTab<T extends GlobalState>(global: T, peerId: string) {
+  if (global.currentUserId === peerId) {
+    return true;
+  }
+
+  const chat = selectChat(global, peerId);
+  return Boolean(chat && isChatChannel(chat) && getHasAdminRight(chat, 'postMessages'));
+}
+
+// Slow, not to be used in `withGlobal`
+export function selectPeerByUsername<T extends GlobalState>(global: T, username: string): ApiPeer | undefined {
+  const usernameLowered = username.toLowerCase();
+  return Object.values(global.users.byId).find(
+    (user) => user.usernames?.some((c) => c.username.toLowerCase() === usernameLowered),
+  ) || Object.values(global.chats.byId).find(
+    (chat) => chat.usernames?.some((c) => c.username.toLowerCase() === usernameLowered),
+  );
 }

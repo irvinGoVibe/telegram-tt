@@ -2,7 +2,7 @@ import type { FC } from '../../lib/teact/teact';
 import {
   memo, useCallback, useMemo, useState,
 } from '../../lib/teact/teact';
-import { getActions, getGlobal, withGlobal } from '../../global';
+import { getGlobal, withGlobal } from '../../global';
 
 import type {
   ApiChatMember,
@@ -19,12 +19,11 @@ import sortChatIds from '../common/helpers/sortChatIds';
 
 import useHistoryBack from '../../hooks/useHistoryBack';
 import useOldLang from '../../hooks/useOldLang';
+import usePeerSearch, { userGlobalSearch } from '../../hooks/usePeerSearch';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
-import Icon from '../common/icons/Icon';
 import PeerPicker from '../common/pickers/PeerPicker';
 import FloatingActionButton from '../ui/FloatingActionButton';
-import Spinner from '../ui/Spinner';
 
 import './AddChatMembers.scss';
 
@@ -40,11 +39,7 @@ type StateProps = {
   members?: ApiChatMember[];
   currentUserId?: string;
   localContactIds?: string[];
-  searchQuery?: string;
   isLoading: boolean;
-  isSearching?: boolean;
-  localUserIds?: string[];
-  globalUserIds?: string[];
 };
 
 const AddChatMembers: FC<OwnProps & StateProps> = ({
@@ -54,17 +49,17 @@ const AddChatMembers: FC<OwnProps & StateProps> = ({
   currentUserId,
   localContactIds,
   isLoading,
-  searchQuery,
-  isSearching,
-  localUserIds,
-  globalUserIds,
   onClose,
   isActive,
 }) => {
-  const { setUserSearchQuery } = getActions();
-
   const lang = useOldLang();
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const { result: foundIds, currentResultsQuery, isSearching } = usePeerSearch({
+    query: searchQuery,
+    queryFn: userGlobalSearch,
+  });
+  const relevantFoundIds = currentResultsQuery === searchQuery ? foundIds : undefined;
   const prevSelectedMemberIds = usePreviousDeprecated(selectedMemberIds);
   const noPickerScrollRestore = prevSelectedMemberIds === selectedMemberIds;
 
@@ -77,18 +72,13 @@ const AddChatMembers: FC<OwnProps & StateProps> = ({
     return members ? members.map((member) => member.userId) : [];
   }, [members]);
 
-  const handleFilterChange = useCallback((query: string) => {
-    setUserSearchQuery({ query });
-  }, [setUserSearchQuery]);
-
   const displayedIds = useMemo(() => {
     // No need for expensive global updates on users, so we avoid them
     const usersById = getGlobal().users.byId;
     const filteredIds = filterPeersByQuery({
       ids: unique([
         ...(localContactIds || []),
-        ...(localUserIds || []),
-        ...(globalUserIds || []),
+        ...(relevantFoundIds || []),
       ]),
       query: searchQuery,
       type: 'user',
@@ -110,14 +100,13 @@ const AddChatMembers: FC<OwnProps & StateProps> = ({
         );
       }),
     );
-  }, [localContactIds, searchQuery, localUserIds, globalUserIds, currentUserId, memberIds, isChannel]);
+  }, [localContactIds, relevantFoundIds, searchQuery, currentUserId, memberIds, isChannel]);
 
   const handleNextStep = useCallback(() => {
     if (selectedMemberIds.length) {
-      setUserSearchQuery({ query: '' });
       onNextStep(selectedMemberIds);
     }
-  }, [selectedMemberIds, setUserSearchQuery, onNextStep]);
+  }, [selectedMemberIds, onNextStep]);
 
   return (
     <div className="AddChatMembers">
@@ -130,9 +119,10 @@ const AddChatMembers: FC<OwnProps & StateProps> = ({
           searchInputId="new-members-picker-search"
           isLoading={isSearching}
           onSelectedIdsChange={setSelectedMemberIds}
-          onFilterChange={handleFilterChange}
+          onFilterChange={setSearchQuery}
           isSearchable
           withDefaultPadding
+          withIslands
           noScrollRestore={noPickerScrollRestore}
           allowMultiple
           withStatus
@@ -144,13 +134,9 @@ const AddChatMembers: FC<OwnProps & StateProps> = ({
           disabled={isLoading}
           ariaLabel={lang('lng_channel_add_users')}
           onClick={handleNextStep}
-        >
-          {isLoading ? (
-            <Spinner color="white" />
-          ) : (
-            <Icon name="arrow-right" />
-          )}
-        </FloatingActionButton>
+          iconName="arrow-right"
+          isLoading={isLoading}
+        />
       </div>
     </div>
   );
@@ -164,23 +150,12 @@ export default memo(withGlobal<OwnProps>(
     const { currentUserId } = global;
     const isChannel = chat && isChatChannel(chat);
 
-    const {
-      query: searchQuery,
-      fetchingStatus,
-      globalUserIds,
-      localUserIds,
-    } = selectTabState(global).userSearch;
-
     return {
       isChannel,
       members: selectChatFullInfo(global, chatId)?.members,
       currentUserId,
       localContactIds,
-      searchQuery,
-      isSearching: fetchingStatus,
       isLoading: newChatMembersProgress === NewChatMembersProgress.Loading,
-      globalUserIds,
-      localUserIds,
     };
   },
 )(AddChatMembers));

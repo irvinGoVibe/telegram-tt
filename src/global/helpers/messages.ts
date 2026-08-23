@@ -5,11 +5,13 @@ import type {
   ApiMessage,
   ApiMessageEntityTextUrl,
   ApiPeer,
+  ApiRichMessage,
   ApiStory,
   ApiTypeStory,
 } from '../../api/types';
 import type {
-  ApiPoll, ApiWebPage, MediaContainer, StatefulMediaContent,
+  ApiFormattedText, ApiInputDraftReplyInfo, ApiMessagePoll, ApiReplyInfo, ApiWebPage,
+  MediaContainer, StatefulMediaContent,
 } from '../../api/types/messages';
 import type { ThreadId } from '../../types';
 import type { LangFn } from '../../util/localization';
@@ -17,6 +19,7 @@ import type { GlobalState } from '../types';
 import { ApiMessageEntityTypes, MAIN_THREAD_ID } from '../../api/types';
 
 import {
+  LOCAL_MESSAGES_LIMIT,
   LOTTIE_STICKER_MIME_TYPE,
   RE_LINK_TEMPLATE,
   SERVICE_NOTIFICATIONS_USER_ID,
@@ -28,15 +31,27 @@ import {
   VIDEO_STICKER_MIME_TYPE,
 } from '../../config';
 import { areDeepEqual } from '../../util/areDeepEqual';
-import { getCleanPeerId, isUserId } from '../../util/entities/ids';
+import { getRawPeerId, isUserId } from '../../util/entities/ids';
 import { areSortedArraysIntersecting, unique } from '../../util/iteratees';
 import { isLocalMessageId } from '../../util/keys/messageKey';
 import { getServerTime } from '../../util/serverTime';
 import { getGlobal } from '../index';
-import { selectPollFromMessage, selectWebPageFromMessage } from '../selectors';
+import {
+  selectChatMessage,
+  selectPollFromMessage,
+  selectScheduledMessage,
+  selectWebPageFromMessage,
+} from '../selectors';
+import { selectThreadIdFromMessage } from '../selectors/threads';
+import { getRichMessagePreviewText } from './richMessage';
 import { getMainUsername } from './users';
 
 const RE_LINK = new RegExp(RE_LINK_TEMPLATE, 'i');
+
+let uiLocalMessageCounter = 0;
+function getNextLocalMessageId(lastMessageId = 0) {
+  return lastMessageId + (++uiLocalMessageCounter / LOCAL_MESSAGES_LIMIT);
+}
 
 export function getMessageHtmlId(messageId: number, index?: number) {
   const parts = ['message', messageId.toString().replace('.', '-'), index].filter(Boolean);
@@ -56,13 +71,15 @@ export function getMessageTranscription(message: ApiMessage) {
 
 export function hasMessageText(message: MediaContainer) {
   const {
-    action, text, sticker, photo, video, audio, voice, document, pollId, todo,
+    action, text, sticker, photo, video, audio, voice, document, pollId, todo, dice,
     webPage, contact, invoice, location, game, storyData, giveaway, giveawayResults, paidMedia,
   } = message.content;
 
+  if (pollId) return false;
+
   return Boolean(text) || !(
     sticker || photo || video || audio || voice || document || contact || pollId || todo || webPage
-    || invoice || location || game || storyData || giveaway || giveawayResults
+    || invoice || location || game || storyData || giveaway || giveawayResults || dice
     || paidMedia || action?.type === 'phoneCall'
   );
 }
@@ -82,7 +99,7 @@ export function groupStatefulContent({
   story,
   webPage,
 }: {
-  poll?: ApiPoll;
+  poll?: ApiMessagePoll;
   story?: ApiTypeStory;
   webPage?: ApiWebPage;
 }) {
@@ -97,18 +114,79 @@ export function getMessageText(message: MediaContainer) {
   return hasMessageText(message) ? message.content.text : undefined;
 }
 
+function getSharedPrefixLength(firstText: string, secondText: string) {
+  const minLength = Math.min(firstText.length, secondText.length);
+
+  let index = 0;
+  while (index < minLength && firstText[index] === secondText[index]) {
+    index++;
+  }
+
+  return index;
+}
+
+export function pickMatchingTypingDraftMessage<T extends ApiMessage>(
+  incomingMessage: MediaContainer,
+  typingDraftMessages: T[],
+) {
+  const incomingText = getMessageText(incomingMessage)?.text;
+  if (!incomingText) {
+    return undefined;
+  }
+
+  if (typingDraftMessages.length === 1) {
+    return typingDraftMessages[0];
+  }
+
+  let bestMatch: T | undefined;
+  let bestScore = 0;
+
+  typingDraftMessages.forEach((typingDraftMessage) => {
+    const draftText = getMessageText(typingDraftMessage)?.text;
+    if (!draftText) return;
+
+    const score = getSharedPrefixLength(incomingText, draftText);
+    if (!score) return;
+
+    if (!bestMatch) {
+      bestMatch = typingDraftMessage;
+      bestScore = score;
+      return;
+    }
+
+    if (score > bestScore) {
+      bestMatch = typingDraftMessage;
+      bestScore = score;
+    }
+  });
+
+  return bestMatch;
+}
+
 export function getMessageTextWithFallback(lang: LangFn, message: MediaContainer) {
-  return hasMessageText(message) ? message.content.text || { text: lang('MessageUnsupported') } : undefined;
+  if (!hasMessageText(message)) {
+    return undefined;
+  }
+
+  if (message.content.text) {
+    return message.content.text;
+  }
+
+  const richMessageText = message.content.richMessage
+    ? getRichMessagePreviewText(message.content.richMessage)
+    : undefined;
+
+  return { text: richMessageText || lang('MessageUnsupported') };
 }
 
 export function getMessageCustomShape(message: ApiMessage): boolean {
   const {
     text, sticker, photo, video, audio, voice,
     document, pollId, webPage, contact, action,
-    game, invoice, location, storyData,
+    game, invoice, location, storyData, dice,
   } = message.content;
 
-  if (sticker || (video?.isRound)) {
+  if (sticker || (video?.isRound) || dice) {
     return true;
   }
 
@@ -119,29 +197,31 @@ export function getMessageCustomShape(message: ApiMessage): boolean {
 
   const hasOtherFormatting = text?.entities?.some((entity) => entity.type !== ApiMessageEntityTypes.CustomEmoji);
 
-  return Boolean(message.emojiOnlyCount && !hasOtherFormatting);
+  return Boolean(text.emojiOnlyCount && !hasOtherFormatting);
 }
 
-export function getMessageSingleRegularEmoji(message: ApiMessage) {
+export function getMessageSingleRegularEmoji(message: MediaContainer) {
   const { text } = message.content;
 
-  if (text?.entities?.length || message.emojiOnlyCount !== 1) {
+  if (!text || text.entities?.length || text.emojiOnlyCount !== 1) {
     return undefined;
   }
 
-  return text!.text;
+  return text.text;
 }
 
-export function getMessageSingleCustomEmoji(message: ApiMessage): string | undefined {
+export function getMessageSingleCustomEmoji(message: MediaContainer): string | undefined {
   const { text } = message.content;
 
+  const firstEntity = text?.entities?.[0];
   if (text?.entities?.length !== 1
-    || text.entities[0].type !== ApiMessageEntityTypes.CustomEmoji
-    || message.emojiOnlyCount !== 1) {
+    || firstEntity?.type !== ApiMessageEntityTypes.CustomEmoji
+    || firstEntity.offset !== 0
+    || firstEntity.length !== text.text.length) {
     return undefined;
   }
 
-  return text.entities[0].documentId;
+  return firstEntity.documentId;
 }
 
 export function getFirstLinkInMessage(message: ApiMessage) {
@@ -198,7 +278,7 @@ export function isOwnMessage(message: ApiMessage) {
 }
 
 export function isReplyToMessage(message: ApiMessage) {
-  return Boolean(message.replyInfo?.type === 'message');
+  return Boolean(message.replyInfo?.type === 'message' || message.replyInfo?.type === 'ephemeral');
 }
 
 export function isForwardedMessage(message: ApiMessage) {
@@ -250,7 +330,7 @@ export function isMessageTranslatable(message: ApiMessage, allowOutgoing?: boole
   const isServiceNotification = isServiceNotificationMessage(message);
   const isAction = isActionMessage(message);
 
-  return Boolean(text?.text.length && !message.emojiOnlyCount && !game && (allowOutgoing || !message.isOutgoing)
+  return Boolean(text?.text.length && !text.emojiOnlyCount && !game && (allowOutgoing || !message.isOutgoing)
     && !isLocal && !isServiceNotification && !isAction && !message.isScheduled);
 }
 
@@ -303,7 +383,11 @@ export function mergeIdRanges(ranges: number[][], idsUpdate: number[]): number[]
 
 export function extractMessageText(message: ApiMessage | ApiStory, inChatList = false) {
   const contentText = message.content.text;
-  if (!contentText) return undefined;
+  if (!contentText) {
+    const richMessageText = message.content.richMessage && getRichMessagePreviewText(message.content.richMessage);
+
+    return richMessageText ? { text: richMessageText } : undefined;
+  }
 
   const { text } = contentText;
   let { entities } = contentText;
@@ -383,7 +467,7 @@ export function isUploadingFileSticker(attachment: ApiAttachment) {
 export function getMessageLink(peer: ApiPeer, topicId?: ThreadId, messageId?: number) {
   const chatUsername = getMainUsername(peer);
 
-  const normalizedId = getCleanPeerId(peer.id);
+  const normalizedId = getRawPeerId(peer.id).toString();
 
   const chatPart = chatUsername || `c/${normalizedId}`;
   const topicPart = topicId && topicId !== MAIN_THREAD_ID ? `/${topicId}` : '';
@@ -501,4 +585,79 @@ export function getSuggestedChangesActionText(
     withNodes: true,
     withMarkdown: true,
   });
+}
+
+export function createApiMessageFromTypingDraft({
+  lastMessageId,
+  chatId,
+  threadId,
+  text,
+  richMessage,
+}: {
+  lastMessageId: number;
+  chatId: string;
+  threadId: ThreadId;
+  text?: ApiFormattedText;
+  richMessage?: ApiRichMessage;
+}): ApiMessage {
+  const localId = getNextLocalMessageId(lastMessageId);
+
+  const replyInfo: ApiReplyInfo | undefined = typeof threadId === 'number' && threadId !== MAIN_THREAD_ID ? {
+    type: 'message',
+    replyToMsgId: threadId,
+    replyToTopId: threadId,
+    isForumTopic: true,
+  } : undefined;
+
+  return {
+    id: localId,
+    chatId,
+    replyInfo,
+    isOutgoing: false,
+    date: getServerTime(),
+    content: {
+      text,
+      richMessage,
+    },
+    isSilent: true,
+    isTypingDraft: true,
+    editDate: getServerTime(),
+  };
+}
+
+export function groupMessageIdsByThreadId(
+  global: GlobalState, chatId: string, messageIds: number[], isScheduled: boolean, notShared?: boolean,
+): Record<ThreadId, number[]> {
+  const grouped = messageIds.reduce<Record<ThreadId, number[]>>((acc, messageId) => {
+    const message = isScheduled ? selectScheduledMessage(global, chatId, messageId)
+      : selectChatMessage(global, chatId, messageId);
+    if (!message) return acc;
+
+    const threadId = selectThreadIdFromMessage(global, message);
+    acc[threadId] = acc[threadId] || [];
+    acc[threadId].push(messageId);
+    return acc;
+  }, {});
+
+  if (!notShared) {
+    grouped[MAIN_THREAD_ID] = messageIds;
+  }
+
+  return grouped;
+}
+
+export function prepareMessageReplyInfo(
+  threadId: ThreadId, additionalReplyInfo?: ApiInputDraftReplyInfo,
+): ApiInputDraftReplyInfo | undefined {
+  if (additionalReplyInfo?.type === 'ephemeral') return additionalReplyInfo;
+
+  const isMainThread = threadId === MAIN_THREAD_ID;
+  if (!additionalReplyInfo && isMainThread) return undefined;
+
+  return {
+    type: 'message',
+    ...additionalReplyInfo,
+    replyToMsgId: additionalReplyInfo?.replyToMsgId || Number(threadId),
+    replyToTopId: additionalReplyInfo?.replyToTopId || (!isMainThread ? Number(threadId) : undefined),
+  };
 }

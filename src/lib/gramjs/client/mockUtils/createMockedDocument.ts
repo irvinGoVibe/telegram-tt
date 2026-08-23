@@ -1,5 +1,3 @@
-import BigInt from 'big-integer';
-
 import type { MockTypes } from './MockTypes';
 
 import Api from '../../tl/api';
@@ -12,8 +10,8 @@ export default function createMockedDocument(documentId: number, mockData: MockT
   if (!document) throw Error('No such document ' + documentId);
 
   const {
-    accessHash = BigInt(1),
-    fileReference = Buffer.from([0]),
+    accessHash = 1n,
+    fileReference = new Uint8Array([0]),
     date = MOCK_STARTING_DATE,
     dcId = 2,
     url,

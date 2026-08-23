@@ -15,6 +15,7 @@ import { IS_TOUCH_ENV } from '../../../../util/browser/windowEnvironment.ts';
 import buildClassName from '../../../../util/buildClassName';
 import buildStyle from '../../../../util/buildStyle';
 import { getGiftAttributes, getStickerFromGift } from '../../../common/helpers/gifts';
+import { REM } from '../../../common/helpers/mediaDimensions.ts';
 import { renderPeerLink } from '../helpers/messageActions';
 
 import useFlag from '../../../../hooks/useFlag.ts';
@@ -96,8 +97,9 @@ const StarGiftAction = ({
         <RadialPatternBackground
           className={styles.uniqueBackground}
           backgroundColors={backgroundColors}
-          patternColor={backdrop.patternColor}
           patternIcon={pattern.sticker}
+          patternSize={14}
+          yPosition={5 * REM}
           clearBottomSector
         />
       </div>
@@ -119,20 +121,24 @@ const StarGiftAction = ({
         )}
       </div>
       <GiftRibbon
-        color={adaptedPatternColor}
-        text={lang('ActionStarGiftUniqueRibbon')}
+        color={action.gift.isBurned ? 'red' : adaptedPatternColor}
+        text={action.gift.isBurned
+          ? lang('ActionStarGiftUniqueBurnedRibbon')
+          : lang('ActionStarGiftUniqueRibbon')}
       />
       <div className={styles.info}>
         <h3 className={styles.title}>
-          {isSelf ? lang('ActionStarGiftSelf') : lang(
-            shouldShowFrom ? 'ActionStarGiftFrom' : 'ActionStarGiftTo',
-            {
-              peer: renderPeerLink(peer?.id, peerTitle || fallbackPeerTitle),
-            },
-            {
-              withNodes: true,
-            },
-          )}
+          {isSelf
+            ? (action.gift.isCrafted ? lang('ActionStarGiftCrafted') : lang('ActionStarGiftSelf'))
+            : lang(
+              shouldShowFrom ? 'ActionStarGiftFrom' : 'ActionStarGiftTo',
+              {
+                peer: renderPeerLink(peer?.id, peerTitle || fallbackPeerTitle),
+              },
+              {
+                withNodes: true,
+              },
+            )}
         </h3>
         <div className={styles.subtitle} style={`color: ${backdrop.textColor}`}>
           {lang('GiftUnique', { title: action.gift.title, number: action.gift.number })}

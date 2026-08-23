@@ -1,5 +1,6 @@
 import {
   Api as GramJs,
+  errors,
   sessions,
   type Update,
 } from '../../../lib/gramjs';
@@ -18,7 +19,7 @@ import type {
 
 import {
   APP_CODE_NAME,
-  DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, UPLOAD_WORKERS,
+  DEBUG, DEBUG_GRAMJS, IS_TEST, LANG_PACK, TELEGRAM_API_HASH, TELEGRAM_API_ID, UPLOAD_WORKERS,
 } from '../../../config';
 import { pause } from '../../../util/schedulers';
 import { buildWebPage } from '../apiBuilders/messageContent';
@@ -32,14 +33,18 @@ import { buildApiUser, buildApiUserFullInfo } from '../apiBuilders/users';
 import {
   buildInputChannelFromLocalDb,
   buildInputPeerFromLocalDb,
+  buildInputUserFromLocalDb,
   DEFAULT_PRIMITIVES,
   getEntityTypeById,
 } from '../gramjsBuilders';
 import {
+  addDocumentToLocalDb,
+  addSavedMusicRepairInfo,
   addStoryToLocalDb, addUserToLocalDb,
   addWebPageMediaToLocalDb,
 } from '../helpers/localDb';
 import {
+  buildApiError,
   isResponseUpdate, log,
 } from '../helpers/misc';
 import localDb, { clearLocalDb, type RepairInfo } from '../localDb';
@@ -49,13 +54,22 @@ import {
   getDifference,
   init as initUpdatesManager,
   processUpdate,
+  requestChannelDifference as requestChannelDifferenceFromUpdates,
   reset as resetUpdatesManager,
-  scheduleGetChannelDifference,
+  setOpenedChannelIds as setOpenedChannelIdsInUpdates,
   updateChannelState,
 } from '../updates/updateManager';
 import {
-  onAuthError, onAuthReady, onCurrentUserUpdate, onRequestCode, onRequestPassword, onRequestPhoneNumber,
-  onRequestQrCode, onRequestRegistration, onWebAuthTokenFailed,
+  onAuthError,
+  onAuthReady,
+  onCurrentUserUpdate,
+  onPasskeyOption,
+  onRequestCode,
+  onRequestPassword,
+  onRequestPhoneNumber,
+  onRequestQrCode,
+  onRequestRegistration,
+  onWebAuthTokenFailed,
 } from './auth';
 import downloadMediaWithClient, { parseMediaUrl } from './media';
 
@@ -84,6 +98,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
     userAgent, platform, sessionData, isWebmSupported, maxBufferSize, webAuthToken, dcId,
     mockScenario, shouldForceHttpTransport, shouldAllowHttpTransport,
     shouldDebugExportedSenders, langCode, isTestServerRequested, accountIds,
+    hasPasskeySupport,
   } = initialArgs;
 
   const session = new sessions.CallbackSession(sessionData, onSessionUpdate);
@@ -94,8 +109,8 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
 
   client = new TelegramClient(
     session,
-    Number(process.env.TELEGRAM_API_ID),
-    process.env.TELEGRAM_API_HASH,
+    TELEGRAM_API_ID,
+    TELEGRAM_API_HASH,
     {
       deviceModel: navigator.userAgent || userAgent || DEFAULT_USER_AGENT,
       systemVersion: platform || DEFAULT_PLATFORM,
@@ -110,7 +125,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
       langCode,
       systemLangCode: navigator.language,
       isTestServerRequested,
-    } as any,
+    },
   );
 
   client.addEventHandler(handleGramJsUpdate, gramJsUpdateEventBuilder);
@@ -131,6 +146,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
         phoneCode: onRequestCode,
         password: onRequestPassword,
         firstAndLastNames: onRequestRegistration,
+        onPasskeyOption,
         qrCode: onRequestQrCode,
         onError: onAuthError,
         initialMethod: platform === 'iOS' || platform === 'Android' ? 'phoneNumber' : 'qrCode',
@@ -139,6 +155,7 @@ export async function init(initialArgs: ApiInitialArgs, onConnected?: NoneToVoid
         webAuthTokenFailed: onWebAuthTokenFailed,
         mockScenario,
         accountIds,
+        hasPasskeySupport,
       }, onConnected);
     } catch (err: any) {
       // eslint-disable-next-line no-console
@@ -194,11 +211,11 @@ export async function destroy(noLogOut = false, noClearLocalDb = false) {
     resetUpdatesManager();
   }
 
-  await client.destroy();
+  client.destroy();
 }
 
-export async function disconnect() {
-  await client.disconnect();
+export function disconnect() {
+  client.disconnect();
 }
 
 export function getClient() {
@@ -440,8 +457,9 @@ export async function fetchCurrentUser() {
 }
 
 export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, request: T) {
-  const message = err instanceof RPCError ? err.errorMessage : err.message;
-  const isSlowMode = message === 'FLOOD' && (
+  const { message, code } = buildApiError(err);
+
+  const isSlowMode = err instanceof errors.FloodError && (
     request instanceof GramJs.messages.SendMessage
     || request instanceof GramJs.messages.SendMedia
     || request instanceof GramJs.messages.SendMultiMedia
@@ -451,6 +469,7 @@ export function dispatchErrorUpdate<T extends GramJs.AnyRequest>(err: Error, req
     '@type': 'error',
     error: {
       message,
+      code,
       isSlowMode,
       hasErrorKey: true,
     },
@@ -466,7 +485,7 @@ function dispatchNotSupportedInFrozenAccountUpdate<T extends GramJs.AnyRequest>(
     || request instanceof GramJs.phone.GetGroupParticipants
     || request instanceof GramJs.channels.GetParticipant
     || request instanceof GramJs.channels.GetParticipants
-    || request instanceof GramJs.channels.GetForumTopics) {
+    || request instanceof GramJs.messages.GetForumTopics) {
     return;
   }
 
@@ -534,9 +553,39 @@ export async function repairFileReference({
       const result = await repairWebPageMedia(localRepairInfo.url);
       return result;
     }
+
+    if (localRepairInfo.type === 'savedMusic') {
+      const result = await repairSavedMusicMedia(localRepairInfo.peerId, entityId);
+      return result;
+    }
   }
 
   return false;
+}
+
+async function repairSavedMusicMedia(peerId: string, documentId: string) {
+  const id = buildInputUserFromLocalDb(peerId);
+  const document = localDb.documents[documentId];
+  if (!id || !document) return false;
+
+  const result = await invokeRequest(new GramJs.users.GetSavedMusicByID({
+    id,
+    documents: [new GramJs.InputDocument({
+      id: document.id,
+      accessHash: document.accessHash,
+      fileReference: document.fileReference,
+    })],
+  }), {
+    shouldIgnoreErrors: true,
+  });
+
+  if (!(result instanceof GramJs.users.SavedMusic)) return false;
+
+  result.documents.forEach((doc) => {
+    addDocumentToLocalDb(addSavedMusicRepairInfo(doc, peerId));
+  });
+
+  return true;
 }
 
 async function repairMessageMedia(peerId: string, messageId: number) {
@@ -645,5 +694,9 @@ export function setShouldDebugExportedSenders(value: boolean) {
 }
 
 export function requestChannelDifference(channelId: string) {
-  scheduleGetChannelDifference(channelId);
+  requestChannelDifferenceFromUpdates(channelId);
+}
+
+export function setOpenedChannelIds(channelIds: string[]) {
+  setOpenedChannelIdsInUpdates(channelIds);
 }

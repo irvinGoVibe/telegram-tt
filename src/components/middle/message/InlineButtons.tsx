@@ -1,85 +1,118 @@
-import type { FC, TeactNode } from '../../../lib/teact/teact';
+import type { TeactNode } from '../../../lib/teact/teact';
 import { memo, useMemo } from '../../../lib/teact/teact';
 
-import type { ApiKeyboardButton, ApiMessage } from '../../../api/types';
-import type { ActionPayloads } from '../../../global/types';
+import type { ApiKeyboardButton } from '../../../api/types';
 
 import { RE_TME_LINK } from '../../../config';
+import { isKeyboardButtonUnsupportedForEphemeral } from '../../../global/helpers';
+import buildClassName from '../../../util/buildClassName';
 import renderKeyboardButtonText from '../composer/helpers/renderKeyboardButtonText';
 
-import useOldLang from '../../../hooks/useOldLang';
+import useLang from '../../../hooks/useLang';
 
+import CustomEmoji from '../../common/CustomEmoji';
 import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 
-import './InlineButtons.scss';
+import styles from './InlineButtons.module.scss';
 
 type OwnProps = {
-  message: ApiMessage;
-  onClick: (payload: ActionPayloads['clickBotInlineButton']) => void;
+  className?: string;
+  inlineButtons: ApiKeyboardButton[][];
+  isEphemeral?: boolean;
+  onClick: (payload: ApiKeyboardButton) => void;
 };
 
-const InlineButtons: FC<OwnProps> = ({ message, onClick }) => {
-  const lang = useOldLang();
+const ICON_SIZE = 16;
+
+const InlineButtons = ({ className, inlineButtons, isEphemeral, onClick }: OwnProps) => {
+  const lang = useLang();
 
   const renderIcon = (button: ApiKeyboardButton) => {
     const { type } = button;
     switch (type) {
       case 'url': {
-        if (!RE_TME_LINK.test(button.url)) {
-          return <Icon className="corner-icon" name="arrow-right" />;
+        const { url } = button;
+        const isTelegramLink = RE_TME_LINK.test(url);
+
+        if (isTelegramLink && url.includes('?startapp')) {
+          return <Icon className={styles.cornerIcon} name="webapp" />;
+        } else if (!isTelegramLink) {
+          return <Icon className={styles.cornerIcon} name="arrow-right" />;
         }
-        break;
+
+        return;
       }
       case 'urlAuth':
-        return <Icon className="corner-icon" name="arrow-right" />;
+        return <Icon className={styles.cornerIcon} name="arrow-right" />;
       case 'buy':
       case 'receipt':
-        return <Icon className="corner-icon" name="card" />;
+        return <Icon className={styles.cornerIcon} name="card" />;
       case 'switchBotInline':
-        return <Icon className="corner-icon" name="share-filled" />;
+        return <Icon className={styles.cornerIcon} name="share-filled" />;
       case 'webView':
       case 'simpleWebView':
-        return <Icon className="corner-icon" name="webapp" />;
+        return <Icon className={styles.cornerIcon} name="webapp" />;
       case 'copy':
-        return <Icon className="corner-icon" name="copy" />;
+        return <Icon className={styles.cornerIcon} name="copy" />;
       case 'suggestedMessage':
         if (button.buttonType === 'suggestChanges') {
-          return <Icon className="left-icon" name="edit" />;
+          return <Icon className={styles.leftIcon} name="edit" />;
         }
         if (button.buttonType === 'approve') {
-          return <Icon className="left-icon" name="check" />;
+          return <Icon className={styles.leftIcon} name="check" />;
         }
         if (button.buttonType === 'decline') {
-          return <Icon className="left-icon" name="close" />;
+          return <Icon className={styles.leftIcon} name="close" />;
+        }
+        break;
+      case 'giftOffer':
+        if (button.buttonType === 'accept') {
+          return <Icon className={styles.leftIcon} name="check" />;
+        }
+        if (button.buttonType === 'reject') {
+          return <Icon className={styles.leftIcon} name="close" />;
         }
         break;
     }
-    return undefined;
+
+    return;
   };
 
   const buttonTexts = useMemo(() => {
     const texts: TeactNode[][] = [];
-    message.inlineButtons!.forEach((row) => {
+    inlineButtons.forEach((row) => {
       texts.push(row.map((button) => renderKeyboardButtonText(lang, button)));
     });
     return texts;
-  }, [lang, message.inlineButtons]);
+  }, [lang, inlineButtons]);
 
   return (
-    <div className="InlineButtons">
-      {message.inlineButtons!.map((row, i) => (
-        <div className="row">
+    <div className={buildClassName(styles.root, className)}>
+      {inlineButtons.map((row, i) => (
+        <div className={styles.row}>
           {row.map((button, j) => (
             <Button
+              className={buildClassName(
+                styles.button, button.style?.type && styles[`${button.style.type}Tint`],
+              )}
               size="tiny"
               ripple
-              disabled={button.type === 'unsupported' || (button.type === 'suggestedMessage' && button.disabled)}
-
-              onClick={() => onClick({ chatId: message.chatId, messageId: message.id, button })}
+              noForcedUpperCase
+              disabled={button.type === 'unsupported'
+                || (isEphemeral && isKeyboardButtonUnsupportedForEphemeral(button))
+                || (button.type === 'suggestedMessage' && button.disabled)}
+              onClick={() => onClick(button)}
             >
               {renderIcon(button)}
-              <span className="inline-button-text">
+              <span className={styles.inlineButtonText}>
+                {button.style?.iconId && (
+                  <CustomEmoji
+                    className={styles.customEmojiIcon}
+                    documentId={button.style.iconId}
+                    size={ICON_SIZE}
+                  />
+                )}
                 {buttonTexts[i][j]}
               </span>
             </Button>

@@ -17,8 +17,9 @@
 
 .back-button {
   position: absolute;
-  z-index: 2;
-  margin: -0.5rem;
+  z-index: 3;
+  top: 0.875rem;
+  left: 0.875rem;
 }
 
 .white-back-button {
@@ -38,11 +39,6 @@
 
 .frame {
   aspect-ratio: 1;
-
-  @supports not (aspect-ratio: 1) {
-    height: 0;
-    padding-bottom: 100%;
-  }
 }
 
 .slide {
@@ -57,7 +53,7 @@
   margin-bottom: 7.5rem;
 }
 
-.limits, .stories {
+.limits, .stories, .noForward {
   background: var(--color-background);
 }
 
@@ -70,6 +66,13 @@
 
 .stories {
   height: calc(var(--vh) * 55 + 100px);
+}
+
+.noForwardFooter {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
 }
 
 .header {
@@ -104,11 +107,6 @@
   border-top-right-radius: var(--border-radius-default);
 
   background: var(--premium-feature-background);
-
-  @supports not (aspect-ratio: 1) {
-    height: 0;
-    padding-bottom: 100%;
-  }
 }
 
 .title {
@@ -121,7 +119,7 @@
 }
 
 .description {
-  padding: 0 5%;
+  padding: 0 max(5%, 2rem);
 
   font-size: 1rem;
   font-weight: var(--font-weight-normal);

@@ -13,15 +13,20 @@ export function getStoryMediaHash(story: ApiStory, size: StorySize): string;
 export function getStoryMediaHash(
   story: ApiStory, size: StorySize = 'preview', isAlt?: boolean,
 ) {
-  const isVideo = Boolean(story.content.video);
+  const video = story.content.video;
+  const photo = story.content.photo;
 
-  if (isVideo) {
-    if (isAlt && !story.content.altVideos) return undefined;
-    const media = isAlt ? getPreferredAlt(story.content.altVideos!) : story.content.video!;
+  if (video) {
+    if (isAlt && !video.altVideos) return undefined;
+    const media = isAlt ? getPreferredAlt(video.altVideos!) : video;
     return getVideoMediaHash(media, size);
   }
 
-  return getPhotoMediaHash(story.content.photo!, size);
+  if (photo) {
+    return getPhotoMediaHash(photo, size);
+  }
+
+  return undefined;
 }
 
 function getPreferredAlt(alts: ApiVideo[]) {

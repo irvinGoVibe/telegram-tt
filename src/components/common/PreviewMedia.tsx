@@ -5,7 +5,7 @@ import type { ApiBotPreviewMedia } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 
 import buildClassName from '../../util/buildClassName';
-import { formatMediaDuration } from '../../util/dates/dateFormat';
+import { formatMediaDuration } from '../../util/dates/oldDateFormat';
 import stopEvent from '../../util/stopEvent';
 
 import useMessageMediaHash from '../../hooks/media/useMessageMediaHash';
@@ -20,6 +20,7 @@ import './Media.scss';
 type OwnProps = {
   media: ApiBotPreviewMedia;
   idPrefix?: string;
+  className?: string;
   isProtected?: boolean;
   observeIntersection?: ObserveFn;
   onClick: (index: number) => void;
@@ -29,6 +30,7 @@ type OwnProps = {
 const PreviewMedia: FC<OwnProps> = ({
   media,
   idPrefix = 'preview-media',
+  className,
   isProtected,
   observeIntersection,
   onClick,
@@ -53,7 +55,7 @@ const PreviewMedia: FC<OwnProps> = ({
     <div
       ref={ref}
       id={`${idPrefix}${index}`}
-      className="Media scroll-item"
+      className={buildClassName('Media scroll-item', className)}
       onClick={handleClick}
     >
       <img

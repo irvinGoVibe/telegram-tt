@@ -1,8 +1,8 @@
 import type { ActionReturnType } from '../../types';
-import { PaymentStep } from '../../../types';
 
 import { SERVICE_NOTIFICATIONS_USER_ID } from '../../../config';
 import { applyLangPackDifference, getTranslationFn, requestLangPackDifference } from '../../../util/localization';
+import { isChatChannel, selectTabBrowserState } from '../../helpers';
 import { getPeerTitle } from '../../helpers/peers';
 import { addActionHandler, setGlobal } from '../../index';
 import {
@@ -13,18 +13,17 @@ import {
   removeBlockedUser,
   removePeerStory,
   replaceWebPage,
-  setConfirmPaymentUrl,
-  setPaymentStep,
   updateFullWebPage,
   updateLastReadStoryForPeer,
   updatePeerStory,
   updatePeersWithStories,
   updatePoll,
   updateStealthMode,
-  updateThreadInfos,
 } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
+import { updateThreadInfo } from '../../reducers/threads';
 import {
+  selectChat,
   selectPeer,
   selectPeerStories,
   selectPeerStory,
@@ -39,10 +38,14 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       } = update;
       if (users) global = addUsers(global, users);
       if (chats) global = addChats(global, chats);
-      if (threadInfos) global = updateThreadInfos(global, threadInfos);
+      if (threadInfos) {
+        threadInfos.forEach((threadInfo) => {
+          global = updateThreadInfo(global, threadInfo);
+        });
+      }
       if (polls) {
         polls.forEach((poll) => {
-          global = updatePoll(global, poll.id, poll);
+          global = updatePoll(global, poll.summary.id, poll);
         });
       }
       if (webPages) {
@@ -79,6 +82,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
     case 'updateConfig':
       actions.loadConfig();
+      break;
+
+    case 'updateAiComposeTones':
+      actions.loadAiComposeTones();
       break;
 
     case 'updateNewAuthorization': {
@@ -145,24 +152,67 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       setGlobal(global);
       break;
 
-    case 'updatePaymentVerificationNeeded':
-      Object.values(global.byTabId).forEach(({ id: tabId }) => {
-        global = setConfirmPaymentUrl(global, update.url, tabId);
-        global = setPaymentStep(global, PaymentStep.ConfirmPayment, tabId);
-      });
-      setGlobal(global);
-      break;
-
     case 'updateWebViewResultSent':
       Object.values(global.byTabId).forEach((tabState) => {
-        Object.entries(tabState.webApps.openedWebApps).forEach(([webAppKey, webApp]) => {
-          if (webApp.queryId === update.queryId) {
+        Object.entries(selectTabBrowserState(tabState).openedTabs).forEach(([tabKey, browserTab]) => {
+          if (browserTab.type === 'webApp' && browserTab.webApp.queryId === update.queryId) {
             actions.resetDraftReplyInfo({ tabId: tabState.id });
-            actions.closeWebApp({ key: webAppKey, tabId: tabState.id });
+            actions.closeBrowserTab({ key: tabKey, skipClosingConfirmation: true, tabId: tabState.id });
           }
         });
       });
       break;
+
+    case 'updateJoinChatWebViewDecision': {
+      const { peerId, queryId, result } = update;
+      const chat = selectChat(global, peerId);
+
+      Object.values(global.byTabId).forEach((tabState) => {
+        const tabId = tabState.id;
+        Object.entries(selectTabBrowserState(tabState).openedTabs).forEach(([webAppKey, browserTab]) => {
+          if (browserTab.type !== 'webApp') return;
+          const { webApp } = browserTab;
+          if (webApp.queryId !== queryId) return;
+
+          const isChannel = webApp.isJoinChatBroadcast ?? Boolean(chat && isChatChannel(chat));
+
+          if (result.type === 'webView') {
+            const { botId, peerId: webAppPeerId, isJoinChatBroadcast } = webApp;
+            actions.closeBrowserTab({ key: webAppKey, skipClosingConfirmation: true, tabId });
+            actions.openChatInviteWebView({
+              botId,
+              url: result.url,
+              queryId,
+              peerId: webAppPeerId || peerId,
+              isBroadcast: isJoinChatBroadcast ?? isChannel,
+              tabId,
+            });
+            return;
+          }
+
+          actions.closeBrowserTab({ key: webAppKey, skipClosingConfirmation: true, tabId });
+
+          if (result.type === 'approved') {
+            actions.openChat({ id: peerId, tabId });
+            actions.showNotification({
+              message: { key: isChannel ? 'ActionChannelJoinedByRequestChannelYou' : 'ActionJoinedByRequestYou' },
+              tabId,
+            });
+          } else if (result.type === 'declined') {
+            actions.showNotification({
+              message: { key: isChannel ? 'RequestToJoinChannelDeclined' : 'RequestToJoinGroupDeclined' },
+              tabId,
+            });
+          } else if (result.type === 'queued') {
+            actions.showNotification({
+              message: { key: isChannel ? 'RequestToJoinChannelSentDescription' : 'RequestToJoinGroupSentDescription' },
+              tabId,
+            });
+          }
+        });
+      });
+      break;
+    }
 
     case 'updateWebPage': {
       const { webPage } = update;
@@ -240,6 +290,40 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
     case 'newMessage': {
       const action = update.message.content?.action;
+
+      if (action?.type === 'starGift' && update.message.isOutgoing) {
+        const { gift } = action;
+        if (!gift.isAuction || update.message.chatId === SERVICE_NOTIFICATIONS_USER_ID) return undefined;
+
+        const { chatId, id } = update.message;
+
+        if (!chatId || !id) return;
+
+        Object.values(global.byTabId).forEach(({ id: tabId }) => {
+          actions.focusMessage({
+            chatId,
+            messageId: id,
+            tabId,
+          });
+          actions.closeGiftAuctionBidModal({ tabId });
+          actions.closeGiftModal({ tabId });
+
+          actions.showNotification({
+            icon: 'auction-filled',
+            message: {
+              key: 'GiftAuctionWonNotification',
+              variables: {
+                gift: gift.title,
+              },
+            },
+            tabId,
+          });
+
+          actions.requestConfetti({ withStars: true, tabId });
+        });
+        return undefined;
+      }
+
       if (!update.message.isOutgoing && update.message.chatId !== SERVICE_NOTIFICATIONS_USER_ID) return undefined;
       if (action?.type !== 'starGiftUnique') return undefined;
       const actionStarGift = action.gift;
@@ -271,7 +355,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           if (receiver) {
             actions.focusMessage({
               chatId: receiver.id,
-              messageId: update.message.id!,
+              messageId: update.message.id,
               tabId,
             });
 
@@ -297,6 +381,17 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
           global = updateTabState(global, {
             isWaitingForStarGiftTransfer: undefined,
+          }, tabId);
+
+          actions.reloadPeerSavedGifts({ peerId: global.currentUserId! });
+        }
+
+        if (tabState.giftCraftModal && actionStarGift.isCrafted) {
+          global = updateTabState(global, {
+            giftCraftModal: {
+              ...tabState.giftCraftModal,
+              craftResult: { success: true, gift: actionStarGift },
+            },
           }, tabId);
         }
       });

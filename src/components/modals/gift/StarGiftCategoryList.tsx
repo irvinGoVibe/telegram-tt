@@ -1,5 +1,6 @@
+import type { ElementRef } from '../../../lib/teact/teact';
 import {
-  memo, useMemo, useRef, useState,
+  memo, useRef, useState,
 } from '../../../lib/teact/teact';
 import { withGlobal } from '../../../global';
 
@@ -10,12 +11,15 @@ import buildClassName from '../../../util/buildClassName';
 import useHorizontalScroll from '../../../hooks/useHorizontalScroll';
 import useLang from '../../../hooks/useLang';
 
-import StarIcon from '../../common/icons/StarIcon';
-
 import styles from './StarGiftCategoryList.module.scss';
 
 type OwnProps = {
+  ref?: ElementRef<HTMLDivElement>;
+  areUniqueStarGiftsDisallowed?: boolean;
   areLimitedStarGiftsDisallowed?: boolean;
+  isSelf?: boolean;
+  hasMyUnique?: boolean;
+  isPinned?: boolean;
   onCategoryChanged: (category: StarGiftCategory) => void;
 };
 
@@ -24,35 +28,35 @@ type StateProps = {
 };
 
 const StarGiftCategoryList = ({
+  ref: externalRef,
   idsByCategory,
   onCategoryChanged,
+  areUniqueStarGiftsDisallowed,
   areLimitedStarGiftsDisallowed,
+  isSelf,
+  hasMyUnique,
+  isPinned,
 }: StateProps & OwnProps) => {
-  const ref = useRef<HTMLDivElement>();
+  let ref = useRef<HTMLDivElement>();
+  if (externalRef) {
+    ref = externalRef;
+  }
 
   const lang = useLang();
-  const starCategories: number[] | undefined = useMemo(() => idsByCategory && Object.keys(idsByCategory)
-    .filter((category) => category !== 'all' && category !== 'limited')
-    .map(Number)
-    .sort((a, b) => a - b),
-  [idsByCategory]);
 
-  const hasResale = idsByCategory && idsByCategory['resale'].length > 0;
+  const hasCollectible = Boolean(idsByCategory?.collectible?.length);
 
   const [selectedCategory, setSelectedCategory] = useState<StarGiftCategory>('all');
 
   function handleItemClick(category: StarGiftCategory) {
     setSelectedCategory(category);
-    onCategoryChanged(
-      category,
-    );
+    onCategoryChanged(category);
   }
 
   function renderCategoryName(category: StarGiftCategory) {
     if (category === 'all') return lang('AllGiftsCategory');
-    if (category === 'stock') return lang('StockGiftsCategory');
-    if (category === 'limited') return lang('LimitedGiftsCategory');
-    if (category === 'resale') return lang('GiftCategoryResale');
+    if (category === 'myUnique') return lang('GiftCategoryMyGifts');
+    if (category === 'collectible') return lang('GiftCategoryCollectibles');
     return category;
   }
 
@@ -65,13 +69,6 @@ const StarGiftCategoryList = ({
         )}
         onClick={() => handleItemClick(category)}
       >
-        {Number.isInteger(category) && (
-          <StarIcon
-            className={styles.star}
-            type="gold"
-            size="middle"
-          />
-        )}
         {renderCategoryName(category)}
       </div>
     );
@@ -80,17 +77,16 @@ const StarGiftCategoryList = ({
   useHorizontalScroll(ref, undefined, true);
 
   return (
-    <div ref={ref} className={buildClassName(styles.list, 'no-scrollbar')}>
+    <div ref={ref} className={buildClassName(styles.list, isPinned && styles.pinned, 'no-scrollbar')}>
       {renderCategoryItem('all')}
-      {!areLimitedStarGiftsDisallowed && renderCategoryItem('limited')}
-      {!areLimitedStarGiftsDisallowed && hasResale && renderCategoryItem('resale')}
-      {renderCategoryItem('stock')}
-      {starCategories?.map(renderCategoryItem)}
+      {!areUniqueStarGiftsDisallowed && !isSelf && hasMyUnique && renderCategoryItem('myUnique')}
+      {(!areUniqueStarGiftsDisallowed || !areLimitedStarGiftsDisallowed)
+        && hasCollectible && renderCategoryItem('collectible')}
     </div>
   );
 };
 
-export default memo(withGlobal(
+export default memo(withGlobal<OwnProps>(
   (global): Complete<StateProps> => {
     const { starGifts } = global;
 

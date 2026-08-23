@@ -1,8 +1,8 @@
 import { getGlobal } from '../../global';
 
-import type { ApiChatFolder } from '../../api/types';
 import type { IconName } from '../../types/icons';
 import type { Dispatch, StateReducer } from '../useReducer';
+import { type ApiChatFolder } from '../../api/types';
 
 import { selectChat } from '../../global/selectors';
 import { omit, pick } from '../../util/iteratees';
@@ -25,8 +25,8 @@ const EXCLUDE_FILTER_FIELDS: Array<keyof FolderExcludeFilters> = [
 ];
 
 export function selectChatFilters(state: FoldersState, mode: 'included' | 'excluded', selectTemp?: boolean) {
-  let selectedChatIds: string[] = [];
-  let selectedChatTypes: FolderChatType['key'][] = [];
+  let selectedChatIds: string[];
+  let selectedChatTypes: FolderChatType['key'][];
 
   if (mode === 'included') {
     const {
@@ -109,15 +109,15 @@ export type FoldersState = {
   error?: string;
   folderId?: number;
   chatFilter: string;
-  folder: Omit<ApiChatFolder, 'id' | 'description' | 'emoticon'>;
+  folder: Omit<ApiChatFolder, 'id' | 'description'>;
   includeFilters?: FolderIncludeFilters;
   excludeFilters?: FolderExcludeFilters;
 };
 export type FoldersActions = (
   'setTitle' | 'saveFilters' | 'editFolder' | 'reset' | 'setChatFilter' | 'setIsLoading' | 'setError' |
   'editIncludeFilters' | 'editExcludeFilters' | 'setIncludeFilters' | 'setExcludeFilters' | 'setIsTouched' |
-  'setFolderId' | 'setIsChatlist' | 'setColor'
-  );
+  'setFolderId' | 'setIsChatlist' | 'setColor' | 'setEmoticon'
+);
 export type FolderEditDispatch = Dispatch<FoldersState, FoldersActions>;
 
 const INITIAL_STATE: FoldersState = {
@@ -140,7 +140,9 @@ const foldersReducer: StateReducer<FoldersState, FoldersActions> = (
         ...state,
         folder: {
           ...state.folder,
-          title: { text: action.payload },
+          title: typeof action.payload === 'string'
+            ? { ...state.folder.title, text: action.payload }
+            : { ...state.folder.title, ...action.payload },
         },
         isTouched: true,
       };
@@ -257,6 +259,16 @@ const foldersReducer: StateReducer<FoldersState, FoldersActions> = (
         },
         isTouched: true,
       };
+    case 'setEmoticon': {
+      return {
+        ...state,
+        folder: {
+          ...state.folder,
+          emoticon: action.payload,
+        },
+        isTouched: true,
+      };
+    }
     case 'reset':
       return INITIAL_STATE;
     default:

@@ -1,12 +1,12 @@
-import type { FC } from '../../../lib/teact/teact';
-import { memo, useCallback, useState } from '../../../lib/teact/teact';
+import { memo, useState } from '../../../lib/teact/teact';
 
 import { ApiMessageEntityTypes } from '../../../api/types';
 
 import buildClassName from '../../../util/buildClassName';
-import { getPrettyCodeLanguageName } from '../../../util/prettyCodeLanguageNames';
+import { getPrettyCodeLanguageName } from '../../../util/codeLanguages';
 
 import useAsync from '../../../hooks/useAsync';
+import useLastCallback from '../../../hooks/useLastCallback';
 
 import PeerColorWrapper from '../PeerColorWrapper';
 import CodeOverlay from './CodeOverlay';
@@ -19,8 +19,8 @@ export type OwnProps = {
   noCopy?: boolean;
 };
 
-const CodeBlock: FC<OwnProps> = ({ text, language, noCopy }) => {
-  const [isWordWrap, setWordWrap] = useState(true);
+const CodeBlock = ({ text, language, noCopy }: OwnProps) => {
+  const [isWordWrap, setIsWordWrap] = useState(true);
 
   const { result: highlighted } = useAsync(() => {
     if (!language) return Promise.resolve(undefined);
@@ -28,13 +28,13 @@ const CodeBlock: FC<OwnProps> = ({ text, language, noCopy }) => {
       .then((lib) => lib.default(text, language));
   }, [language, text]);
 
-  const handleWordWrapToggle = useCallback((wrap) => {
-    setWordWrap(wrap);
-  }, []);
+  const handleWordWrapToggle = useLastCallback((wrap) => {
+    setIsWordWrap(wrap);
+  });
 
   const blockClass = buildClassName(
     'code-block',
-    !isWordWrap && 'no-word-wrap',
+    !isWordWrap && 'no-word-wrap custom-scroll-x no-scrollbar',
   );
 
   return (

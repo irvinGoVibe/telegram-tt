@@ -14,7 +14,6 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import AnimatedIconWithPreview from '../../common/AnimatedIconWithPreview';
-import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import ListItem from '../../ui/ListItem';
 import Modal from '../../ui/Modal';
@@ -65,6 +64,8 @@ const ReportModal = ({
     const sectionDepth = modal.sections.length - 1;
     return [modal?.sections[sectionDepth], sectionDepth];
   }, [modal]);
+  const isOptionsSection = renderingSection?.type === 'options';
+  const isCommentSection = renderingSection?.type === 'comment';
 
   const handleBackClick = useLastCallback(() => {
     openPreviousReportModal();
@@ -79,7 +80,7 @@ const ReportModal = ({
       return undefined;
     }
 
-    const hasSubtitle = Boolean(renderingSection?.subtitle);
+    const hasSubtitle = Boolean(isOptionsSection && renderingSection.subtitle);
 
     return (
       <div className="modal-header-condensed">
@@ -87,35 +88,33 @@ const ReportModal = ({
           <Button
             round
             color="translucent"
-            size="smaller"
+            size="tiny"
             ariaLabel={lang('Back')}
             onClick={handleBackClick}
-          >
-            <Icon name="arrow-left" />
-          </Button>
+            iconName="arrow-left"
+          />
         ) : (
           <Button
             round
             color="translucent"
-            size="smaller"
+            size="tiny"
             ariaLabel={lang('Close')}
             onClick={handleCloseClick}
-          >
-            <Icon name="close" />
-          </Button>
+            iconName="close"
+          />
         )}
         <div className={buildClassName('modal-title', styles.modalTitle, hasSubtitle && styles.titleMultiline)}>
           <h3 className={buildClassName(styles.title, renderingDepth && styles.hasDepth)}>
-            {renderingSection?.options
+            {isOptionsSection
               ? lang(modal?.subject === 'story' ? 'ReportStory' : 'Report') : renderingSection?.title}
           </h3>
-          {hasSubtitle && (
+          {isOptionsSection && renderingSection.subtitle && (
             <span className={styles.subtitle}>{renderingSection.subtitle}</span>
           )}
         </div>
       </div>
     );
-  }, [lang, modal, renderingDepth, renderingSection?.options, renderingSection?.subtitle, renderingSection?.title]);
+  }, [isOptionsSection, lang, modal, renderingDepth, renderingSection]);
 
   const handleTextChange = useLastCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
@@ -152,15 +151,16 @@ const ReportModal = ({
     const {
       messageIds, subject, peerId, chatId,
     } = modal!;
+    const option = isCommentSection ? renderingSection.option : undefined;
     switch (subject) {
       case 'message':
         reportMessages({
-          chatId: chatId!, messageIds, option: renderingSection?.option, description: text,
+          chatId: chatId!, messageIds, option, description: text,
         });
         break;
       case 'story':
         reportStory({
-          storyId: messageIds?.[0], peerId: peerId!, option: renderingSection?.option, description: text,
+          storyId: messageIds?.[0], peerId: peerId!, option, description: text,
         });
         break;
     }
@@ -183,9 +183,8 @@ const ReportModal = ({
         onStart={handleAnimationStart}
       >
         <div className={styles.slide}>
-          {renderingSection?.options
-            ? <h3 className={styles.sectionTitle}>{renderingSection?.title}</h3> : undefined}
-          {renderingSection?.options?.map((option) => (
+          {isOptionsSection ? <h3 className={styles.sectionTitle}>{renderingSection.title}</h3> : undefined}
+          {isOptionsSection && renderingSection.options.map((option) => (
             <ListItem
               narrow
               nonInteractive
@@ -198,7 +197,7 @@ const ReportModal = ({
               <div className={styles.optionText}>{option.text}</div>
             </ListItem>
           ))}
-          {renderingSection?.option ? (
+          {isCommentSection ? (
             <div className={styles.block}>
               <AnimatedIconWithPreview
                 tgsUrl={LOCAL_TGS_URLS.Report}

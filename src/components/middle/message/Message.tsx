@@ -1,6 +1,5 @@
-import type { FC } from '../../../lib/teact/teact';
-import type React from '../../../lib/teact/teact';
 import {
+  type ElementRef,
   memo,
   useCallback,
   useEffect,
@@ -16,10 +15,11 @@ import type {
   ApiAvailableReaction,
   ApiChat,
   ApiChatMember,
+  ApiKeyboardButton,
   ApiMessage,
   ApiMessageOutgoingStatus,
+  ApiMessagePoll,
   ApiPeer,
-  ApiPoll,
   ApiReaction,
   ApiReactionKey,
   ApiSavedReactionTag,
@@ -29,26 +29,28 @@ import type {
   ApiUser,
   ApiWebPage,
 } from '../../../api/types';
-import type { ActionPayloads } from '../../../global/types';
 import type { ObserveFn } from '../../../hooks/useIntersectionObserver';
 import type {
   ActiveEmojiInteraction,
   ChatTranslatedMessages,
   FocusDirection,
   IAlbum,
+  IDocumentGroup,
   MessageListType,
   ScrollTargetPosition,
+  TextSummary,
   ThemeKey,
   ThreadId,
+  TranslationTone,
 } from '../../../types';
 import type { Signal } from '../../../util/signals';
-import type { OnIntersectPinnedMessage } from '../hooks/usePinnedMessage';
 import { MAIN_THREAD_ID } from '../../../api/types';
 import { AudioOrigin } from '../../../types';
 
 import { EMOJI_STATUS_LOOP_LIMIT, MESSAGE_APPEARANCE_DELAY } from '../../../config';
 import {
   areReactionsEmpty,
+  getAllowedAttachmentOptions,
   getIsDownloading,
   getMainUsername,
   getMessageContent,
@@ -71,13 +73,14 @@ import {
   isReplyToMessage,
   isSystemBot,
 } from '../../../global/helpers';
-import { getPeerFullTitle } from '../../../global/helpers/peers';
-import { getMessageReplyInfo, getStoryReplyInfo } from '../../../global/helpers/replies';
+import { getPeerFullTitle, getPeerTitle } from '../../../global/helpers/peers';
+import { getEphemeralReplyInfo, getMessageReplyInfo, getStoryReplyInfo } from '../../../global/helpers/replies';
 import {
   selectActiveDownloads,
   selectAnimatedEmoji,
   selectCanAutoLoadMedia,
   selectCanAutoPlayMedia,
+  selectCanForwardMessage,
   selectCanReplyToMessage,
   selectChat,
   selectChatFullInfo,
@@ -85,10 +88,11 @@ import {
   selectChatTranslations,
   selectCurrentMiddleSearch,
   selectDefaultReaction,
+  selectEphemeralOutgoingStatus,
   selectForwardedSender,
   selectFullWebPageFromMessage,
-  selectIsChatProtected,
   selectIsChatRestricted,
+  selectIsChatWithBot,
   selectIsChatWithSelf,
   selectIsCurrentUserFrozen,
   selectIsCurrentUserPremium,
@@ -97,7 +101,7 @@ import {
   selectIsMessageFocused,
   selectIsMessageProtected,
   selectIsMessageSelected,
-  selectMessageIdsByGroupId,
+  selectMessageSummary,
   selectOutgoingStatus,
   selectPeer,
   selectPeerStory,
@@ -105,6 +109,7 @@ import {
   selectPollFromMessage,
   selectReplyMessage,
   selectRequestedChatTranslationLanguage,
+  selectRequestedChatTranslationTone,
   selectRequestedMessageTranslationLanguage,
   selectSender,
   selectSenderFromHeader,
@@ -112,7 +117,6 @@ import {
   selectShouldLoopStickers,
   selectTabState,
   selectTheme,
-  selectThreadInfo,
   selectTopicFromMessage,
   selectUploadProgress,
   selectUser,
@@ -124,25 +128,26 @@ import {
   selectMessageTimestampableDuration,
 } from '../../../global/selectors/media';
 import { selectSharedSettings } from '../../../global/selectors/sharedState';
+import { selectThreadInfo, selectThreadReadState } from '../../../global/selectors/threads';
 import { IS_TAURI } from '../../../util/browser/globalEnvironment';
 import { IS_ANDROID, IS_TRANSLATION_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
+import buildStyle from '../../../util/buildStyle';
 import { isUserId } from '../../../util/entities/ids';
 import { getMessageKey } from '../../../util/keys/messageKey';
+import { parseTranslationCacheKey } from '../../../util/keys/translationKey';
 import { getServerTime } from '../../../util/serverTime';
 import stopEvent from '../../../util/stopEvent';
 import { isElementInViewport } from '../../../util/visibility/isElementInViewport';
-import { calculateDimensionsForMessageMedia, getStickerDimensions, REM } from '../../common/helpers/mediaDimensions';
-import { getPeerColorClass } from '../../common/helpers/peerColor';
+import { getStickerDimensions, REM } from '../../common/helpers/mediaDimensions';
 import renderText from '../../common/helpers/renderText';
 import { getCustomEmojiSize } from '../composer/helpers/customEmoji';
 import { buildContentClassName } from './helpers/buildContentClassName';
-import { calculateAlbumLayout } from './helpers/calculateAlbumLayout';
 import getSingularPaidMedia from './helpers/getSingularPaidMedia';
-import { calculateMediaDimensions, getMinMediaWidth, getMinMediaWidthWithText } from './helpers/mediaDimensions';
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
+import useEffectWithPrevDeps from '../../../hooks/useEffectWithPrevDeps';
 import useEnsureMessage from '../../../hooks/useEnsureMessage';
 import useEnsureStory from '../../../hooks/useEnsureStory';
 import useFlag from '../../../hooks/useFlag';
@@ -150,18 +155,20 @@ import { useOnIntersect } from '../../../hooks/useIntersectionObserver';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
+import usePeerColor from '../../../hooks/usePeerColor';
 import usePreviousDeprecated from '../../../hooks/usePreviousDeprecated';
-import useMessageResizeObserver from '../../../hooks/useResizeMessageObserver';
 import useShowTransition from '../../../hooks/useShowTransition';
 import useTextLanguage from '../../../hooks/useTextLanguage';
 import useDetectChatLanguage from './hooks/useDetectChatLanguage';
-import useFocusMessage from './hooks/useFocusMessage';
+import useFocusMessageListElement from './hooks/useFocusMessageListElement';
 import useInnerHandlers from './hooks/useInnerHandlers';
+import useMessageReadMetrics from './hooks/useMessageReadMetrics';
 import useMessageTranslation from './hooks/useMessageTranslation';
 import useOuterHandlers from './hooks/useOuterHandlers';
 
 import Audio from '../../common/Audio';
 import Avatar from '../../common/Avatar';
+import BadgeButton from '../../common/BadgeButton';
 import CustomEmoji from '../../common/CustomEmoji';
 import Document from '../../common/Document';
 import DotAnimation from '../../common/DotAnimation';
@@ -170,8 +177,12 @@ import EmbeddedStory from '../../common/embedded/EmbeddedStory';
 import FakeIcon from '../../common/FakeIcon';
 import Icon from '../../common/icons/Icon';
 import StarIcon from '../../common/icons/StarIcon';
+import MessageRichText from '../../common/MessageRichText';
 import MessageText from '../../common/MessageText';
+import PeerColorWrapper from '../../common/PeerColorWrapper';
+import RankBadge from '../../common/RankBadge';
 import ReactionStaticEmoji from '../../common/reactions/ReactionStaticEmoji';
+import Sparkles from '../../common/Sparkles';
 import TopicChip from '../../common/TopicChip';
 import { animateSnap } from '../../main/visualEffects/SnapEffectContainer';
 import Button from '../../ui/Button';
@@ -183,6 +194,7 @@ import AnimatedEmoji from './AnimatedEmoji';
 import CommentButton from './CommentButton';
 import Contact from './Contact';
 import ContextMenuContainer from './ContextMenuContainer.async';
+import DiceWrapper from './dice/DiceWrapper';
 import FactCheck from './FactCheck';
 import Game from './Game';
 import Giveaway from './Giveaway';
@@ -196,7 +208,7 @@ import MessageMeta from './MessageMeta';
 import MessagePhoneCall from './MessagePhoneCall';
 import PaidMediaOverlay from './PaidMediaOverlay';
 import Photo from './Photo';
-import Poll from './Poll';
+import Poll from './poll/Poll';
 import Reactions from './reactions/Reactions';
 import RoundVideo from './RoundVideo';
 import Sticker from './Sticker';
@@ -216,27 +228,31 @@ type MessagePositionProperties = {
   isLastInList: boolean;
 };
 
-type OwnProps =
-  {
-    message: ApiMessage;
-    album?: IAlbum;
-    noAvatars?: boolean;
-    withAvatar?: boolean;
-    withSenderName?: boolean;
-    threadId: ThreadId;
-    messageListType: MessageListType;
-    noComments: boolean;
-    noReplies: boolean;
-    appearanceOrder: number;
-    isJustAdded: boolean;
-    memoFirstUnreadIdRef?: { current: number | undefined };
-    getIsMessageListReady?: Signal<boolean>;
-    observeIntersectionForBottom?: ObserveFn;
-    observeIntersectionForLoading?: ObserveFn;
-    observeIntersectionForPlaying?: ObserveFn;
-    onIntersectPinnedMessage?: OnIntersectPinnedMessage;
-  }
-  & MessagePositionProperties;
+type OwnProps = {
+  message: ApiMessage;
+  album?: IAlbum;
+  documentGroup?: IDocumentGroup;
+  noAvatars?: boolean;
+  withAvatar?: boolean;
+  withSenderName?: boolean;
+  threadId: ThreadId;
+  messageListType: MessageListType;
+  noComments: boolean;
+  noReplies: boolean;
+  appearanceOrder: number;
+  isJustAdded: boolean;
+  isThreadTop?: boolean;
+  shouldIgnoreSendFocus?: boolean;
+  isQuickPreview?: boolean;
+  memoFirstUnreadIdRef?: { current: number | undefined };
+  getIsMessageListReady?: Signal<boolean>;
+  containerRef?: ElementRef<HTMLDivElement>;
+  isMessageListActive?: boolean;
+  observeIntersectionForBottom?: ObserveFn;
+  observeIntersectionForLoading?: ObserveFn;
+  observeIntersectionForPlaying?: ObserveFn;
+  onMessageUnmount?: (messageId: number) => void;
+} & MessagePositionProperties;
 
 type StateProps = {
   theme: ThemeKey;
@@ -245,7 +261,7 @@ type StateProps = {
   canShowSender: boolean;
   originSender?: ApiPeer;
   botSender?: ApiUser;
-  isThreadTop?: boolean;
+  ephemeralBot?: ApiUser;
   shouldHideReply?: boolean;
   replyMessage?: ApiMessage;
   replyMessageSender?: ApiPeer;
@@ -258,7 +274,7 @@ type StateProps = {
   uploadProgress?: number;
   isInDocumentGroup: boolean;
   isProtected?: boolean;
-  isChatProtected?: boolean;
+  canForward?: boolean;
   isFocused?: boolean;
   focusDirection?: FocusDirection;
   focusedQuote?: string;
@@ -268,6 +284,7 @@ type StateProps = {
   isResizingContainer?: boolean;
   isForwarding?: boolean;
   isChatWithSelf?: boolean;
+  isBotForum?: boolean;
   isRepliesChat?: boolean;
   isAnonymousForwards?: boolean;
   isChannel?: boolean;
@@ -284,6 +301,7 @@ type StateProps = {
   threadId?: ThreadId;
   isPinnedList?: boolean;
   isPinned?: boolean;
+  isMessagePrimaryEditedDateEnabled: boolean;
   canAutoLoadMedia?: boolean;
   canAutoPlayMedia?: boolean;
   hasLinkedChat?: boolean;
@@ -295,10 +313,11 @@ type StateProps = {
   defaultReaction?: ApiReaction;
   activeEmojiInteractions?: ActiveEmojiInteraction[];
   hasUnreadReaction?: boolean;
+  hasUnreadPollVote?: boolean;
   isTranscribing?: boolean;
   transcribedText?: string;
   isPremium: boolean;
-  senderAdminMember?: ApiChatMember;
+  senderChatMember?: ApiChatMember;
   messageTopic?: ApiTopic;
   hasTopicChip?: boolean;
   chatTranslations?: ChatTranslatedMessages;
@@ -306,7 +325,9 @@ type StateProps = {
   shouldDetectChatLanguage?: boolean;
   requestedTranslationLanguage?: string;
   requestedChatTranslationLanguage?: string;
+  requestedTranslationTone?: TranslationTone;
   withAnimatedEffects?: boolean;
+  canAnimateTextStreaming?: boolean;
   webPageStory?: ApiTypeStory;
   isConnected: boolean;
   isLoadingComments?: boolean;
@@ -315,8 +336,9 @@ type StateProps = {
   tags?: Record<ApiReactionKey, ApiSavedReactionTag>;
   canTranscribeVoice?: boolean;
   viaBusinessBot?: ApiUser;
+  guestFromSender?: ApiPeer;
   effect?: ApiAvailableEffect;
-  poll?: ApiPoll;
+  poll?: ApiMessagePoll;
   webPage?: ApiWebPage;
   maxTimestamp?: number;
   lastPlaybackTimestamp?: number;
@@ -326,6 +348,8 @@ type StateProps = {
   minFutureTime?: number;
   isMediaNsfw?: boolean;
   isReplyMediaNsfw?: boolean;
+  summary?: TextSummary;
+  canSendStickers?: boolean;
 };
 
 type MetaPosition =
@@ -342,14 +366,11 @@ type QuickReactionPosition =
 
 const NBSP = '\u00A0';
 const QUICK_REACTION_SIZE = 1.75 * REM;
-const EXTRA_SPACE_FOR_REACTIONS = 2.25 * REM;
 const MAX_REASON_LENGTH = 200;
+const MIN_MESSAGE_LENGTH_FOR_WIDE_MEDIA = 40;
 
-const Message: FC<OwnProps & StateProps> = ({
+const Message = ({
   message,
-  observeIntersectionForBottom,
-  observeIntersectionForLoading,
-  observeIntersectionForPlaying,
   album,
   noAvatars,
   withAvatar,
@@ -372,6 +393,7 @@ const Message: FC<OwnProps & StateProps> = ({
   canShowSender,
   originSender,
   botSender,
+  ephemeralBot,
   isThreadTop,
   shouldHideReply,
   replyMessage,
@@ -386,7 +408,7 @@ const Message: FC<OwnProps & StateProps> = ({
   isInDocumentGroup,
   isLoadingComments,
   isProtected,
-  isChatProtected,
+  canForward,
   isFocused,
   focusDirection,
   focusedQuote,
@@ -396,6 +418,7 @@ const Message: FC<OwnProps & StateProps> = ({
   isResizingContainer,
   isForwarding,
   isChatWithSelf,
+  isBotForum,
   isRepliesChat,
   isAnonymousForwards,
   isChannel,
@@ -417,6 +440,7 @@ const Message: FC<OwnProps & StateProps> = ({
   messageListType,
   isPinnedList,
   isPinned,
+  isMessagePrimaryEditedDateEnabled,
   isDownloading,
   canAutoLoadMedia,
   canAutoPlayMedia,
@@ -424,8 +448,9 @@ const Message: FC<OwnProps & StateProps> = ({
   autoLoadFileMaxSizeMb,
   repliesThreadInfo,
   hasUnreadReaction,
+  hasUnreadPollVote,
   memoFirstUnreadIdRef,
-  senderAdminMember,
+  senderChatMember,
   messageTopic,
   hasTopicChip,
   chatTranslations,
@@ -433,15 +458,19 @@ const Message: FC<OwnProps & StateProps> = ({
   shouldDetectChatLanguage,
   requestedTranslationLanguage,
   requestedChatTranslationLanguage,
+  requestedTranslationTone,
   withAnimatedEffects,
+  canAnimateTextStreaming,
   webPageStory,
   isConnected,
   getIsMessageListReady,
+  containerRef,
   shouldWarnAboutFiles,
   senderBoosts,
   tags,
   canTranscribeVoice,
   viaBusinessBot,
+  guestFromSender,
   effect,
   poll,
   maxTimestamp,
@@ -453,8 +482,15 @@ const Message: FC<OwnProps & StateProps> = ({
   isAccountFrozen,
   minFutureTime,
   webPage,
-  onIntersectPinnedMessage,
-}) => {
+  summary,
+  canSendStickers,
+  observeIntersectionForBottom,
+  observeIntersectionForLoading,
+  observeIntersectionForPlaying,
+  isMessageListActive,
+  isQuickPreview,
+  onMessageUnmount,
+}: OwnProps & StateProps) => {
   const {
     toggleMessageSelection,
     clickBotInlineButton,
@@ -463,8 +499,13 @@ const Message: FC<OwnProps & StateProps> = ({
     openSuggestedPostApprovalModal,
     disableContextMenuHint,
     animateUnreadReaction,
-    focusLastMessage,
+    focusMessage,
+    markTypingDraftDone,
+    markMessageListRead,
     markMentionsRead,
+    markPollVotesRead,
+    openThread,
+    summarizeMessage,
   } = getActions();
 
   const ref = useRef<HTMLDivElement>();
@@ -473,21 +514,28 @@ const Message: FC<OwnProps & StateProps> = ({
 
   const oldLang = useOldLang();
   const lang = useLang();
+  const {
+    id: messageId, chatId, forwardInfo, viaBotId, guestChatViaId, isTranscriptionError, factCheck,
+    isTypingDraft, previousLocalId, fromRank,
+  } = message;
 
-  const [isTranscriptionHidden, setTranscriptionHidden] = useState(false);
+  const [isTranscriptionHidden, setIsTranscriptionHidden] = useState(false);
   const [isPlayingSnapAnimation, setIsPlayingSnapAnimation] = useState(false);
   const [isPlayingDeleteAnimation, setIsPlayingDeleteAnimation] = useState(false);
   const [shouldPlayEffect, requestEffect, hideEffect] = useFlag();
+  const [shouldPlayDiceEffect, requestDiceEffect, hideDiceEffect] = useFlag();
   const [isDeclineDialogOpen, openDeclineDialog, closeDeclineDialog] = useFlag();
+  const [isShowingSummary, showSummary, hideSummary] = useFlag();
   const [declineReason, setDeclineReason] = useState('');
   const { isMobile, isTouchScreen } = useAppLayout();
 
-  useOnIntersect(bottomMarkerRef, observeIntersectionForBottom);
+  useOnIntersect(bottomMarkerRef, isTypingDraft || message.isEphemeral ? undefined : observeIntersectionForBottom);
 
   const {
     isContextMenuOpen,
     contextMenuAnchor,
     contextMenuTarget,
+    isContextMenuAltKeyPressed,
     handleBeforeContextMenu,
     handleContextMenu: onContextMenu,
     handleContextMenuClose,
@@ -513,8 +561,9 @@ const Message: FC<OwnProps & StateProps> = ({
       return;
     }
 
+    // Message appearance animation works only if this timeout is not cleared. Migrate to `sibling-index()` when baseline widely available.
     setTimeout(markShown, appearanceOrder * MESSAGE_APPEARANCE_DELAY);
-  }, [appearanceOrder, markShown, noAppearanceAnimation]);
+  }, [appearanceOrder, noAppearanceAnimation]);
 
   useShowTransition({
     ref,
@@ -523,21 +572,36 @@ const Message: FC<OwnProps & StateProps> = ({
     className: false,
   });
 
-  const {
-    id: messageId, chatId, forwardInfo, viaBotId, isTranscriptionError, factCheck,
-  } = message;
-
   useUnmountCleanup(() => {
-    if (message.isPinned) {
-      const id = album ? album.mainMessage.id : messageId;
-      onIntersectPinnedMessage?.({ viewportPinnedIdsToRemove: [id] });
-    }
+    onMessageUnmount?.(messageId);
   });
+
+  const hasSummary = Boolean(message.summaryLanguageCode);
 
   const isLocal = isMessageLocal(message);
   const isOwn = isOwnMessage(message);
   const isScheduled = messageListType === 'scheduled' || message.isScheduled;
-  const hasMessageReply = isReplyToMessage(message) && !shouldHideReply;
+  const messageReplyInfo = getMessageReplyInfo(message) || getEphemeralReplyInfo(message);
+  const isEphemeralReply = messageReplyInfo?.type === 'ephemeral';
+  const storyReplyInfo = getStoryReplyInfo(message);
+  const readMetricsMessage = album?.mainMessage || message;
+  const canReportReadMetrics = messageListType === 'thread'
+    && threadId === MAIN_THREAD_ID
+    && !isQuickPreview
+    && !isLocal
+    && !message.isEphemeral
+    && readMetricsMessage.viewsCount !== undefined;
+  const hasMessageReply = isReplyToMessage(message) && !shouldHideReply
+    && (!isEphemeralReply || Boolean(replyMessage));
+
+  useMessageReadMetrics({
+    messageRef: ref,
+    containerRef,
+    chatId,
+    messageId: readMetricsMessage.id,
+    isEnabled: canReportReadMetrics,
+    isMessageListActive,
+  });
 
   const { paidMedia } = getMessageContent(message);
   const { photo: paidMediaPhoto, video: paidMediaVideo } = getSingularPaidMedia(paidMedia);
@@ -547,11 +611,8 @@ const Message: FC<OwnProps & StateProps> = ({
     voice, document, sticker, contact,
     invoice, location,
     action, game, storyData, giveaway,
-    giveawayResults, todo,
+    giveawayResults, todo, dice,
   } = getMessageContent(message);
-
-  const messageReplyInfo = getMessageReplyInfo(message);
-  const storyReplyInfo = getStoryReplyInfo(message);
 
   const withVoiceTranscription = Boolean(!isTranscriptionHidden && (isTranscriptionError || transcribedText));
 
@@ -560,13 +621,15 @@ const Message: FC<OwnProps & StateProps> = ({
   const isCustomShape = !withVoiceTranscription && getMessageCustomShape(message);
   const hasAnimatedEmoji = isCustomShape && (animatedEmoji || animatedCustomEmoji);
   const hasReactions = reactionMessage?.reactions && !areReactionsEmpty(reactionMessage.reactions);
+  const hasViaSender = Boolean(viaBotId || guestChatViaId);
+
   const asForwarded = (
     forwardInfo
     && (!isChatWithSelf || isScheduled)
     && !isRepliesChat
     && !forwardInfo.isLinkedChannelPost
     && !isAnonymousForwards
-    && !botSender
+    && !hasViaSender
   ) || Boolean(storyData && !storyData.isMention);
   const canShowSenderBoosts = Boolean(senderBoosts) && !asForwarded && isFirstInGroup;
   const isStoryMention = storyData?.isMention;
@@ -583,10 +646,7 @@ const Message: FC<OwnProps & StateProps> = ({
     !(isContextMenuShown || isInSelectMode || isForwarding)
     && !isInDocumentGroupNotLast
     && !isStoryMention
-    && !((sticker || hasAnimatedEmoji) && asForwarded)
   );
-  const canForward = isChannel && !isScheduled && message.isForwardingAllowed
-    && !isChatProtected;
   const canFocus = Boolean(isPinnedList
     || (forwardInfo
       && (forwardInfo.isChannelPost || isChatWithSelf || isRepliesChat || isAnonymousForwards)
@@ -596,10 +656,12 @@ const Message: FC<OwnProps & StateProps> = ({
   const hasFactCheck = Boolean(factCheck?.text);
 
   const hasForwardedCustomShape = asForwarded && isCustomShape;
-  const hasSubheader = hasTopicChip || hasMessageReply || hasStoryReply || hasForwardedCustomShape;
+  const hasSubheader = message.isEphemeral
+    || hasTopicChip || hasMessageReply || hasStoryReply || hasForwardedCustomShape
+    || Boolean(isShowingSummary && summary?.text);
 
   const selectMessage = useLastCallback((e?: React.MouseEvent<HTMLDivElement, MouseEvent>, groupedId?: string) => {
-    if (isAccountFrozen) return;
+    if (isAccountFrozen || message.isEphemeral) return;
     toggleMessageSelection({
       messageId,
       groupedId,
@@ -646,11 +708,13 @@ const Message: FC<OwnProps & StateProps> = ({
     quickReactionRef,
     isInDocumentGroupNotLast,
     getIsMessageListReady,
+    message.isEphemeral,
   );
 
   const {
     handleSenderClick,
     handleViaBotClick,
+    handleGuestForClick,
     handleReplyClick,
     handleMediaClick,
     handleDocumentClick,
@@ -663,7 +727,6 @@ const Message: FC<OwnProps & StateProps> = ({
     handleOpenThread,
     handleReadMedia,
     handleCancelUpload,
-    handleVoteSend,
     handleGroupForward,
     handleForward,
     handleFocus,
@@ -685,6 +748,7 @@ const Message: FC<OwnProps & StateProps> = ({
     avatarPeer,
     senderPeer,
     botSender,
+    guestFromSender,
     messageTopic,
     isTranslatingChat: Boolean(requestedChatTranslationLanguage),
     story: replyStory && 'content' in replyStory ? replyStory : undefined,
@@ -694,10 +758,31 @@ const Message: FC<OwnProps & StateProps> = ({
     lastPlaybackTimestamp,
   });
 
+  useEffect(() => {
+    if (hasSummary && isShowingSummary && !summary) {
+      summarizeMessage({
+        chatId,
+        id: messageId,
+        toLanguageCode: requestedTranslationLanguage,
+        onError: hideSummary,
+      });
+    }
+  }, [hasSummary, chatId, messageId, requestedTranslationLanguage, isShowingSummary, summary, hideSummary]);
+
   const handleEffectClick = useLastCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
 
     requestEffect();
+  });
+
+  const handleFocusSelf = useLastCallback(() => {
+    focusMessage({
+      chatId,
+      threadId,
+      messageId,
+      scrollTargetPosition: 'start',
+      noHighlight: true,
+    });
   });
 
   useEffect(() => {
@@ -706,21 +791,27 @@ const Message: FC<OwnProps & StateProps> = ({
     }
 
     if (withVoiceTranscription && transcribedText) {
-      focusLastMessage();
+      handleFocusSelf();
     }
-  }, [focusLastMessage, isLastInList, transcribedText, withVoiceTranscription]);
+  }, [isLastInList, transcribedText, withVoiceTranscription]);
 
   useEffect(() => {
     const element = ref.current;
     const isPartialAlbumDelete = message.isInAlbum && album?.messages.some((msg) => !msg.isDeleting);
-    if (message.isDeleting && element && !isPartialAlbumDelete) {
-      if (animateSnap(element)) {
-        setIsPlayingSnapAnimation(true);
-      } else {
-        setIsPlayingDeleteAnimation(true);
-      }
+    if (!element || isPartialAlbumDelete) return;
+
+    if (!message.isDeleting) {
+      setIsPlayingSnapAnimation(false);
+      setIsPlayingDeleteAnimation(false);
+      return;
     }
-  // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- Only start animation on `isDeleting` change
+
+    if (animateSnap(element)) {
+      setIsPlayingSnapAnimation(true);
+    } else {
+      setIsPlayingDeleteAnimation(true);
+    }
+  // eslint-disable-next-line react-hooks-static-deps/exhaustive-deps -- Synchronize animation on `isDeleting` changes
   }, [message.isDeleting]);
 
   const textMessage = album?.hasMultipleCaptions ? undefined : (album?.captionMessage || message);
@@ -756,13 +847,14 @@ const Message: FC<OwnProps & StateProps> = ({
     isJustAdded && 'is-just-added',
     (hasActiveReactions || shouldPlayEffect) && 'has-active-effect',
     isStoryMention && 'is-story-mention',
-    !canShowActionButton && 'no-action-button',
+    guestChatViaId && 'has-guest-avatar',
   );
 
   const text = textMessage && getMessageContent(textMessage).text;
   const isInvertedMedia = Boolean(message.isInvertedMedia);
 
-  const { replyToMsgId, replyToPeerId } = messageReplyInfo || {};
+  const replyToMsgId = messageReplyInfo?.replyToMsgId;
+  const replyToPeerId = messageReplyInfo?.type === 'message' ? messageReplyInfo.replyToPeerId : undefined;
   const { peerId: storyReplyPeerId, storyId: storyReplyId } = storyReplyInfo || {};
 
   useEffect(() => {
@@ -773,32 +865,59 @@ const Message: FC<OwnProps & StateProps> = ({
     }
   }, [effect, isLocal, memoFirstUnreadIdRef, messageId, sticker?.hasEffect]);
 
+  useEffect(() => {
+    if (dice && ((
+      memoFirstUnreadIdRef?.current && messageId >= memoFirstUnreadIdRef.current
+    ) || isLocal)) {
+      requestDiceEffect();
+    }
+  }, [dice, memoFirstUnreadIdRef, messageId, isLocal]);
+
   const detectedLanguage = useTextLanguage(
     text?.text,
-    !(areTranslationsEnabled && shouldDetectChatLanguage),
+    !(areTranslationsEnabled && shouldDetectChatLanguage) || isTypingDraft,
     getIsMessageListReady,
   );
   useDetectChatLanguage(message, detectedLanguage, !shouldDetectChatLanguage, getIsMessageListReady);
 
   const shouldTranslate = isMessageTranslatable(message, !requestedChatTranslationLanguage);
+
+  const isManualMessageTranslation = !requestedChatTranslationLanguage && requestedTranslationLanguage;
+  const parsedManualTranslation = isManualMessageTranslation
+    ? parseTranslationCacheKey(requestedTranslationLanguage) : undefined;
+  const translationLanguageForHook = parsedManualTranslation?.languageCode || requestedChatTranslationLanguage;
+  const translationToneForHook = parsedManualTranslation?.tone || requestedTranslationTone;
+
   const { isPending: isTranslationPending, translatedText } = useMessageTranslation(
-    chatTranslations, chatId, shouldTranslate ? messageId : undefined, requestedTranslationLanguage,
+    chatTranslations, chatId, shouldTranslate ? messageId : undefined, translationLanguageForHook,
+    translationToneForHook,
   );
-  // Used to display previous result while new one is loading
+  const isSummaryPending = Boolean(summary?.isPending);
+  const isNewTextPending = isTranslationPending || isSummaryPending;
   const previousTranslatedText = usePreviousDeprecated(translatedText, Boolean(shouldTranslate));
+
+  useEffectWithPrevDeps(([prevIsShowingSummary]) => {
+    if (summary?.text || (prevIsShowingSummary && !isShowingSummary)) {
+      handleFocusSelf();
+    }
+  }, [isShowingSummary, summary?.text]);
 
   const currentTranslatedText = translatedText || previousTranslatedText;
 
   const phoneCall = action?.type === 'phoneCall' ? action : undefined;
 
-  const isMediaWithCommentButton = (repliesThreadInfo || (hasLinkedChat && isChannel && isLocal))
+  const commentsThreadInfo = repliesThreadInfo?.isCommentsInfo ? repliesThreadInfo : undefined;
+  const isLocalWithCommentButton = hasLinkedChat && isChannel && isLocal;
+
+  const isMediaWithCommentButton = (commentsThreadInfo || isLocalWithCommentButton)
     && !isInDocumentGroupNotLast
     && messageListType === 'thread'
     && !noComments;
-  const withCommentButton = repliesThreadInfo?.isCommentsInfo
+  const withCommentButton = (commentsThreadInfo || isLocalWithCommentButton)
     && !isInDocumentGroupNotLast && messageListType === 'thread'
     && !noComments;
-  const withQuickReactionButton = !isTouchScreen && !phoneCall && !isInSelectMode && defaultReaction
+  const withQuickReactionButton = !message.isEphemeral
+    && !isTouchScreen && !phoneCall && !isInSelectMode && defaultReaction
     && !isInDocumentGroupNotLast && !isStoryMention && !hasTtl && !isAccountFrozen;
 
   const hasOutsideReactions = !withVoiceTranscription && hasReactions
@@ -806,7 +925,18 @@ const Message: FC<OwnProps & StateProps> = ({
       (photo || video || storyData || (location?.mediaType === 'geo')) && (!hasText || isInvertedMedia))
     );
 
-  const contentClassName = buildContentClassName(message, album, {
+  const { className: peerColorClass, style: peerColorStyle } = usePeerColor({
+    peer: messageColorPeer,
+    noUserColors,
+    shouldReset: true,
+    theme,
+  });
+
+  const hasWideMedia = Boolean(
+    (photo || video || isAlbum || invoice?.extendedMedia || invoice?.photo)
+    && ((text?.text.length || 0) > MIN_MESSAGE_LENGTH_FOR_WIDE_MEDIA || isMediaWithCommentButton),
+  );
+  const contentClassName = buildClassName(buildContentClassName(message, album, {
     poll,
     webPage,
     hasSubheader,
@@ -815,18 +945,19 @@ const Message: FC<OwnProps & StateProps> = ({
     asForwarded,
     hasThread: hasThread && !noComments,
     forceSenderName,
-    hasCommentCounter: hasThread && repliesThreadInfo.messagesCount > 0,
-    hasCommentButton: withCommentButton,
-    hasActionButton: canForward || canFocus,
+    hasCommentCounter: hasThread && repliesThreadInfo.messagesCount !== undefined
+      && repliesThreadInfo.messagesCount > 0,
+    hasBottomCommentButton: withCommentButton && !isCustomShape,
+    hasActionButton: canForward || canFocus || (withCommentButton && isCustomShape),
     hasReactions,
     isGeoLiveActive: location?.mediaType === 'geoLive' && !isGeoLiveExpired(message),
     withVoiceTranscription,
-    peerColorClass: getPeerColorClass(messageColorPeer, noUserColors, true),
+    peerColorClass,
     hasOutsideReactions,
-  });
+  }), hasWideMedia && 'with-wide-media');
 
   const withAppendix = contentClassName.includes('has-appendix');
-  const emojiSize = getCustomEmojiSize(message.emojiOnlyCount);
+  const emojiSize = getCustomEmojiSize(text?.emojiOnlyCount);
 
   const paidMessageStarsInMeta = !isChatWithUser
     ? (isAlbum && paidMessageStars ? album.messages.length * paidMessageStars : paidMessageStars)
@@ -866,7 +997,7 @@ const Message: FC<OwnProps & StateProps> = ({
     replyToMsgId,
     replyMessage,
     message.id,
-    shouldHideReply || isReplyPrivate,
+    shouldHideReply || isReplyPrivate || isEphemeralReply,
   );
 
   useEnsureStory(
@@ -875,9 +1006,8 @@ const Message: FC<OwnProps & StateProps> = ({
     replyStory,
   );
 
-  useFocusMessage({
+  useFocusMessageListElement({
     elementRef: ref,
-    chatId,
     isFocused,
     focusDirection,
     noFocusHighlight,
@@ -894,14 +1024,30 @@ const Message: FC<OwnProps & StateProps> = ({
     || ((asForwarded || isChatWithSelf) && forwardInfo?.postAuthorTitle)
     || undefined;
 
-  useMessageResizeObserver(ref, isLastInList);
-
   useEffect(() => {
+    if (isTypingDraft || message.isEphemeral) {
+      return;
+    }
+
     const bottomMarker = bottomMarkerRef.current;
     if (!bottomMarker || !isElementInViewport(bottomMarker)) return;
 
+    if (
+      message.wasTypingDraft
+      && !isQuickPreview
+      && !isOwn
+      && memoFirstUnreadIdRef?.current
+      && messageId >= memoFirstUnreadIdRef.current
+    ) {
+      markMessageListRead({ maxId: messageId });
+    }
+
     if (hasUnreadReaction) {
-      animateUnreadReaction({ messageIds: [messageId] });
+      animateUnreadReaction({ chatId, messageIds: [messageId] });
+    }
+
+    if (hasUnreadPollVote) {
+      markPollVotesRead({ chatId, messageIds: [messageId] });
     }
 
     let unreadMentionIds: number[] = [];
@@ -916,87 +1062,74 @@ const Message: FC<OwnProps & StateProps> = ({
     if (unreadMentionIds.length) {
       markMentionsRead({ chatId, messageIds: unreadMentionIds });
     }
-  }, [hasUnreadReaction, album, chatId, messageId, animateUnreadReaction, message.hasUnreadMention]);
-
-  const albumLayout = useMemo(() => {
-    return isAlbum
-      ? calculateAlbumLayout(isOwn, Boolean(noAvatars), album, isMobile)
-      : undefined;
-  }, [isAlbum, isOwn, noAvatars, album, isMobile]);
+  }, [
+    hasUnreadReaction,
+    hasUnreadPollVote,
+    album,
+    chatId,
+    isQuickPreview,
+    isOwn,
+    isTypingDraft,
+    message.isEphemeral,
+    markMessageListRead,
+    messageId,
+    memoFirstUnreadIdRef,
+    animateUnreadReaction,
+    markPollVotesRead,
+    message.hasUnreadMention,
+    message.wasTypingDraft,
+  ]);
 
   const extraPadding = asForwarded && !isCustomShape ? 28 : 0;
 
   const sizeCalculations = useMemo(() => {
-    let calculatedWidth;
-    let contentWidth: number | undefined;
     let style = '';
-    let reactionsMaxWidth;
 
-    if (!isAlbum && (photo || video || invoice?.extendedMedia)) {
-      let width: number | undefined;
-      if (photo || video) {
-        const media = (photo || video);
-        if (media && !isRoundVideo) {
-          width = calculateMediaDimensions({
-            media,
-            isOwn,
-            asForwarded,
-            noAvatars,
-            isMobile,
-          }).width;
-        }
-      } else if (invoice?.extendedMedia && (
-        invoice.extendedMedia.width && invoice.extendedMedia.height
-      )) {
-        const { width: previewWidth, height: previewHeight } = invoice.extendedMedia;
-        width = calculateDimensionsForMessageMedia({
-          width: previewWidth,
-          height: previewHeight,
-          fromOwnMessage: isOwn,
-          asForwarded,
-          noAvatars,
-          isMobile,
-        }).width;
-      }
-
-      if (width) {
-        if (width < getMinMediaWidthWithText(isMobile)) {
-          contentWidth = width;
-        }
-        calculatedWidth = Math.max(getMinMediaWidth(text?.text, isMobile, isMediaWithCommentButton), width);
-      }
-    } else if (albumLayout) {
-      const minWidth = getMinMediaWidth(text?.text, isMobile, isMediaWithCommentButton);
-      calculatedWidth = Math.max(minWidth, albumLayout.containerStyle.width);
-    }
-
-    if (calculatedWidth) {
-      style = `width: ${calculatedWidth}px`;
-      reactionsMaxWidth = calculatedWidth + EXTRA_SPACE_FOR_REACTIONS;
-    } else if (sticker && !hasSubheader) {
+    if (sticker && !hasSubheader) {
       const { width } = getStickerDimensions(sticker, isMobile);
       style = `width: ${width + extraPadding}px`;
-      reactionsMaxWidth = width + EXTRA_SPACE_FOR_REACTIONS;
     }
 
-    return {
-      contentWidth, style, reactionsMaxWidth,
-    };
+    return style;
   }, [
-    albumLayout, asForwarded, extraPadding, hasSubheader, invoice?.extendedMedia, isAlbum, isMediaWithCommentButton,
-    isMobile, isOwn, noAvatars, photo, sticker, text?.text, video, isRoundVideo,
+    extraPadding, hasSubheader, isMobile, sticker,
   ]);
 
-  const {
-    contentWidth, style, reactionsMaxWidth,
-  } = sizeCalculations;
+  const contentStyle = buildStyle(peerColorStyle, sizeCalculations);
+
+  const handleTypingAnimationEnd = useLastCallback(() => {
+    if (!isTypingDraft || !previousLocalId) {
+      return;
+    }
+
+    markTypingDraftDone({ chatId, messageId });
+  });
 
   function renderMessageText(isForAnimation?: boolean) {
     if (!textMessage) return undefined;
+
+    if (textMessage.content.richMessage) {
+      return (
+        <MessageRichText
+          message={textMessage}
+          isOwn={isOwn}
+          noAvatars={noAvatars}
+          canAutoLoadMedia={canAutoLoadMedia}
+          isProtected={isProtected}
+          theme={theme}
+          observeIntersectionForLoading={observeIntersectionForLoading}
+          observeIntersectionForPlaying={observeIntersectionForPlaying}
+          threadId={threadId}
+        />
+      );
+    }
+
+    const forcedText = (isShowingSummary && summary?.text)
+      || (requestedTranslationLanguage ? currentTranslatedText : undefined);
     return (
       <MessageText
         messageOrStory={textMessage}
-        translatedText={requestedTranslationLanguage ? currentTranslatedText : undefined}
+        forcedText={forcedText}
         isForAnimation={isForAnimation}
         focusedQuote={focusedQuote}
         focusedQuoteOffset={focusedQuoteOffset}
@@ -1007,10 +1140,27 @@ const Message: FC<OwnProps & StateProps> = ({
         observeIntersectionForPlaying={observeIntersectionForPlaying}
         withTranslucentThumbs={isCustomShape}
         isInSelectMode={isInSelectMode}
-        canBeEmpty={hasFactCheck}
+        canBeEmpty={hasFactCheck || isTypingDraft}
         maxTimestamp={maxTimestamp}
         threadId={threadId}
+        shouldAnimateTyping={isTypingDraft}
+        canAnimateTextStreaming={canAnimateTextStreaming}
+        onTypingAnimationEnd={handleTypingAnimationEnd}
       />
+    );
+  }
+
+  function renderMessageTextAnimation() {
+    if (textMessage?.content.richMessage) {
+      return undefined;
+    }
+
+    return (
+      <div className="translation-animation">
+        <div className="text-loading">
+          {renderMessageText(true)}
+        </div>
+      </div>
     );
   }
 
@@ -1046,6 +1196,7 @@ const Message: FC<OwnProps & StateProps> = ({
         message={message}
         isPinned={isPinned}
         withFullDate={isChatWithSelf && !isOwn}
+        isMessagePrimaryEditedDateEnabled={isMessagePrimaryEditedDateEnabled}
         noReplies={noReplies}
         repliesThreadInfo={repliesThreadInfo}
         outgoingStatus={outgoingStatus}
@@ -1099,12 +1250,32 @@ const Message: FC<OwnProps & StateProps> = ({
       outgoingStatus && 'with-outgoing-icon',
     );
     const shouldReadMedia = !hasTtl || !isOwn || isChatWithSelf;
+    let ephemeralBotName: string | undefined;
+    if (message.isEphemeral && message.isOutgoing) {
+      if (!ephemeralBot) {
+        ephemeralBotName = lang('Bot');
+      } else if (ephemeralBot.hasUsername) {
+        ephemeralBotName = `@${getMainUsername(ephemeralBot)}`;
+      } else {
+        ephemeralBotName = getPeerFullTitle(oldLang, ephemeralBot);
+      }
+    }
 
     return (
       <div className={className} onDoubleClick={handleContentDoubleClick} dir="auto">
         {!asForwarded && shouldRenderSenderName() && renderSenderName()}
         {hasSubheader && (
           <div className="message-subheader">
+            {message.isEphemeral && (
+              <BadgeButton className="ephemeral-header">
+                <Icon name="eye-outline" />
+                <span dir="auto">
+                  {message.isOutgoing
+                    ? lang('EphemeralOnlyVisibleToBot', { bot: ephemeralBotName! })
+                    : lang('EphemeralOnlyVisible')}
+                </span>
+              </BadgeButton>
+            )}
             {hasTopicChip && (
               <TopicChip
                 topic={messageTopic}
@@ -1132,9 +1303,10 @@ const Message: FC<OwnProps & StateProps> = ({
                 chatTranslations={chatTranslations}
                 isMediaNsfw={isReplyMediaNsfw}
                 requestedChatTranslationLanguage={requestedChatTranslationLanguage}
+                requestedChatTranslationTone={requestedTranslationTone}
                 observeIntersectionForLoading={observeIntersectionForLoading}
                 observeIntersectionForPlaying={observeIntersectionForPlaying}
-                onClick={handleReplyClick}
+                onClick={message.isEphemeral ? undefined : handleReplyClick}
               />
             )}
             {hasStoryReply && (
@@ -1144,8 +1316,23 @@ const Message: FC<OwnProps & StateProps> = ({
                 noUserColors={noUserColors}
                 isProtected={isProtected}
                 observeIntersectionForLoading={observeIntersectionForLoading}
+                observeIntersectionForPlaying={observeIntersectionForPlaying}
                 onClick={handleStoryClick}
               />
+            )}
+            {hasSummary && isShowingSummary && !summary?.isPending && (
+              <PeerColorWrapper
+                className="message-summary"
+                onClick={hideSummary}
+              >
+                <Sparkles preset="button" className="message-summary-sparkles" />
+                <span className="message-summary-title">
+                  {lang('MessageSummaryTitle')}
+                </span>
+                <span className="message-summary-description">
+                  {lang('MessageSummaryDescription')}
+                </span>
+              </PeerColorWrapper>
             )}
           </div>
         )}
@@ -1210,7 +1397,7 @@ const Message: FC<OwnProps & StateProps> = ({
             canAutoLoad={canAutoLoadMedia}
             isDownloading={isDownloading}
             onReadMedia={shouldReadMedia ? handleReadMedia : undefined}
-            onHideTranscription={setTranscriptionHidden}
+            onHideTranscription={setIsTranscriptionHidden}
             isTranscriptionError={isTranscriptionError}
             isTranscribed={Boolean(transcribedText)}
             canTranscribe={canTranscribeVoice && !hasTtl}
@@ -1236,7 +1423,7 @@ const Message: FC<OwnProps & StateProps> = ({
             isTranscribed={Boolean(transcribedText)}
             isTranscriptionError={isTranscriptionError}
             canDownload={!isProtected}
-            onHideTranscription={setTranscriptionHidden}
+            onHideTranscription={setIsTranscriptionHidden}
             canTranscribe={canTranscribeVoice && !hasTtl}
           />
         )}
@@ -1267,7 +1454,17 @@ const Message: FC<OwnProps & StateProps> = ({
           <Contact contact={contact} noUserColors={isOwn} />
         )}
         {poll && (
-          <Poll message={message} poll={poll} onSendVote={handleVoteSend} />
+          <Poll
+            key={poll.summary.id}
+            chatId={chatId}
+            messageId={messageId}
+            poll={poll}
+            messageText={text}
+            theme={theme}
+            isInScheduled={isScheduled}
+            observeIntersectionForLoading={observeIntersectionForLoading}
+            observeIntersectionForPlaying={observeIntersectionForPlaying}
+          />
         )}
         {todo && (
           <TodoList message={message} todoList={todo} />
@@ -1280,6 +1477,16 @@ const Message: FC<OwnProps & StateProps> = ({
             message={message}
             threadId={threadId}
             canAutoLoadMedia={canAutoLoadMedia}
+          />
+        )}
+        {dice && (
+          <DiceWrapper
+            canSendDice={canSendStickers}
+            isLocal={isLocal}
+            dice={dice}
+            isOutgoing={isOwn}
+            canPlayWinEffect={shouldPlayDiceEffect}
+            onEffectPlayed={hideDiceEffect}
           />
         )}
         {invoice?.extendedMedia && (
@@ -1311,13 +1518,7 @@ const Message: FC<OwnProps & StateProps> = ({
             {hasText && !hasAnimatedEmoji && (
               <div className={textContentClass} dir="auto">
                 {renderMessageText()}
-                {isTranslationPending && (
-                  <div className="translation-animation">
-                    <div className="text-loading">
-                      {renderMessageText(true)}
-                    </div>
-                  </div>
-                )}
+                {isNewTextPending && renderMessageTextAnimation()}
                 {hasFactCheck && (
                   <FactCheck factCheck={factCheck} isToggleDisabled={isInSelectMode} />
                 )}
@@ -1335,7 +1536,6 @@ const Message: FC<OwnProps & StateProps> = ({
             isInSelectMode={isInSelectMode}
             isSelected={isSelected}
             theme={theme}
-            forcedWidth={contentWidth}
           />
         )}
         {location && (
@@ -1373,13 +1573,7 @@ const Message: FC<OwnProps & StateProps> = ({
         {hasText && !hasAnimatedEmoji && (
           <div className={textContentClass} dir="auto">
             {renderMessageText()}
-            {isTranslationPending && (
-              <div className="translation-animation">
-                <div className="text-loading">
-                  {renderMessageText(true)}
-                </div>
-              </div>
-            )}
+            {isNewTextPending && renderMessageTextAnimation()}
             {!hasContentAfterText && isMetaInText && renderReactionsAndMeta()}
           </div>
         )}
@@ -1415,7 +1609,6 @@ const Message: FC<OwnProps & StateProps> = ({
         noAvatars={noAvatars}
         canAutoLoad={canAutoLoadMedia}
         canAutoPlay={canAutoPlayMedia}
-        asForwarded={asForwarded}
         isDownloading={isDownloading}
         isProtected={isProtected}
         theme={theme}
@@ -1439,7 +1632,6 @@ const Message: FC<OwnProps & StateProps> = ({
         {isAlbum && observeIntersectionForLoading && (
           <Album
             album={album}
-            albumLayout={albumLayout!}
             observeIntersection={observeIntersectionForLoading}
             isOwn={isOwn}
             isProtected={isProtected}
@@ -1449,20 +1641,16 @@ const Message: FC<OwnProps & StateProps> = ({
         )}
         {!isAlbum && photo && (
           <Photo
-            messageText={text?.text}
             photo={photo}
             isOwn={isOwn}
             observeIntersection={observeIntersectionForLoading}
-            noAvatars={noAvatars}
             canAutoLoad={canAutoLoadMedia}
             uploadProgress={uploadProgress}
             shouldAffectAppendix={hasCustomAppendix}
             isDownloading={isDownloading}
             isProtected={isProtected}
-            asForwarded={asForwarded}
             theme={theme}
             isMediaNsfw={isMediaNsfw}
-            forcedWidth={contentWidth}
             onClick={handlePhotoMediaClick}
             onCancelUpload={handleCancelUpload}
           />
@@ -1470,17 +1658,13 @@ const Message: FC<OwnProps & StateProps> = ({
         {!isAlbum && video && !isRoundVideo && (
           <Video
             video={video}
-            isOwn={isOwn}
             observeIntersectionForLoading={observeIntersectionForLoading}
             observeIntersectionForPlaying={observeIntersectionForPlaying}
-            forcedWidth={contentWidth}
-            noAvatars={noAvatars}
             canAutoLoad={canAutoLoadMedia}
             canAutoPlay={canAutoPlayMedia}
             uploadProgress={uploadProgress}
             isDownloading={isDownloading}
             isProtected={isProtected}
-            asForwarded={asForwarded}
             isMediaNsfw={isMediaNsfw}
             lastPlaybackTimestamp={lastPlaybackTimestamp}
             onClick={handleVideoMediaClick}
@@ -1503,8 +1687,9 @@ const Message: FC<OwnProps & StateProps> = ({
 
   function shouldRenderSenderName() {
     const media = photo || video || location || paidMedia;
-    return !(isCustomShape && !viaBotId) && (
-      (withSenderName && (!media || hasTopicChip)) || asForwarded || viaBotId || forceSenderName
+    return !(isCustomShape && !hasViaSender) && (
+      (withSenderName && (!media || hasTopicChip)) || asForwarded || viaBotId
+      || (guestChatViaId && isFirstInGroup) || forceSenderName
     ) && !isInDocumentGroupNotFirst && !(hasMessageReply && isCustomShape);
   }
 
@@ -1523,25 +1708,45 @@ const Message: FC<OwnProps & StateProps> = ({
     );
   }
 
-  const handleSuggestedMessageButton = useLastCallback((payload: ActionPayloads['clickBotInlineButton']) => {
-    if (payload.button.type !== 'suggestedMessage') return;
-    if (payload.button.buttonType === 'approve') {
-      openSuggestedPostApprovalModal({
+  const handleInlineButtonClick = useLastCallback((button: ApiKeyboardButton) => {
+    clickBotInlineButton({
+      chatId,
+      messageId: message.id,
+      threadId,
+      button,
+    });
+  });
+
+  const handleLocalInlineButtonClick = useLastCallback((button: ApiKeyboardButton) => {
+    if (button.type === 'openThread') {
+      openThread({
         chatId,
-        messageId: message.id,
+        threadId: messageTopic!.id,
       });
       return;
     }
 
-    if (payload.button.buttonType === 'decline') {
-      openDeclineDialog();
+    if (button.type === 'suggestedMessage') {
+      if (button.buttonType === 'approve') {
+        openSuggestedPostApprovalModal({
+          chatId,
+          messageId: message.id,
+        });
+        return;
+      }
+
+      if (button.buttonType === 'decline') {
+        openDeclineDialog();
+        return;
+      }
+
+      clickSuggestedMessageButton({
+        chatId,
+        messageId: message.id,
+        button,
+      });
       return;
     }
-
-    clickSuggestedMessageButton({
-      ...payload,
-      button: payload.button,
-    });
   });
 
   const handleDeclineReasonChange = useLastCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1562,8 +1767,7 @@ const Message: FC<OwnProps & StateProps> = ({
     shouldSkipRenderForwardTitle: boolean = false, shouldSkipRenderAdminTitle: boolean = false,
   ) {
     let senderTitle;
-    let senderColor;
-    if (senderPeer && !(isCustomShape && viaBotId)) {
+    if (senderPeer && !(isCustomShape && hasViaSender)) {
       senderTitle = getPeerFullTitle(oldLang, senderPeer);
     } else if (forwardInfo?.hiddenUserName) {
       senderTitle = forwardInfo.hiddenUserName;
@@ -1572,9 +1776,25 @@ const Message: FC<OwnProps & StateProps> = ({
     }
     const senderEmojiStatus = senderPeer && 'emojiStatus' in senderPeer && senderPeer.emojiStatus;
     const senderIsPremium = senderPeer && 'isPremium' in senderPeer && senderPeer.isPremium;
+    const guestFromSenderTitle = guestFromSender ? getPeerTitle(oldLang, guestFromSender) : undefined;
 
     const shouldRenderForwardAvatar = asForwarded && senderPeer;
-    const hasBotSenderUsername = botSender?.hasUsername;
+    const adminTitle = (!shouldSkipRenderAdminTitle && !signature) ? (forwardInfo?.isLinkedChannelPost ? (
+      <span className="admin-title" dir="auto">{oldLang('DiscussChannel')}</span>
+    ) : message.postAuthorTitle && isGroup && !asForwarded ? (
+      <span className="admin-title" dir="auto">{message.postAuthorTitle}</span>
+    ) : (senderChatMember || fromRank) && !asForwarded ? (
+      <RankBadge
+        chatId={chatId}
+        userId={(senderChatMember?.userId || sender?.id)!}
+        isAdmin={senderChatMember?.isAdmin}
+        isOwner={senderChatMember?.isOwner}
+        rank={senderChatMember?.rank || fromRank}
+        className="admin-title-badge"
+        isClickable
+      />
+    ) : undefined) : undefined;
+
     return (
       <div className="message-title" dir="ltr">
         {(senderTitle || asForwarded) ? (
@@ -1582,7 +1802,6 @@ const Message: FC<OwnProps & StateProps> = ({
             className={buildClassName(
               'message-title-name-container',
               forwardInfo?.hiddenUserName ? 'sender-hidden' : 'interactive',
-              senderColor,
             )}
             dir="ltr"
           >
@@ -1615,12 +1834,12 @@ const Message: FC<OwnProps & StateProps> = ({
               {senderPeer?.fakeType && <FakeIcon fakeType={senderPeer.fakeType} />}
             </span>
           </span>
-        ) : !botSender ? (
+        ) : (!botSender && !guestFromSender) ? (
           NBSP
         ) : undefined}
         {botSender?.hasUsername && (
-          <span className="interactive">
-            <span className="via">{oldLang('ViaBot')}</span>
+          <span className="interactive via-sender">
+            <span className="via">{lang('ViaBot')}</span>
             <span
               className="sender-title"
               onClick={handleViaBotClick}
@@ -1629,22 +1848,27 @@ const Message: FC<OwnProps & StateProps> = ({
             </span>
           </span>
         )}
-        <div className="title-spacer" />
-        {!shouldSkipRenderAdminTitle && !hasBotSenderUsername ? (forwardInfo?.isLinkedChannelPost ? (
-          <span className="admin-title" dir="auto">{oldLang('DiscussChannel')}</span>
-        ) : message.postAuthorTitle && isGroup && !asForwarded ? (
-          <span className="admin-title" dir="auto">{message.postAuthorTitle}</span>
-        ) : senderAdminMember && !asForwarded && !viaBotId ? (
-          <span className="admin-title" dir="auto">
-            {senderAdminMember.customTitle || oldLang(
-              senderAdminMember.isOwner ? 'GroupInfo.LabelOwner' : 'GroupInfo.LabelAdmin',
-            )}
+        {guestFromSenderTitle && (
+          <span className="interactive via-sender">
+            <span className="via">{lang('ForBot')}</span>
+            <span
+              className="sender-title"
+              onClick={handleGuestForClick}
+            >
+              {renderText(guestFromSenderTitle)}
+            </span>
           </span>
-        ) : undefined) : undefined}
-        {canShowSenderBoosts && (
-          <span className="sender-boosts" aria-hidden>
-            <Icon name={senderBoosts > 1 ? 'boosts' : 'boost'} />
-            {senderBoosts > 1 ? senderBoosts : undefined}
+        )}
+        <div className="title-spacer" />
+        {(adminTitle || canShowSenderBoosts) && (
+          <span className="message-title-meta">
+            {adminTitle}
+            {canShowSenderBoosts && (
+              <span className="sender-boosts" aria-hidden>
+                <Icon name={senderBoosts > 1 ? 'boosts' : 'boost'} />
+                {senderBoosts > 1 ? senderBoosts : undefined}
+              </span>
+            )}
           </span>
         )}
       </div>
@@ -1655,11 +1879,52 @@ const Message: FC<OwnProps & StateProps> = ({
   const shouldRenderSuggestedPostButtons = message.suggestedPostInfo
     && !message.isOutgoing && !message.suggestedPostInfo.isAccepted && !message.suggestedPostInfo.isRejected;
 
-  const isSuggestedPostExpired = useMemo(() => {
+  const isSuggestedPostExpired = (() => {
     if (!message.suggestedPostInfo?.scheduleDate || !minFutureTime) return false;
     const now = getServerTime();
     return message.suggestedPostInfo.scheduleDate <= now + minFutureTime;
-  }, [message.suggestedPostInfo, minFutureTime]);
+  })();
+
+  const suggestedPostButtons: ApiKeyboardButton[][] | undefined = useMemo(() => {
+    if (!shouldRenderSuggestedPostButtons) return undefined;
+    return [
+      [
+        {
+          type: 'suggestedMessage',
+          buttonType: 'decline',
+          text: lang('SuggestedPostDecline'),
+        },
+        {
+          type: 'suggestedMessage',
+          buttonType: 'approve',
+          text: lang('SuggestedPostApprove'),
+          disabled: isSuggestedPostExpired,
+        },
+      ],
+      [
+        {
+          type: 'suggestedMessage',
+          buttonType: 'suggestChanges',
+          text: lang('SuggestedPostSuggestChanges'),
+        },
+      ],
+    ];
+  }, [isSuggestedPostExpired, lang, shouldRenderSuggestedPostButtons]);
+
+  const openThreadButtons: ApiKeyboardButton[][] | undefined = useMemo(() => {
+    if (!isBotForum || message.inlineButtons || !messageTopic || !isLastInList ||
+      threadId !== MAIN_THREAD_ID
+    ) return undefined;
+
+    return [
+      [{
+        type: 'openThread',
+        text: lang('BotForumContinueThreadButton'),
+      }],
+    ];
+  }, [isBotForum, lang, message.inlineButtons, messageTopic, isLastInList, threadId]);
+
+  const additionalInlineButtons = suggestedPostButtons || openThreadButtons;
 
   return (
     <div
@@ -1683,13 +1948,14 @@ const Message: FC<OwnProps & StateProps> = ({
         data-last-message-id={album ? album.messages[album.messages.length - 1].id : undefined}
         data-album-main-id={album ? album.mainMessage.id : undefined}
         data-has-unread-mention={message.hasUnreadMention || undefined}
+        data-has-unread-poll-vote={hasUnreadPollVote || undefined}
         data-has-unread-reaction={hasUnreadReaction || undefined}
         data-is-pinned={isPinned || undefined}
         data-should-update-views={message.viewsCount !== undefined}
       />
       {!isInDocumentGroup && (
         <div className="message-select-control no-selection">
-          {isSelected && <Icon name="select" />}
+          {isSelected && <Icon name="check" className="message-select-control-icon" />}
         </div>
       )}
       {isLastInDocumentGroup && (
@@ -1700,7 +1966,7 @@ const Message: FC<OwnProps & StateProps> = ({
           onClick={handleDocumentGroupSelectAll}
         >
           {isGroupSelected && (
-            <Icon name="select" />
+            <Icon name="check" className="message-select-control-icon" />
           )}
         </div>
       )}
@@ -1711,7 +1977,7 @@ const Message: FC<OwnProps & StateProps> = ({
       >
         <div
           className={contentClassName}
-          style={style}
+          style={contentStyle}
           dir="auto"
         >
           {asForwarded && !isInDocumentGroupNotFirst && (
@@ -1723,50 +1989,62 @@ const Message: FC<OwnProps & StateProps> = ({
           {renderContent()}
           {!isInDocumentGroupNotLast && metaPosition === 'standalone' && !isStoryMention && renderReactionsAndMeta()}
           {canShowActionButton && (
-            <div className={buildClassName(
-              'message-action-buttons',
-              isLoadingComments && 'message-action-buttons-shown',
-            )}
-            >
-              {withCommentButton && isCustomShape && (
-                <CommentButton
-                  threadInfo={repliesThreadInfo}
-                  disabled={noComments}
-                  isLoading={isLoadingComments}
-                  isCustomShape
-                  asActionButton
-                />
+            <div className="message-action-buttons-container">
+              <div className="message-action-buttons-sticky-zone">
+                <div className="message-action-buttons message-action-button-sticky">
+                  {hasSummary && (
+                    <Button
+                      className="message-action-button action-summary"
+                      color="translucent-white"
+                      round
+                      withSparkleEffect
+                      ariaLabel={isShowingSummary ? lang('AriaHideSummary') : lang('AriaShowSummary')}
+                      onClick={isShowingSummary ? hideSummary : showSummary}
+                      iconName={isShowingSummary ? 'expand' : 'collapse'}
+                    />
+                  )}
+                </div>
+              </div>
+              <div className={buildClassName(
+                'message-action-buttons',
+                isLoadingComments && 'message-action-buttons-shown',
               )}
-              {canForward && (
-                <Button
-                  className="message-action-button"
-                  color="translucent-white"
-                  round
-                  size="tiny"
-                  ariaLabel={oldLang('lng_context_forward_msg')}
-                  onClick={isLastInDocumentGroup ? handleGroupForward : handleForward}
-                >
-                  <Icon name="share-filled" />
-                </Button>
-              )}
-              {canFocus && (
-                <Button
-                  className="message-action-button"
-                  color="translucent-white"
-                  round
-                  size="tiny"
-                  ariaLabel={lang('FocusMessage')}
-                  onClick={isPinnedList ? handleFocus : handleFocusForwarded}
-                >
-                  <Icon name="arrow-right" />
-                </Button>
-              )}
+              >
+                {withCommentButton && isCustomShape && (
+                  <CommentButton
+                    threadInfo={commentsThreadInfo}
+                    disabled={noComments || !commentsThreadInfo}
+                    isLoading={isLoadingComments}
+                    isCustomShape
+                  />
+                )}
+                {canForward && (
+                  <Button
+                    className="message-action-button"
+                    color="translucent-white"
+                    round
+                    ariaLabel={oldLang('lng_context_forward_msg')}
+                    onClick={isLastInDocumentGroup ? handleGroupForward : handleForward}
+                    iconName="share-filled"
+                  />
+                )}
+                {canFocus && (
+                  <Button
+                    className="message-action-button"
+                    color="translucent-white"
+                    round
+                    ariaLabel={lang('FocusMessage')}
+                    onClick={isPinnedList ? handleFocus : handleFocusForwarded}
+                    iconName="arrow-right"
+                  />
+                )}
+              </div>
             </div>
           )}
-          {withCommentButton && !(canShowActionButton && isCustomShape) && (
+          {withCommentButton && !isCustomShape && (
             <CommentButton
-              threadInfo={repliesThreadInfo}
-              disabled={noComments}
+              threadInfo={commentsThreadInfo}
+              disabled={noComments || !commentsThreadInfo}
               isLoading={isLoadingComments}
             />
           )}
@@ -1774,36 +2052,17 @@ const Message: FC<OwnProps & StateProps> = ({
           {withQuickReactionButton && quickReactionPosition === 'in-content' && renderQuickReactionButton()}
         </div>
         {message.inlineButtons && (
-          <InlineButtons message={message} onClick={clickBotInlineButton} />
-        )}
-        {shouldRenderSuggestedPostButtons && (
           <InlineButtons
-            message={{
-              ...message,
-              inlineButtons: [
-                [
-                  {
-                    type: 'suggestedMessage',
-                    buttonType: 'decline',
-                    text: lang('SuggestedPostDecline'),
-                  },
-                  {
-                    type: 'suggestedMessage',
-                    buttonType: 'approve',
-                    text: lang('SuggestedPostApprove'),
-                    disabled: isSuggestedPostExpired,
-                  },
-                ],
-                [
-                  {
-                    type: 'suggestedMessage',
-                    buttonType: 'suggestChanges',
-                    text: lang('SuggestedPostSuggestChanges'),
-                  },
-                ],
-              ],
-            }}
-            onClick={handleSuggestedMessageButton}
+            inlineButtons={message.inlineButtons}
+            isEphemeral={message.isEphemeral}
+            onClick={handleInlineButtonClick}
+          />
+        )}
+        {additionalInlineButtons && (
+          <InlineButtons
+            inlineButtons={additionalInlineButtons}
+            isEphemeral={message.isEphemeral}
+            onClick={handleLocalInlineButtonClick}
           />
         )}
         {reactionsPosition === 'outside' && !isStoryMention && (
@@ -1812,7 +2071,6 @@ const Message: FC<OwnProps & StateProps> = ({
             threadId={threadId}
             isOutside
             isCurrentUserPremium={isPremium}
-            maxWidth={reactionsMaxWidth}
             observeIntersection={observeIntersectionForPlaying}
             noRecentReactors={isChannel}
             tags={tags}
@@ -1825,9 +2083,11 @@ const Message: FC<OwnProps & StateProps> = ({
           isOpen={isContextMenuOpen}
           anchor={contextMenuAnchor}
           targetHref={contextMenuTarget?.matches('a[href]') ? (contextMenuTarget as HTMLAnchorElement).href : undefined}
+          isAltKeyPressed={isContextMenuAltKeyPressed}
           message={message}
           album={album}
           messageListType={messageListType}
+          threadId={threadId}
           onClose={handleContextMenuClose}
           onCloseAnimationEnd={handleContextMenuHide}
           repliesThreadInfo={repliesThreadInfo}
@@ -1868,11 +2128,12 @@ export default memo(withGlobal<OwnProps>(
       loadingThread,
     } = selectTabState(global);
     const {
-      message, album, withSenderName, withAvatar, threadId, messageListType, isLastInDocumentGroup, isFirstInGroup,
+      message, album, documentGroup, withSenderName, withAvatar, threadId, messageListType,
+      isLastInDocumentGroup, isFirstInGroup, shouldIgnoreSendFocus,
     } = ownProps;
     const {
-      id, chatId, viaBotId, isOutgoing, forwardInfo, transcriptionId, isPinned, viaBusinessBotId, effectId,
-      paidMessageStars,
+      id, chatId, viaBotId, guestChatViaId, isOutgoing, forwardInfo, transcriptionId, isPinned,
+      viaBusinessBotId, effectId, paidMessageStars,
     } = message;
 
     const webPage = selectFullWebPageFromMessage(global, message);
@@ -1882,11 +2143,13 @@ export default memo(withGlobal<OwnProps>(
 
     const chat = selectChat(global, chatId);
     const isChatWithSelf = selectIsChatWithSelf(global, chatId);
+    const isChatWithBot = selectIsChatWithBot(global, chatId);
     const isSystemBotChat = isSystemBot(chatId);
     const isAnonymousForwards = isAnonymousForwardsChat(chatId);
     const isChannel = chat && isChatChannel(chat);
     const isGroup = chat && isChatGroup(chat);
     const chatFullInfo = !isChatWithUser ? selectChatFullInfo(global, chatId) : undefined;
+    const { adminMembersById, members, boostsApplied } = chatFullInfo || {};
     const webPageStoryData = webPage?.story;
     const webPageStory = webPageStoryData
       ? selectPeerStory(global, webPageStoryData.peerId, webPageStoryData.id)
@@ -1898,13 +2161,16 @@ export default memo(withGlobal<OwnProps>(
     const sender = selectSender(global, message);
     const originSender = selectForwardedSender(global, message);
     const botSender = viaBotId ? selectUser(global, viaBotId) : undefined;
-    const senderAdminMember = sender?.id && isGroup
-      ? chatFullInfo?.adminMembersById?.[sender?.id]
+    const ephemeralBot = message.ephemeralBotId ? selectUser(global, message.ephemeralBotId) : undefined;
+    const guestFromSender = guestChatViaId ? selectPeer(global, guestChatViaId) : undefined;
+    const senderChatMember = sender?.id
+      ? (adminMembersById?.[sender?.id] || members?.find((member) => member.userId === sender?.id))
       : undefined;
 
-    const isThreadTop = message.id === threadId;
-
-    const { replyToMsgId, replyToPeerId, replyFrom } = getMessageReplyInfo(message) || {};
+    const replyInfo = getMessageReplyInfo(message) || getEphemeralReplyInfo(message);
+    const replyToMsgId = replyInfo?.replyToMsgId;
+    const replyToPeerId = replyInfo?.type === 'message' ? replyInfo.replyToPeerId : undefined;
+    const replyFrom = replyInfo?.type === 'message' ? replyInfo.replyFrom : undefined;
     const { peerId: storyReplyPeerId, storyId: storyReplyId } = getStoryReplyInfo(message) || {};
 
     const shouldHideReply = replyToMsgId && replyToMsgId === threadId;
@@ -1925,11 +2191,18 @@ export default memo(withGlobal<OwnProps>(
     const storySender = storyReplyPeerId ? selectPeer(global, storyReplyPeerId) : undefined;
 
     const uploadProgress = selectUploadProgress(global, message);
-    const isFocused = messageListType === 'thread' && (
+    const isFocusTarget = messageListType === 'thread' && (
       album
         ? album.messages.some((m) => selectIsMessageFocused(global, m, threadId))
         : selectIsMessageFocused(global, message, threadId)
     );
+    const shouldIgnoreFocus = Boolean(
+      isFocusTarget
+      && shouldIgnoreSendFocus
+      && focusedMessage?.noHighlight
+      && focusedMessage.isResizingContainer,
+    );
+    const isFocused = isFocusTarget && !shouldIgnoreFocus;
 
     const {
       direction: focusDirection, noHighlight: noFocusHighlight, isResizingContainer,
@@ -1956,25 +2229,29 @@ export default memo(withGlobal<OwnProps>(
     const downloadableMedia = selectMessageDownloadableMedia(global, message);
     const isDownloading = downloadableMedia && getIsDownloading(activeDownloads, downloadableMedia);
 
-    const repliesThreadInfo = selectThreadInfo(global, chatId, album?.commentsMessage?.id || id);
-
     const isInDocumentGroup = Boolean(message.groupedId) && !message.isInAlbum;
-    const documentGroupFirstMessageId = isInDocumentGroup
-      ? selectMessageIdsByGroupId(global, chatId, message.groupedId!)![0]
-      : undefined;
+
+    const repliesThreadInfo = selectThreadInfo(
+      global, chatId, album?.commentsMessage?.id || documentGroup?.commentsMessage?.id || id,
+    );
     const reactionMessage = isInDocumentGroup ? (
-      isLastInDocumentGroup ? selectChatMessage(global, chatId, documentGroupFirstMessageId!) : undefined
+      isLastInDocumentGroup && documentGroup?.firstMessageId
+        ? selectChatMessage(global, chatId, documentGroup.firstMessageId)
+        : undefined
     ) : message;
 
-    const hasUnreadReaction = chat?.unreadReactions?.includes(message.id);
+    const readState = selectThreadReadState(global, chatId, threadId);
+    const hasUnreadReaction = readState?.unreadReactions?.includes(message.id);
+    const hasUnreadPollVote = readState?.unreadPollVotes?.includes(message.id);
 
-    const hasTopicChip = threadId === MAIN_THREAD_ID && chat?.isForum && isFirstInGroup;
-    const messageTopic = hasTopicChip ? selectTopicFromMessage(global, message) : undefined;
+    const hasTopicChip = threadId === MAIN_THREAD_ID && chat?.isForum && !chat.isBotForum && isFirstInGroup;
+    const messageTopic = selectTopicFromMessage(global, message);
 
     const chatTranslations = selectChatTranslations(global, chatId);
 
     const requestedTranslationLanguage = selectRequestedMessageTranslationLanguage(global, chatId, message.id);
     const requestedChatTranslationLanguage = selectRequestedChatTranslationLanguage(global, chatId);
+    const requestedTranslationTone = selectRequestedChatTranslationTone(global, chatId);
 
     const areTranslationsEnabled = IS_TRANSLATION_SUPPORTED && global.settings.byKey.canTranslate
       && !requestedChatTranslationLanguage; // Stop separate language detection if chat translation is requested
@@ -1985,11 +2262,12 @@ export default memo(withGlobal<OwnProps>(
 
     const isPremium = selectIsCurrentUserPremium(global);
     const senderBoosts = sender && selectIsChatWithSelf(global, sender.id)
-      ? (chatFullInfo?.boostsApplied ?? message.senderBoosts) : message.senderBoosts;
+      ? (boostsApplied ?? message.senderBoosts) : message.senderBoosts;
 
     const chatLevel = chat?.boostLevel || 0;
     const transcribeMinLevel = global.appConfig.groupTranscribeLevelMin;
-    const canTranscribeVoice = isPremium || Boolean(transcribeMinLevel && chatLevel >= transcribeMinLevel);
+    const canTranscribeVoice = !message.isEphemeral
+      && (isPremium || Boolean(transcribeMinLevel && chatLevel >= transcribeMinLevel));
 
     const viaBusinessBot = viaBusinessBotId ? selectUser(global, viaBusinessBotId) : undefined;
 
@@ -2007,6 +2285,10 @@ export default memo(withGlobal<OwnProps>(
     const isMediaNsfw = selectIsMediaNsfw(global, message);
     const isReplyMediaNsfw = replyMessage && selectIsMediaNsfw(global, replyMessage);
 
+    const summary = selectMessageSummary(global, chatId, message.id, requestedTranslationLanguage);
+
+    const allowedAttachmentOptions = getAllowedAttachmentOptions(chat, chatFullInfo, isChatWithBot);
+
     return {
       theme: selectTheme(global),
       forceSenderName,
@@ -2014,8 +2296,9 @@ export default memo(withGlobal<OwnProps>(
       canShowSender,
       originSender,
       botSender,
+      ephemeralBot,
+      guestFromSender,
       shouldHideReply: shouldHideReply || isReplyToTopicStart,
-      isThreadTop,
       replyMessage,
       replyMessageSender,
       replyMessageForwardSender,
@@ -2025,22 +2308,25 @@ export default memo(withGlobal<OwnProps>(
       storySender,
       isInDocumentGroup,
       isProtected: selectIsMessageProtected(global, message),
-      isChatProtected: selectIsChatProtected(global, chatId),
+      canForward: Boolean(
+        isChannel && messageListType !== 'scheduled' && selectCanForwardMessage(global, message),
+      ),
       isFocused,
       isForwarding,
       reactionMessage,
       isChatWithSelf,
+      isBotForum: chat?.isBotForum,
       isRepliesChat: isSystemBotChat,
       isAnonymousForwards,
       isChannel,
       isGroup,
-      canReply,
+      canReply: message.isEphemeral ? !message.isOutgoing : canReply,
       highlight,
       animatedEmoji,
       animatedCustomEmoji,
-      isInSelectMode: selectIsInSelectMode(global),
-      isSelected,
-      isGroupSelected: (
+      isInSelectMode: !message.isEphemeral && selectIsInSelectMode(global),
+      isSelected: message.isEphemeral ? false : isSelected,
+      isGroupSelected: !message.isEphemeral && (
         Boolean(message.groupedId)
         && !message.isInAlbum
         && selectIsDocumentGroupSelected(global, chatId, message.groupedId)
@@ -2049,21 +2335,23 @@ export default memo(withGlobal<OwnProps>(
       isDownloading,
       isPinnedList: messageListType === 'pinned',
       isPinned,
+      isMessagePrimaryEditedDateEnabled: Boolean(global.appConfig.isMessagePrimaryEditedDateEnabled),
       canAutoLoadMedia: selectCanAutoLoadMedia(global, message),
       canAutoPlayMedia: selectCanAutoPlayMedia(global, message),
       autoLoadFileMaxSizeMb: global.settings.byKey.autoLoadFileMaxSizeMb,
       shouldLoopStickers: selectShouldLoopStickers(global),
       repliesThreadInfo,
       availableReactions: global.reactions.availableReactions,
-      defaultReaction: isMessageLocal(message) || messageListType === 'scheduled'
+      defaultReaction: message.isEphemeral || isMessageLocal(message) || messageListType === 'scheduled'
         ? undefined : selectDefaultReaction(global, chatId),
-      hasActiveReactions,
+      hasActiveReactions: message.isEphemeral ? false : hasActiveReactions,
       activeEmojiInteractions,
       hasUnreadReaction,
+      hasUnreadPollVote,
       isTranscribing: transcriptionId !== undefined && global.transcriptions[transcriptionId]?.isPending,
       transcribedText: transcriptionId !== undefined ? global.transcriptions[transcriptionId]?.text : undefined,
       isPremium,
-      senderAdminMember,
+      senderChatMember,
       messageTopic,
       hasTopicChip,
       chatTranslations,
@@ -2071,15 +2359,21 @@ export default memo(withGlobal<OwnProps>(
       shouldDetectChatLanguage: selectShouldDetectChatLanguage(global, chatId),
       requestedTranslationLanguage,
       requestedChatTranslationLanguage,
+      requestedTranslationTone,
       hasLinkedChat: Boolean(chatFullInfo?.linkedChatId),
       withAnimatedEffects: selectPerformanceSettingsValue(global, 'stickerEffects'),
+      canAnimateTextStreaming: selectPerformanceSettingsValue(global, 'textStreaming'),
       webPageStory,
       isConnected,
       isLoadingComments: repliesThreadInfo?.isCommentsInfo
         && loadingThread?.loadingChatId === repliesThreadInfo?.originChannelId
         && loadingThread?.loadingMessageId === repliesThreadInfo?.originMessageId,
       shouldWarnAboutFiles,
-      outgoingStatus: isOutgoing ? selectOutgoingStatus(global, message, messageListType === 'scheduled') : undefined,
+      outgoingStatus: isOutgoing
+        ? message.isEphemeral
+          ? selectEphemeralOutgoingStatus(global, chatId, message.id)
+          : selectOutgoingStatus(global, chatId, threadId, message.id, messageListType)
+        : undefined,
       uploadProgress: typeof uploadProgress === 'number' ? uploadProgress : undefined,
       focusDirection: isFocused ? focusDirection : undefined,
       noFocusHighlight: isFocused ? noFocusHighlight : undefined,
@@ -2102,6 +2396,8 @@ export default memo(withGlobal<OwnProps>(
       isMediaNsfw,
       isReplyMediaNsfw,
       webPage,
+      summary,
+      canSendStickers: allowedAttachmentOptions.canSendStickers,
     };
   },
 )(Message));

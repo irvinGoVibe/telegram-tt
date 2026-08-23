@@ -1,5 +1,4 @@
-import type { FC } from '../../../lib/teact/teact';
-import { memo, useCallback } from '../../../lib/teact/teact';
+import { memo, useCallback } from '@teact';
 import { getActions, withGlobal } from '../../../global';
 
 import type { ApiChat, ApiUser } from '../../../api/types';
@@ -8,15 +7,21 @@ import { StoryViewerOrigin } from '../../../types';
 import { UNMUTE_TIMESTAMP } from '../../../config';
 import { getIsChatMuted } from '../../../global/helpers/notifications';
 import {
-  selectChat, selectIsChatPinned, selectNotifyDefaults, selectNotifyException, selectUser,
+  selectChat,
+  selectIsChatPinned,
+  selectNotifyDefaults,
+  selectNotifyException,
+  selectTopicsInfo,
+  selectUser,
 } from '../../../global/selectors';
+import { onDragEnter, onDragLeave } from '../../../util/dragNDropHandlers.ts';
 import { isUserId } from '../../../util/entities/ids';
 import { extractCurrentThemeParams } from '../../../util/themeStyle';
 
 import useChatContextActions from '../../../hooks/useChatContextActions';
 import useFlag from '../../../hooks/useFlag';
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import useOldLang from '../../../hooks/useOldLang';
 import useSelectWithEnter from '../../../hooks/useSelectWithEnter';
 
 import GroupChatInfo from '../../common/GroupChatInfo';
@@ -36,24 +41,26 @@ type OwnProps = {
 type StateProps = {
   chat?: ApiChat;
   user?: ApiUser;
+  listedTopicIds?: number[];
   isPinned?: boolean;
   isMuted?: boolean;
   canChangeFolder?: boolean;
 };
 
-const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
+const LeftSearchResultChat = ({
   chatId,
   withUsername,
   chat,
   user,
+  listedTopicIds,
   isPinned,
   isMuted,
   canChangeFolder,
   withOpenAppButton,
   onClick,
-}) => {
+}: OwnProps & StateProps) => {
   const { requestMainWebView, updateChatMutedState, openQuickPreview } = getActions();
-  const oldLang = useOldLang();
+  const lang = useLang();
 
   const [isMuteModalOpen, openMuteModal, closeMuteModal] = useFlag();
   const [isChatFolderModalOpen, openChatFolderModal, closeChatFolderModal] = useFlag();
@@ -80,6 +87,7 @@ const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
     isPinned,
     isMuted,
     canChangeFolder,
+    topicIds: listedTopicIds,
     handleMute,
     handleUnmute,
     handleChatFolderChange,
@@ -105,6 +113,14 @@ const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
     });
   });
 
+  const handleDragEnter = useLastCallback((e) => {
+    e.preventDefault();
+
+    onDragEnter(() => {
+      onClick(chatId);
+    }, true);
+  });
+
   const buttonRef = useSelectWithEnter(() => {
     onClick(chatId);
   });
@@ -112,9 +128,12 @@ const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
   return (
     <ListItem
       className="chat-item-clickable search-result"
-      onClick={handleClick}
       contextActions={contextActions}
       buttonRef={buttonRef}
+      withPortalForMenu
+      onClick={handleClick}
+      onDragEnter={handleDragEnter}
+      onDragLeave={onDragLeave}
     >
       {isUserId(chatId) ? (
         <PrivateChatInfo
@@ -135,13 +154,13 @@ const LeftSearchResultChat: FC<OwnProps & StateProps> = ({
       )}
       {withOpenAppButton && user?.hasMainMiniApp && (
         <Button
-          className="ChatBadge miniapp"
+          className="search-result-miniapp-button"
           pill
           fluid
           size="tiny"
           onClick={handleOpenApp}
         >
-          {oldLang('BotOpen')}
+          {lang('BotChatMiniAppOpen')}
         </Button>
       )}
       {shouldRenderMuteModal && (
@@ -171,12 +190,15 @@ export default memo(withGlobal<OwnProps>(
     const isPinned = selectIsChatPinned(global, chatId);
     const isMuted = chat && getIsChatMuted(chat, selectNotifyDefaults(global), selectNotifyException(global, chat.id));
 
+    const listedTopicIds = selectTopicsInfo(global, chatId)?.listedTopicIds;
+
     return {
       chat,
       user,
       isPinned,
       isMuted,
       canChangeFolder: Boolean(global.chatFolders.orderedIds?.length),
+      listedTopicIds,
     };
   },
 )(LeftSearchResultChat));

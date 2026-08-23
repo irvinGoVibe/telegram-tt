@@ -3,8 +3,8 @@ import { type TeactNode } from '../../../lib/teact/teact';
 import { IS_IOS } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 
+import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
-import useOldLang from '../../../hooks/useOldLang';
 
 import RippleEffect from '../../ui/RippleEffect';
 
@@ -43,7 +43,7 @@ const PickerItem = ({
   onClick,
   onDisabledClick,
 }: OwnProps) => {
-  const lang = useOldLang();
+  const lang = useLang();
 
   const isClickable = !inactive && !disabled;
   const handleClick = useLastCallback(() => {
@@ -57,6 +57,14 @@ const PickerItem = ({
     onClick?.();
   });
 
+  const handleKeyDown = useLastCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== ' ') return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    handleClick();
+  });
+
   return (
     <div
       className={buildClassName(
@@ -68,6 +76,7 @@ const PickerItem = ({
         className,
       )}
       onClick={handleClick}
+      onKeyDown={isClickable ? handleKeyDown : undefined}
       style={style}
       dir={lang.isRtl ? 'rtl' : undefined}
       role={isClickable ? 'button' : undefined}

@@ -1,24 +1,31 @@
-import type { FC, TeactNode } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
+import type { TeactNode } from '../../lib/teact/teact';
 import {
-  memo, useCallback, useEffect, useMemo, useState,
+  memo, useCallback, useEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
+import { getActions, withGlobal } from '../../global';
 
 import type { OldLangFn } from '../../hooks/useOldLang';
+import type { RepeatedMessageMode } from '../../util/scheduledMessages';
 
 import { MAX_INT_32 } from '../../config';
+import { selectIsCurrentUserPremium } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
 import {
   formatDateToString, formatTime, getDayStart, getDayStartAt,
-} from '../../util/dates/dateFormat';
+} from '../../util/dates/oldDateFormat';
+import { ALL_REPEAT_MODES, getScheduleRepeatModeText, TEST_SERVER_ONLY_MODES } from '../../util/scheduledMessages';
 
+import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
 import useFlag from '../../hooks/useFlag';
+import useLang from '../../hooks/useLang';
+import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
 import Button from '../ui/Button';
+import Menu from '../ui/Menu';
+import MenuItem from '../ui/MenuItem';
 import Modal from '../ui/Modal';
-import Icon from './icons/Icon';
 
 import './CalendarModal.scss';
 
@@ -36,15 +43,23 @@ export type OwnProps = {
   isRangeMode?: boolean;
   isOpen: boolean;
   withTimePicker?: boolean;
+  withRepeatMode?: boolean;
+  initialRepeatMode?: RepeatedMessageMode;
   submitButtonLabel?: string;
   secondButtonLabel?: string;
   description?: string;
   topContent?: TeactNode;
   onClose: () => void;
-  onSubmit: (date: Date) => void;
+  onCloseAnimationEnd?: NoneToVoidFunction;
+  onSubmit: (date: Date, repeatMode?: RepeatedMessageMode) => void;
   onRangeSubmit?: (startDate: Date, endDate: Date) => void;
   onDateChange?: (date: Date) => void;
   onSecondButtonClick?: NoneToVoidFunction;
+};
+
+type StateProps = {
+  isTestServer?: boolean;
+  isCurrentUserPremium?: boolean;
 };
 
 const WEEKDAY_LETTERS = [
@@ -57,7 +72,7 @@ const WEEKDAY_LETTERS = [
   'lng_weekday7',
 ];
 
-const CalendarModal: FC<OwnProps> = ({
+const CalendarModal = ({
   selectedAt,
   rangeStartAt,
   rangeEndAt,
@@ -68,18 +83,42 @@ const CalendarModal: FC<OwnProps> = ({
   isRangeMode,
   isOpen,
   withTimePicker,
+  withRepeatMode,
+  initialRepeatMode,
   submitButtonLabel,
   secondButtonLabel,
   description,
   topContent,
+  isTestServer,
+  isCurrentUserPremium,
   onClose,
+  onCloseAnimationEnd,
   onSubmit,
   onRangeSubmit,
   onDateChange,
   onSecondButtonClick,
-}) => {
-  const lang = useOldLang();
+}: OwnProps & StateProps) => {
+  const { showNotification } = getActions();
+
+  const menuRef = useRef<HTMLDivElement>();
+  const dialogRef = useRef<HTMLDivElement>();
+
+  const oldLang = useOldLang();
+  const lang = useLang();
+  // eslint-disable-next-line @eslint-react/purity
   const now = new Date();
+
+  const {
+    isContextMenuOpen: isRepeatMenuOpen,
+    contextMenuAnchor: repeatMenuAnchor,
+    handleContextMenu,
+    handleContextMenuClose,
+    handleContextMenuHide,
+  } = useContextMenuHandlers(menuRef);
+
+  const getRootElement = useLastCallback(() => dialogRef.current);
+  const getMenuElement = useLastCallback(() => menuRef.current!.querySelector('.bubble'));
+  const getTriggerElement = useLastCallback(() => dialogRef.current!.querySelector('.repeat-mode-button'));
 
   const minDate = useMemo(() => {
     if (isFutureMode && !minAt) return new Date();
@@ -104,14 +143,17 @@ const CalendarModal: FC<OwnProps> = ({
   const [rangeStartDate, setRangeStartDate] = useState<Date | undefined>(passedRangeStartDate);
   const [rangeEndDate, setRangeEndDate] = useState<Date | undefined>(passedRangeEndDate);
   const [isSelectingRangeEnd, setIsSelectingRangeEnd] = useState(false);
-  const [currentMonthAndYear, setCurrentMonthAndYear] = useState<Date>(
-    new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1),
-  );
-  const [selectedHours, setSelectedHours] = useState<string>(
-    formatInputTime(passedSelectedDate.getHours()),
-  );
-  const [selectedMinutes, setSelectedMinutes] = useState<string>(
-    formatInputTime(passedSelectedDate.getMinutes()),
+  const [currentMonthAndYear, setCurrentMonthAndYear] = useState<Date>(() => (
+    new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1)
+  ));
+  const [selectedHours, setSelectedHours] = useState<string>(() => (
+    formatInputTime(passedSelectedDate.getHours())
+  ));
+  const [selectedMinutes, setSelectedMinutes] = useState<string>(() => (
+    formatInputTime(passedSelectedDate.getMinutes())
+  ));
+  const [repeatedMessageMode, setRepeatedMessageMode] = useState<RepeatedMessageMode>(
+    initialRepeatMode || 'never',
   );
 
   const selectedDay = formatDay(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
@@ -120,6 +162,16 @@ const CalendarModal: FC<OwnProps> = ({
 
   const isDisabled = (isFutureMode && selectedDate.getTime() < minDate.getTime())
     || (isPastMode && selectedDate.getTime() > maxDate.getTime());
+
+  useEffect(() => {
+    if (!isOpen) {
+      setRepeatedMessageMode('never');
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    setRepeatedMessageMode(initialRepeatMode || 'never');
+  }, [initialRepeatMode]);
 
   useEffect(() => {
     if (!prevIsOpen && isOpen) {
@@ -176,23 +228,50 @@ const CalendarModal: FC<OwnProps> = ({
   ), [currentMonth, currentYear]);
 
   const submitLabel = useMemo(() => {
-    return submitButtonLabel || formatSubmitLabel(lang, selectedDate);
-  }, [lang, selectedDate, submitButtonLabel]);
+    return submitButtonLabel || formatSubmitLabel(oldLang, selectedDate);
+  }, [oldLang, selectedDate, submitButtonLabel]);
 
-  function handlePrevMonth() {
+  const handleRepeatModeClick = useLastCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!isCurrentUserPremium) {
+      showNotification({
+        message: lang('MessageScheduledRepeatPremium'),
+        action: {
+          action: 'openPremiumModal',
+          payload: {},
+        },
+        actionText: lang('PremiumMore'),
+      });
+      return;
+    }
+    handleContextMenu(e);
+  });
+
+  function handlePrevMonth(e: React.MouseEvent) {
     setCurrentMonthAndYear((d) => {
       const dateCopy = new Date(d);
-      dateCopy.setMonth(dateCopy.getMonth() - 1);
-
+      if (e.shiftKey) {
+        dateCopy.setFullYear(dateCopy.getFullYear() - 1);
+        if (dateCopy < minDate) {
+          return new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+        }
+      } else {
+        dateCopy.setMonth(dateCopy.getMonth() - 1);
+      }
       return dateCopy;
     });
   }
 
-  function handleNextMonth() {
+  function handleNextMonth(e: React.MouseEvent) {
     setCurrentMonthAndYear((d) => {
       const dateCopy = new Date(d);
-      dateCopy.setMonth(dateCopy.getMonth() + 1);
-
+      if (e.shiftKey) {
+        dateCopy.setFullYear(dateCopy.getFullYear() + 1);
+        if (dateCopy > maxDate) {
+          return new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+        }
+      } else {
+        dateCopy.setMonth(dateCopy.getMonth() + 1);
+      }
       return dateCopy;
     });
   }
@@ -228,16 +307,18 @@ const CalendarModal: FC<OwnProps> = ({
       if (rangeStartDate && rangeEndDate) onRangeSubmit?.(rangeStartDate, rangeEndDate);
       return;
     }
+
+    const repeatMode = withRepeatMode && repeatedMessageMode !== 'never' ? repeatedMessageMode : undefined;
     if (isFutureMode && selectedDate < minDate) {
-      onSubmit(minDate);
+      onSubmit(minDate, repeatMode);
     } else if (isPastMode && selectedDate > maxDate) {
-      onSubmit(maxDate);
+      onSubmit(maxDate, repeatMode);
     } else {
-      onSubmit(selectedDate);
+      onSubmit(selectedDate, repeatMode);
     }
   }, [
     isFutureMode, isPastMode, isRangeMode, minDate, maxDate, onRangeSubmit, onSubmit,
-    rangeEndDate, rangeStartDate, selectedDate,
+    rangeEndDate, rangeStartDate, repeatedMessageMode, selectedDate, withRepeatMode,
   ]);
 
   const handleChangeHours = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,6 +361,18 @@ const CalendarModal: FC<OwnProps> = ({
     e.target.value = minutesStr;
   }, [selectedDate, onDateChange]);
 
+  const renderRepeatMenuItem = useCallback((mode: RepeatedMessageMode) => {
+    return (
+      <MenuItem key={mode} onClick={() => setRepeatedMessageMode(mode)}>
+        {getScheduleRepeatModeText(mode, lang)}
+      </MenuItem>
+    );
+  }, [lang]);
+
+  const availableRepeatModes = useMemo(() => {
+    return ALL_REPEAT_MODES.filter((mode) => isTestServer || !TEST_SERVER_ONLY_MODES.has(mode));
+  }, [isTestServer]);
+
   function renderTimePicker() {
     return (
       <div className="timepicker">
@@ -304,26 +397,55 @@ const CalendarModal: FC<OwnProps> = ({
     );
   }
 
+  function renderRepeatMode() {
+    const dropDownIconClass = buildClassName('drop-down-icon', !isRepeatMenuOpen && 'expanded-icon');
+
+    return (
+      <div className="repeat-mode" ref={menuRef}>
+        <Button
+          className="repeat-mode-button"
+          onClick={handleRepeatModeClick}
+          noForcedUpperCase
+          isText
+          iconName={isCurrentUserPremium ? 'down' : 'lock-badge'}
+          iconClassName={isCurrentUserPremium ? dropDownIconClass : undefined}
+          iconAlignment="end"
+        >
+          {lang('ScheduleRepeat', { value: getScheduleRepeatModeText(repeatedMessageMode, lang) })}
+        </Button>
+        <Menu
+          isOpen={isRepeatMenuOpen}
+          className="with-menu-transitions"
+          anchor={repeatMenuAnchor}
+          getTriggerElement={getTriggerElement}
+          getRootElement={getRootElement}
+          getMenuElement={getMenuElement}
+          onClose={handleContextMenuClose}
+          onCloseAnimationEnd={handleContextMenuHide}
+          autoClose
+        >
+          {availableRepeatModes.map(renderRepeatMenuItem)}
+        </Menu>
+      </div>
+    );
+  }
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
+      onCloseAnimationEnd={onCloseAnimationEnd}
       className="CalendarModal"
       onEnter={handleSubmit}
+      dialogRef={dialogRef}
+      hasAbsoluteCloseButton
+      isNativeDialog
     >
       <div className="container">
         <div className="month-selector">
-          <Button
-            round
-            size="smaller"
-            color="translucent"
-            onClick={onClose}
-          >
-            <Icon name="close" />
-          </Button>
 
           <h4>
-            {lang(`lng_month${currentMonth + 1}`)}
+            {oldLang(`lng_month${currentMonth + 1}`)}
             {' '}
             {currentYear}
           </h4>
@@ -332,21 +454,23 @@ const CalendarModal: FC<OwnProps> = ({
             round
             size="smaller"
             color="translucent"
+            iconName="previous"
             disabled={shouldDisablePrevMonth}
-            onClick={!shouldDisablePrevMonth ? handlePrevMonth : undefined}
-          >
-            <Icon name="previous" />
-          </Button>
+            noFastClick
+            noPreventDefault
+            onClick={shouldDisablePrevMonth ? undefined : handlePrevMonth}
+          />
 
           <Button
             round
             size="smaller"
             color="translucent"
+            iconName="next"
             disabled={shouldDisableNextMonth}
-            onClick={!shouldDisableNextMonth ? handleNextMonth : undefined}
-          >
-            <Icon name="next" />
-          </Button>
+            noFastClick
+            noPreventDefault
+            onClick={shouldDisableNextMonth ? undefined : handleNextMonth}
+          />
         </div>
       </div>
 
@@ -356,49 +480,72 @@ const CalendarModal: FC<OwnProps> = ({
         <div className="calendar-grid">
           {WEEKDAY_LETTERS.map((day) => (
             <div className="day-button faded weekday">
-              <span>{lang(day)}</span>
+              {oldLang(day)}
             </div>
           ))}
           {prevMonthGrid.map((gridDate) => (
-            <div className="day-button disabled"><span>{gridDate}</span></div>
+            <Button
+              key={`prev-month-${gridDate}`}
+              round
+              size="smaller"
+              color="translucent"
+              disabled
+            >
+              {gridDate}
+            </Button>
           ))}
           {currentMonthGrid.map((gridDate) => {
             const gridDay = getDayStartAt(new Date(currentYear, currentMonth, gridDate));
             const rangeStartDay = rangeStartDate ? getDayStartAt(rangeStartDate) : undefined;
             const rangeEndDay = rangeEndDate ? getDayStartAt(rangeEndDate) : undefined;
+            const isRangeStart = isRangeMode && gridDay === rangeStartDay;
+            const isRangeEnd = isRangeMode && gridDay === rangeEndDay;
+            const isInRange = isRangeMode && rangeStartDay !== undefined && rangeEndDay !== undefined
+              && gridDay > rangeStartDay && gridDay < rangeEndDay;
+            const isSelected = !isRangeMode && selectedDay === formatDay(currentYear, currentMonth, gridDate);
             return (
-              <div
-                role="button"
-                tabIndex={0}
+              <Button
+                key={`current-month-${gridDate}`}
+                round
+                autoFocus={isSelected || isRangeStart}
+                ariaSelected={isSelected || isRangeStart || isRangeEnd}
                 onClick={() => handleDateSelect(gridDate)}
+                disabled={isDisabledDay(
+                  currentYear, currentMonth, gridDate, minDate, maxDate,
+                )}
+                noFastClick
+                noPreventDefault
+                nonInteractive={!gridDate}
+                size="smaller"
+                color={isSelected || isRangeStart || isRangeEnd ? 'primary' : 'translucent'}
                 className={buildClassName(
-                  'day-button',
-                  'div-button',
-                  isDisabledDay(
-                    currentYear, currentMonth, gridDate, minDate, maxDate,
-                  )
-                    ? 'disabled'
-                    : gridDate ? 'clickable' : '',
-                  !isRangeMode && selectedDay === formatDay(currentYear, currentMonth, gridDate) && 'selected',
-                  isRangeMode && gridDay === rangeStartDay && 'range-start',
-                  isRangeMode && gridDay === rangeEndDay && 'range-end',
-                  isRangeMode && rangeStartDay !== undefined && rangeEndDay !== undefined
-                  && gridDay > rangeStartDay && gridDay < rangeEndDay && 'in-range',
+                  'day-button div-button',
+                  isSelected && 'selected',
+                  isRangeStart && 'range-start',
+                  isRangeEnd && 'range-end',
+                  isInRange && 'in-range',
                 )}
               >
-                {Boolean(gridDate) && (
-                  <span>{gridDate}</span>
-                )}
-              </div>
+                {gridDate}
+              </Button>
             );
           })}
           {nextMonthGrid.map((gridDate) => (
-            <div className="day-button disabled"><span>{gridDate}</span></div>
+            <Button
+              key={`next-month-${gridDate}`}
+              round
+              size="smaller"
+              color="translucent"
+              disabled
+            >
+              {gridDate}
+            </Button>
           ))}
         </div>
       </div>
 
       {withTimePicker && renderTimePicker()}
+      {withRepeatMode && isOpen && renderRepeatMode()}
 
       <div className="footer">
         {description && (
@@ -489,4 +636,13 @@ function formatSubmitLabel(lang: OldLangFn, date: Date) {
   return lang('Conversation.ScheduleMessage.SendOn', [day, formatTime(lang, date)]);
 }
 
-export default memo(CalendarModal);
+export default memo(withGlobal<OwnProps>(
+  (global): Complete<StateProps> => {
+    const isCurrentUserPremium = selectIsCurrentUserPremium(global);
+
+    return {
+      isTestServer: global.config?.isTestServer,
+      isCurrentUserPremium,
+    };
+  },
+)(CalendarModal));

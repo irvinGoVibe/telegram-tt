@@ -1,5 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import { memo, useMemo } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
@@ -19,6 +17,7 @@ import {
 } from '../../global/helpers';
 import { isApiPeerUser } from '../../global/helpers/peers';
 import buildClassName from '../../util/buildClassName';
+import buildStyle from '../../util/buildStyle';
 import { copyTextToClipboard } from '../../util/clipboard';
 import stopEvent from '../../util/stopEvent';
 import renderText from './helpers/renderText';
@@ -27,6 +26,7 @@ import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 
+import Marquee from '../ui/Marquee';
 import Transition from '../ui/Transition';
 import CustomEmoji from './CustomEmoji';
 import FakeIcon from './FakeIcon';
@@ -40,6 +40,8 @@ type OwnProps = {
   peer: ApiPeer | CustomPeer;
   className?: string;
   style?: string;
+  isScrolling?: boolean;
+  isScrollingPaused?: boolean;
   noVerified?: boolean;
   noFake?: boolean;
   withEmojiStatus?: boolean;
@@ -56,9 +58,11 @@ type OwnProps = {
   observeIntersection?: ObserveFn;
 };
 
-const FullNameTitle: FC<OwnProps> = ({
+const FullNameTitle = ({
   className,
   style,
+  isScrolling,
+  isScrollingPaused,
   peer,
   noVerified,
   noFake,
@@ -74,7 +78,7 @@ const FullNameTitle: FC<OwnProps> = ({
   withStatusTextColor,
   onEmojiStatusClick,
   observeIntersection,
-}) => {
+}: OwnProps) => {
   const { showNotification } = getActions();
 
   const oldLang = useOldLang();
@@ -122,10 +126,14 @@ const FullNameTitle: FC<OwnProps> = ({
 
     return undefined;
   }, [customPeer, isSavedDialog, isSavedMessages, oldLang, realPeer]);
-  const botVerificationIconId = realPeer?.botVerificationIconId;
+  const botVerificationIconId = !isSavedMessages && !isSavedDialog ? realPeer?.botVerificationIconId : undefined;
+  const renderedTitle = useMemo(() => specialTitle || renderText(title || ''), [specialTitle, title]);
 
   return (
-    <div className={buildClassName('title', styles.root, className)} style={style}>
+    <div
+      className={buildClassName('title', styles.root, className)}
+      style={buildStyle(emojiStatusSize ? `--_status-size: ${emojiStatusSize}px` : undefined, style)}
+    >
       {botVerificationIconId && (
         <CustomEmoji
           documentId={botVerificationIconId}
@@ -144,7 +152,7 @@ const FullNameTitle: FC<OwnProps> = ({
         )}
         onClick={handleTitleClick}
       >
-        {specialTitle || renderText(title || '')}
+        {isScrolling ? <Marquee paused={isScrollingPaused}>{renderedTitle}</Marquee> : renderedTitle}
       </h3>
       {!iconElement && peer && (
         <>
@@ -166,7 +174,6 @@ const FullNameTitle: FC<OwnProps> = ({
                   ? emojiStatus.textColor : undefined}
               >
                 <CustomEmoji
-                  forceAlways
                   className={buildClassName('no-selection', !withStatusTextColor && styles.statusPrimaryColor)}
                   documentId={emojiStatus.documentId}
                   size={emojiStatusSize}

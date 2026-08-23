@@ -10,6 +10,7 @@ import {
 import { selectIsCurrentUserPremium } from '../../../global/selectors';
 import buildClassName from '../../../util/buildClassName';
 import { formatStarsAsIcon } from '../../../util/localization/format';
+import { throttle } from '../../../util/schedulers';
 import { getServerTime } from '../../../util/serverTime';
 import { LOCAL_TGS_PREVIEW_URLS, LOCAL_TGS_URLS } from '../../common/helpers/animatedAssets';
 
@@ -39,6 +40,7 @@ type StateProps = {
 };
 
 const WAIT_DELAY = 2;
+const runThrottled = throttle((cb) => cb(), 500, false);
 
 const PublicPostsSearchLauncher = ({
   searchQuery,
@@ -48,6 +50,12 @@ const PublicPostsSearchLauncher = ({
   isCurrentUserPremium,
   starsBalance,
 }: OwnProps & StateProps) => {
+  const {
+    checkSearchPostsFlood,
+    openPremiumModal,
+    openStarsBalanceModal,
+  } = getActions();
+
   const lang = useLang();
   const queryIsFree = searchFlood?.queryIsFree;
   const queryFromFlood = searchFlood?.query;
@@ -79,11 +87,13 @@ const PublicPostsSearchLauncher = ({
     }
   });
 
-  const {
-    checkSearchPostsFlood,
-    openPremiumModal,
-    openStarsBalanceModal,
-  } = getActions();
+  useEffect(() => {
+    if (searchQuery && queryFromFlood !== searchQuery) {
+      runThrottled(() => {
+        checkSearchPostsFlood({ query: searchQuery });
+      });
+    }
+  }, [searchQuery, queryFromFlood]);
 
   const onCheckFlood = useLastCallback(() => {
     checkSearchPostsFlood({});
@@ -120,6 +130,7 @@ const PublicPostsSearchLauncher = ({
             color="primary"
             disabled={!searchQuery}
             noForcedUpperCase
+            inline
             onClick={handlePaidSearchClick}
           >
             {lang('PublicPostsSearchForStars', {
@@ -128,11 +139,9 @@ const PublicPostsSearchLauncher = ({
           </Button>
           {Boolean(waitTill) && (
             <div className={styles.freeSearchUnlock}>
-              <TextTimer
-                langKey="UnlockTimerPublicPostsSearch"
-                endsAt={waitTill + WAIT_DELAY}
-                onEnd={onCheckFlood}
-              />
+              {lang('UnlockTimerPublicPostsSearch', {
+                time: <TextTimer endsAt={waitTill + WAIT_DELAY} onEnd={onCheckFlood} />,
+              }, { withNodes: true })}
             </div>
           )}
         </div>

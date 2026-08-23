@@ -13,8 +13,8 @@ import useHistoryBack from '../../../hooks/useHistoryBack';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import PrivateChatInfo from '../../common/PrivateChatInfo';
+import Island, { IslandDescription } from '../../gili/layout/Island';
 import Checkbox from '../../ui/Checkbox';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 import ListItem from '../../ui/ListItem';
@@ -112,7 +112,7 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
   return (
     <div className="Management">
       <div className="panel-content custom-scroll">
-        <div className="section">
+        <Island>
           <ListItem
             icon="recent"
             multiline
@@ -121,15 +121,14 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
             <span className="title">{lang('EventLog')}</span>
             <span className="subtitle">{lang(isChannel ? 'EventLogInfoDetailChannel' : 'EventLogInfoDetail')}</span>
           </ListItem>
-        </div>
+        </Island>
 
-        <div className="section" dir={lang.isRtl ? 'rtl' : undefined}>
-          <p className="section-help" dir="auto">
-            {lang(isChannel
-              ? 'Channel.Management.AddModeratorHelp'
-              : 'Group.Management.AddModeratorHelp')}
-          </p>
-
+        <IslandDescription dir="auto">
+          {lang(isChannel
+            ? 'Channel.Management.AddModeratorHelp'
+            : 'Group.Management.AddModeratorHelp')}
+        </IslandDescription>
+        <Island dir={lang.isRtl ? 'rtl' : undefined}>
           {adminMembers.map((member) => (
             <ListItem
               key={member.userId}
@@ -149,13 +148,12 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
             isShown={canAddNewAdmins}
             onClick={handleAddAdminClick}
             ariaLabel={lang('Channel.Management.AddModerator')}
-          >
-            <Icon name="add-user-filled" />
-          </FloatingActionButton>
-        </div>
+            iconName="add-user-filled"
+          />
+        </Island>
 
         {canToggleSignatures && (
-          <div className="section">
+          <Island>
             <div className="ListItem narrow">
               <Checkbox
                 checked={areSignaturesEnabled}
@@ -172,12 +170,12 @@ const ManageChatAdministrators: FC<OwnProps & StateProps> = ({
                     onChange={handleToggleProfiles}
                   />
                 </div>
-                <p className="section-info section-info_push">
+                <IslandDescription>
                   {lang('ChannelSignProfilesInfo')}
-                </p>
+                </IslandDescription>
               </>
             )}
-          </div>
+          </Island>
         )}
       </div>
     </div>

@@ -7,13 +7,16 @@ import { requestMutation } from '../../../lib/fasterdom/fasterdom';
 import { IS_IOS } from '../../../util/browser/windowEnvironment';
 import { disableDebugConsole, initDebugConsole } from '../../../util/debugConsole';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
-import { oldSetLanguage, setTimeFormat } from '../../../util/oldLangProvider';
+import { setTimeFormat as setLocalizedTimeFormat } from '../../../util/localization';
+import { oldSetLanguage, setTimeFormat as setLegacyTimeFormat } from '../../../util/oldLangProvider';
 import { applyPerformanceSettings } from '../../../util/perfomanceSettings';
 import switchTheme from '../../../util/switchTheme';
 import { updatePeerColors } from '../../../util/theme';
+import { updateSelectedWallpaperBlobs } from '../../../util/wallpaperStorage';
 import { callApi, setShouldEnableDebugLog } from '../../../api/gramjs';
+import { addTabStateResetterAction } from '../../helpers/meta';
 import {
-  addActionHandler, getActions, setGlobal,
+  addActionHandler, getActions, getGlobal, setGlobal,
 } from '../../index';
 import { replaceSettings, updateSharedSettings, updateThemeSettings } from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
@@ -58,7 +61,8 @@ addCallback((global: GlobalState) => {
   }
 
   if (sharedSettings.timeFormat !== oldSharedSettings.timeFormat) {
-    setTimeFormat(sharedSettings.timeFormat);
+    setLocalizedTimeFormat(sharedSettings.timeFormat);
+    setLegacyTimeFormat(sharedSettings.timeFormat);
   }
 
   if (sharedSettings.messageTextSize !== oldSharedSettings.messageTextSize) {
@@ -66,7 +70,7 @@ addCallback((global: GlobalState) => {
       '--composer-text-size', `${Math.max(sharedSettings.messageTextSize, IS_IOS ? 16 : 15)}px`,
     );
     document.documentElement.style.setProperty('--message-meta-height',
-      `${Math.floor(sharedSettings.messageTextSize * 1.3125)}px`);
+      `${Math.floor(sharedSettings.messageTextSize * 1.25)}px`);
     document.documentElement.style.setProperty('--message-text-size', `${sharedSettings.messageTextSize}px`);
     document.documentElement.setAttribute('data-message-text-size', sharedSettings.messageTextSize.toString());
   }
@@ -138,9 +142,32 @@ addActionHandler('updatePerformanceSettings', (global, actions, payload): Action
 
 addActionHandler('setThemeSettings', (global, actions, payload): ActionReturnType => {
   const { theme, ...settings } = payload;
+  const previousBackground = selectSharedSettings(global).themes[theme]?.background;
 
-  return updateThemeSettings(global, theme, settings);
+  global = updateThemeSettings(global, theme, settings);
+  updateCustomBackgroundCache(global, previousBackground);
+
+  return global;
 });
+
+function updateCustomBackgroundCache(global: GlobalState, previousBackground: string | undefined) {
+  updateSelectedWallpaperBlobs(
+    getSelectedBackgrounds(global),
+    previousBackground,
+    getCurrentSelectedBackgrounds,
+  );
+}
+
+function getCurrentSelectedBackgrounds() {
+  const global = getGlobal();
+  return getSelectedBackgrounds(global);
+}
+
+function getSelectedBackgrounds(global: GlobalState) {
+  return Object.values(selectSharedSettings(global).themes)
+    .map((themeSettings) => themeSettings?.background)
+    .filter((background): background is string => Boolean(background));
+}
 
 addActionHandler('requestNextFoldersAction', (global, actions, payload): ActionReturnType => {
   const { foldersAction, tabId = getCurrentTabId() } = payload;
@@ -161,14 +188,16 @@ addActionHandler('openLeftColumnContent', (global, actions, payload): ActionRetu
 });
 
 addActionHandler('openSettingsScreen', (global, actions, payload): ActionReturnType => {
-  const { screen = SettingsScreens.Main, tabId = getCurrentTabId() } = payload;
+  const { screen, tabId = getCurrentTabId() } = payload;
   const tabState = selectTabState(global, tabId);
+
+  actions.loadPrivacySettings({ skipIfCached: true });
   // Force settings only if new screen is passed, do not on resets
-  if (payload.screen) actions.openLeftColumnContent({ contentKey: LeftColumnContent.Settings, tabId });
+  if (payload.screen !== undefined) actions.openLeftColumnContent({ contentKey: LeftColumnContent.Settings, tabId });
   return updateTabState(global, {
     leftColumn: {
       ...tabState.leftColumn,
-      settingsScreen: screen,
+      settingsScreen: screen || SettingsScreens.Main,
     },
   }, tabId);
 });
@@ -224,3 +253,12 @@ addActionHandler('closeShareChatFolderModal', (global, actions, payload): Action
     shareFolderScreen: undefined,
   }, tabId);
 });
+
+addActionHandler('openPasskeyModal', (global, actions, payload): ActionReturnType => {
+  const { tabId = getCurrentTabId() } = payload || {};
+  return updateTabState(global, {
+    isPasskeyModalOpen: true,
+  }, tabId);
+});
+
+addTabStateResetterAction('closePasskeyModal', 'isPasskeyModalOpen');

@@ -1,8 +1,7 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 
 import type {
-  ApiChat, ApiReaction, ApiSticker,
+  ApiChat, ApiPeer, ApiReaction, ApiSticker,
 } from '../../types';
 
 import { split } from '../../../util/iteratees';
@@ -115,12 +114,6 @@ export async function fetchAvailableEffects() {
 
   const documentsMap = new Map(result.documents.map((doc) => [String(doc.id), doc]));
 
-  result.documents.forEach((document) => {
-    if (document instanceof GramJs.Document) {
-      localDb.documents[String(document.id)] = document;
-    }
-  });
-
   const effects = result.effects.map(buildApiAvailableEffect);
 
   const stickers: ApiSticker[] = [];
@@ -128,12 +121,12 @@ export async function fetchAvailableEffects() {
 
   for (const effect of effects) {
     if (effect.effectAnimationId) {
-      const document = documentsMap.get(effect.effectStickerId);
+      const document = documentsMap.get(effect.effectAnimationId);
       const emoji = document && buildStickerFromDocument(document, false, effect.isPremium);
       if (emoji) emojis.push(emoji);
     } else {
-      const document = localDb.documents[effect.effectStickerId];
-      const sticker = buildStickerFromDocument(document);
+      const document = documentsMap.get(effect.effectStickerId);
+      const sticker = document && buildStickerFromDocument(document);
       if (sticker) {
         stickers.push(sticker);
       }
@@ -184,6 +177,47 @@ export function sendPaidReaction({
   }), {
     shouldReturnTrue: true,
     shouldThrow: true,
+  });
+}
+
+export function deleteParticipantReaction({
+  chat, messageId, peer,
+}: {
+  chat: ApiChat; messageId: number; peer: ApiPeer;
+}) {
+  return invokeRequest(new GramJs.messages.DeleteParticipantReaction({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    msgId: messageId,
+    participant: buildInputPeer(peer.id, peer.accessHash),
+  }), {
+    shouldReturnTrue: true,
+  });
+}
+
+export function deleteParticipantReactions({
+  chat, peer,
+}: {
+  chat: ApiChat; peer: ApiPeer;
+}) {
+  return invokeRequest(new GramJs.messages.DeleteParticipantReactions({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    participant: buildInputPeer(peer.id, peer.accessHash),
+  }), {
+    shouldReturnTrue: true,
+  });
+}
+
+export function reportMessageReaction({
+  chat, messageId, reactorPeer,
+}: {
+  chat: ApiChat; messageId: number; reactorPeer: ApiPeer;
+}) {
+  return invokeRequest(new GramJs.messages.ReportReaction({
+    peer: buildInputPeer(chat.id, chat.accessHash),
+    id: messageId,
+    reactionPeer: buildInputPeer(reactorPeer.id, reactorPeer.accessHash),
+  }), {
+    shouldReturnTrue: true,
   });
 }
 

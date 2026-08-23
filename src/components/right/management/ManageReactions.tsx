@@ -1,5 +1,4 @@
 import type { FC } from '../../../lib/teact/teact';
-import type React from '../../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo,
   useState,
@@ -16,13 +15,12 @@ import { selectChat, selectChatFullInfo } from '../../../global/selectors';
 import useHistoryBack from '../../../hooks/useHistoryBack';
 import useOldLang from '../../../hooks/useOldLang';
 
-import Icon from '../../common/icons/Icon';
 import ReactionStaticEmoji from '../../common/reactions/ReactionStaticEmoji';
+import Island, { IslandDescription, IslandTitle } from '../../gili/layout/Island';
 import Checkbox from '../../ui/Checkbox';
 import FloatingActionButton from '../../ui/FloatingActionButton';
 import RadioGroup from '../../ui/RadioGroup';
 import RangeSlider from '../../ui/RangeSlider';
-import Spinner from '../../ui/Spinner';
 
 type OwnProps = {
   chatId: string;
@@ -191,61 +189,65 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
     <div className="Management">
       <div className="panel-content custom-scroll">
         {Boolean(localReactionsLimit && shouldShowReactionsLimit) && (
-          <div className="section">
-            <h3 className="section-heading">
+          <>
+            <IslandTitle>
               {lang('MaximumReactionsHeader')}
-            </h3>
-            <RangeSlider
-              min={1}
-              max={maxUniqueReactions}
-              value={localReactionsLimit!}
-              onChange={handleReactionsLimitChange}
-              renderValue={renderReactionsMaxCountValue}
-              isCenteredLayout
-            />
-            <p className="section-info section-info_push">
+            </IslandTitle>
+            <Island>
+              <RangeSlider
+                min={1}
+                max={maxUniqueReactions}
+                value={localReactionsLimit!}
+                onChange={handleReactionsLimitChange}
+                renderValue={renderReactionsMaxCountValue}
+                isCenteredLayout
+              />
+            </Island>
+            <IslandDescription>
               {lang('ChannelReactions.MaxCount.Info')}
-            </p>
-          </div>
+            </IslandDescription>
+          </>
         )}
-        <div className="section">
-          <h3 className="section-heading">
-            {lang('AvailableReactions')}
-          </h3>
+        <IslandTitle>
+          {lang('AvailableReactions')}
+        </IslandTitle>
+        <Island>
           <RadioGroup
             selected={localEnabledReactions?.type || 'none'}
             name="reactions"
             options={reactionsOptions}
             onChange={handleReactionsOptionChange}
           />
-          <p className="section-info section-info_push">
-            {localEnabledReactions?.type === 'all' && lang('EnableAllReactionsInfo')}
-            {localEnabledReactions?.type === 'some' && lang('EnableSomeReactionsInfo')}
-            {!localEnabledReactions && lang('DisableReactionsInfo')}
-          </p>
-        </div>
+        </Island>
+        <IslandDescription>
+          {localEnabledReactions?.type === 'all' && lang('EnableAllReactionsInfo')}
+          {localEnabledReactions?.type === 'some' && lang('EnableSomeReactionsInfo')}
+          {!localEnabledReactions && lang('DisableReactionsInfo')}
+        </IslandDescription>
         {localEnabledReactions?.type === 'some' && (
-          <div className="section section-with-fab">
-            <h3 className="section-heading">
+          <>
+            <IslandTitle>
               {lang('OnlyAllowThisReactions')}
-            </h3>
-            {availableActiveReactions?.map(({ reaction, title }) => (
-              <div className="ListItem">
-                <Checkbox
-                  name={reaction.emoticon}
-                  checked={localEnabledReactions?.allowed.some((r) => isSameReaction(reaction, r))}
-                  label={(
-                    <div className="Reaction">
-                      <ReactionStaticEmoji reaction={reaction} availableReactions={availableReactions} />
-                      {title}
-                    </div>
-                  )}
-                  withIcon
-                  onChange={handleReactionChange}
-                />
-              </div>
-            ))}
-          </div>
+            </IslandTitle>
+            <Island>
+              {availableActiveReactions?.map(({ reaction, title }) => (
+                <div key={reaction.emoticon} className="ListItem">
+                  <Checkbox
+                    name={reaction.emoticon}
+                    checked={localEnabledReactions?.allowed.some((r) => isSameReaction(reaction, r))}
+                    label={(
+                      <div className="Reaction">
+                        <ReactionStaticEmoji reaction={reaction} availableReactions={availableReactions} />
+                        {title}
+                      </div>
+                    )}
+                    withIcon
+                    onChange={handleReactionChange}
+                  />
+                </div>
+              ))}
+            </Island>
+          </>
         )}
       </div>
 
@@ -254,13 +256,9 @@ const ManageReactions: FC<OwnProps & StateProps> = ({
         onClick={handleSaveReactions}
         ariaLabel={lang('Save')}
         disabled={isLoading}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <Icon name="check" />
-        )}
-      </FloatingActionButton>
+        iconName="check"
+        isLoading={isLoading}
+      />
     </div>
   );
 };

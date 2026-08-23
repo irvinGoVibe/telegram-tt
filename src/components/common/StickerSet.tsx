@@ -1,4 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useRef, useState,
 } from '../../lib/teact/teact';
@@ -63,6 +62,7 @@ type OwnProps = {
   isChatStickerSet?: boolean;
   isTranslucent?: boolean;
   noContextMenus?: boolean;
+  noAddButton?: boolean;
   forcePlayback?: boolean;
   observeIntersection?: ObserveFn;
   observeIntersectionForPlayingItems: ObserveFn;
@@ -74,9 +74,7 @@ type OwnProps = {
   onStickerUnfave?: (sticker: ApiSticker) => void;
   onStickerFave?: (sticker: ApiSticker) => void;
   onStickerRemoveRecent?: (sticker: ApiSticker) => void;
-  onContextMenuOpen?: NoneToVoidFunction;
-  onContextMenuClose?: NoneToVoidFunction;
-  onContextMenuClick?: NoneToVoidFunction;
+  onDismiss?: NoneToVoidFunction;
 };
 
 type StateProps = {
@@ -89,7 +87,7 @@ const ITEMS_MINI_MOBILE_PER_ROW_FALLBACK = 6;
 const MOBILE_WIDTH_THRESHOLD_PX = 440;
 const MINI_MOBILE_WIDTH_THRESHOLD_PX = 362;
 
-const StickerSet: FC<OwnProps & StateProps> = ({
+const StickerSet = ({
   stickerSet,
   loadAndPlay,
   index,
@@ -109,7 +107,9 @@ const StickerSet: FC<OwnProps & StateProps> = ({
   isChatStickerSet,
   isTranslucent,
   noContextMenus,
+  noAddButton,
   forcePlayback,
+  collectibleStatuses,
   observeIntersection,
   observeIntersectionForPlayingItems,
   observeIntersectionForShowingItems,
@@ -119,11 +119,8 @@ const StickerSet: FC<OwnProps & StateProps> = ({
   onStickerUnfave,
   onStickerFave,
   onStickerRemoveRecent,
-  onContextMenuOpen,
-  onContextMenuClose,
-  onContextMenuClick,
-  collectibleStatuses,
-}) => {
+  onDismiss,
+}: OwnProps & StateProps) => {
   const {
     clearRecentStickers,
     clearRecentCustomEmoji,
@@ -143,10 +140,10 @@ const StickerSet: FC<OwnProps & StateProps> = ({
   const [isConfirmModalOpen, openConfirmModal, closeConfirmModal] = useFlag();
   const { isMobile } = useAppLayout();
 
-  const [itemsPerRow, setItemsPerRow] = useState(getItemsPerRowFallback(windowWidth));
+  const [itemsPerRow, setItemsPerRow] = useState(() => getItemsPerRowFallback(windowWidth));
 
   const isIntersecting = useIsIntersecting(ref, observeIntersection ?? observeIntersectionForShowingItems);
-  const transitionClassNames = useMediaTransitionDeprecated(isIntersecting);
+  const transitionClassNames = useMediaTransitionDeprecated(isIntersecting || isNearActive);
 
   // `isNearActive` is set in advance during animation, but it is not reliable for short sets
   const shouldRender = isNearActive || isIntersecting;
@@ -265,7 +262,7 @@ const StickerSet: FC<OwnProps & StateProps> = ({
   const collectibleEmojiIdsSet = useMemo(() => (
     collectibleStatuses ? new Set(collectibleStatuses.map(({ documentId }) => documentId)) : undefined
   ), [collectibleStatuses]);
-  const withAddSetButton = !shouldHideHeader && !isRecent && !isStatusCollectible
+  const withAddSetButton = !noAddButton && !shouldHideHeader && !isRecent && !isStatusCollectible
     && isEmoji && !isPopular && !isChatEmojiSet
     && (!isInstalled || (!isCurrentUserPremium && !isSavedMessages));
   const addSetButtonText = useMemo(() => {
@@ -347,9 +344,8 @@ const StickerSet: FC<OwnProps & StateProps> = ({
             color="translucent"
             onClick={handleDefaultStatusIconClick}
             key="default-status-icon"
-          >
-            <Icon name="star" />
-          </Button>
+            iconName="star"
+          />
         )}
         {shouldRender && stickerSet.reactions?.map((reaction) => {
           const reactionId = getReactionKey(reaction);
@@ -402,13 +398,12 @@ const StickerSet: FC<OwnProps & StateProps> = ({
                 withTranslucentThumb={isTranslucent}
                 onClick={onStickerSelect}
                 clickArg={sticker}
+                noIcons={isEmoji && !isRecent}
                 isSelected={isSelected}
                 onUnfaveClick={isFavorite && favoriteStickerIdsSet?.has(sticker.id) ? onStickerUnfave : undefined}
                 onFaveClick={!favoriteStickerIdsSet?.has(sticker.id) ? onStickerFave : undefined}
                 onRemoveRecentClick={isRecent ? onStickerRemoveRecent : undefined}
-                onContextMenuOpen={onContextMenuOpen}
-                onContextMenuClose={onContextMenuClose}
-                onContextMenuClick={onContextMenuClick}
+                onDismiss={onDismiss}
                 forcePlayback={forcePlayback}
                 isEffectEmoji={stickerSet.id === EFFECT_EMOJIS_SET_ID}
                 noShowPremium={isCurrentUserPremium

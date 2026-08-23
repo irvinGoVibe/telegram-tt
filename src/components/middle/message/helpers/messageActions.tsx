@@ -58,7 +58,7 @@ export function translateWithYou<K extends LangKey>(
 export function getPinnedMediaValue(lang: LangFn, message: ApiMessage) {
   const {
     audio, contact, document, game, giveaway, giveawayResults, paidMedia, storyData,
-    invoice, location, photo, pollId, sticker, video, voice,
+    invoice, location, photo, pollId, sticker, video, voice, dice,
   } = getMessageContent(message);
 
   if (message.groupedId || paidMedia) return lang('ActionPinnedMediaAlbum');
@@ -78,6 +78,7 @@ export function getPinnedMediaValue(lang: LangFn, message: ApiMessage) {
   if (pollId) return lang('ActionPinnedMediaPoll');
   if (giveaway) return lang('ActionPinnedMediaGiveaway');
   if (giveawayResults) return lang('ActionPinnedMediaGiveawayResults');
+  if (dice) return dice.emoticon;
 
   return undefined;
 }
@@ -96,6 +97,7 @@ export function renderPeerLink(peerId: string | undefined, text: string, asPrevi
         getActions().openChat({ id: peerId });
       }}
       // box-decoration-break: clone; is broken when child has `dir` attribute
+      // https://bugs.webkit.org/show_bug.cgi?id=296990
       withMultilineFix={IS_SAFARI}
     >
       {renderText(text)}
@@ -125,6 +127,23 @@ export function renderMessageLink(
       withMultilineFix={IS_SAFARI}
     >
       {text}
+    </Link>
+  );
+}
+
+export function renderTopicLink(chatId: string, topicId: number, content: TeactNode, asPreview?: boolean) {
+  if (asPreview) return content;
+
+  return (
+    <Link
+      className={styles.topicLink}
+      onClick={(e) => {
+        e.stopPropagation();
+        getActions().openThread({ chatId, threadId: topicId });
+      }}
+      withMultilineFix={IS_SAFARI}
+    >
+      {content}
     </Link>
   );
 }

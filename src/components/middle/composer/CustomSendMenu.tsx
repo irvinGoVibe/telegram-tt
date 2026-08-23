@@ -109,9 +109,13 @@ const CustomSendMenu: FC<OwnProps> = ({
       return;
     }
 
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       markIsReady();
     }, ANIMATION_DURATION);
+
+    return () => {
+      clearTimeout(timeout);
+    };
   }, [isOpen, markIsReady, unmarkIsReady]);
 
   return (
@@ -154,7 +158,7 @@ const CustomSendMenu: FC<OwnProps> = ({
           'CustomSendMenu_items',
           areItemsHidden && 'CustomSendMenu_items-hidden',
         )}
-        dir={oldLang.isRtl ? 'rtl' : undefined}
+        dir={lang.isRtl ? 'rtl' : undefined}
       >
         {onSendSilent && <MenuItem icon="mute" onClick={onSendSilent}>{oldLang('SendWithoutSound')}</MenuItem>}
         {canSchedule && onSendSchedule && (

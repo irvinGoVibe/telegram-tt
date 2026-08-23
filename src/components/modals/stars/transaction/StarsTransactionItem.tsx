@@ -1,4 +1,4 @@
-import { memo, useMemo } from '../../../../lib/teact/teact';
+import { memo, useCallback, useMemo } from '../../../../lib/teact/teact';
 import { getActions } from '../../../../global';
 
 import type {
@@ -8,14 +8,14 @@ import type {
 import type { GlobalState } from '../../../../global/types';
 import type { CustomPeer } from '../../../../types';
 
-import { STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../../../config';
+import { NNBSP, STARS_CURRENCY_CODE, TON_CURRENCY_CODE } from '../../../../config';
 import { buildStarsTransactionCustomPeer,
   formatStarsTransactionAmount,
   shouldUseCustomPeer } from '../../../../global/helpers/payments';
 import { getPeerTitle } from '../../../../global/helpers/peers';
 import { selectPeer } from '../../../../global/selectors';
 import buildClassName from '../../../../util/buildClassName';
-import { formatDateTimeToString } from '../../../../util/dates/dateFormat';
+import { formatDateTimeToString } from '../../../../util/dates/oldDateFormat';
 import { CUSTOM_PEER_PREMIUM } from '../../../../util/objects/customPeer';
 import { getGiftAttributes, getStickerFromGift } from '../../../common/helpers/gifts';
 import renderText from '../../../common/helpers/renderText';
@@ -28,7 +28,7 @@ import useOldLang from '../../../../hooks/useOldLang';
 
 import AnimatedIconFromSticker from '../../../common/AnimatedIconFromSticker';
 import Avatar from '../../../common/Avatar';
-import Icon from '../../../common/icons/Icon';
+import GramIcon from '../../../common/icons/GramIcon';
 import StarIcon from '../../../common/icons/StarIcon';
 import RadialPatternBackground from '../../../common/profile/RadialPatternBackground';
 import PaidMediaThumb from './PaidMediaThumb';
@@ -41,12 +41,7 @@ type OwnProps = {
 };
 
 const GIFT_STICKER_SIZE = 36;
-
-function selectOptionalPeer(peerId?: string) {
-  return (global: GlobalState) => (
-    peerId ? selectPeer(global, peerId) : undefined
-  );
-}
+const AVATAR_SIZE = 42;
 
 const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
   const { openStarsTransactionModal } = getActions();
@@ -62,7 +57,11 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
   const oldLang = useOldLang();
 
   const peerId = transactionPeer.type === 'peer' ? transactionPeer.id : undefined;
-  const peer = useSelector(selectOptionalPeer(peerId));
+
+  const peerSelector = useCallback((global: GlobalState) => {
+    return peerId ? selectPeer(global, peerId) : undefined;
+  }, [peerId]);
+  const peer = useSelector(peerSelector);
   const starGift = transaction.starGift;
   const isUniqueGift = starGift?.type === 'starGiftUnique';
   const giftSticker = starGift && getStickerFromGift(starGift);
@@ -83,7 +82,8 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
       avatarPeer = customPeer;
     }
 
-    if (transaction.isGiftUpgrade && transaction.starGift?.type === 'starGiftUnique') {
+    if ((transaction.isGiftUpgrade || transaction.isDropOriginalDetails)
+      && transaction.starGift?.type === 'starGiftUnique') {
       description = lang('GiftUnique', { title: transaction.starGift.title, number: transaction.starGift.number });
     }
 
@@ -158,7 +158,7 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
 
     return (
       <>
-        <Avatar size="medium" webPhoto={photo} peer={data.avatarPeer} />
+        <Avatar size={AVATAR_SIZE} webPhoto={photo} peer={data.avatarPeer} />
         {Boolean(subscriptionPeriod) && (
           <StarIcon className={styles.subscriptionStar} type="gold" size="small" />
         )}
@@ -187,15 +187,18 @@ const StarsTransactionItem = ({ transaction, className }: OwnProps) => {
           {data.status && ` — (${data.status})`}
         </p>
       </div>
-      <div className={styles.stars}>
+      <span className={styles.stars}>
         <span
           className={buildClassName(styles.amount, amountColorClass)}
         >
           {formatStarsTransactionAmount(lang, amount)}
         </span>
-        {amount.currency === STARS_CURRENCY_CODE && <StarIcon className={styles.star} type="gold" size="adaptive" />}
-        {amount.currency === TON_CURRENCY_CODE && <Icon name="toncoin" className={amountColorClass} />}
-      </div>
+        {NNBSP}
+        {amount.currency === STARS_CURRENCY_CODE && <StarIcon type="gold" size="adaptive" />}
+        {amount.currency === TON_CURRENCY_CODE && (
+          <GramIcon isMono className={buildClassName('in-text-icon', amountColorClass)} />
+        )}
+      </span>
     </div>
   );
 };

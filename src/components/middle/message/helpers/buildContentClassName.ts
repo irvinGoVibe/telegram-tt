@@ -1,4 +1,4 @@
-import type { ApiMessage, ApiPoll, ApiWebPage } from '../../../../api/types';
+import type { ApiMessage, ApiMessagePoll, ApiWebPage } from '../../../../api/types';
 import type { IAlbum } from '../../../../types';
 
 import { EMOJI_SIZES, MESSAGE_CONTENT_CLASS_NAME } from '../../../../config';
@@ -18,7 +18,7 @@ export function buildContentClassName(
     hasThread,
     forceSenderName,
     hasCommentCounter,
-    hasCommentButton,
+    hasBottomCommentButton,
     hasActionButton,
     hasReactions,
     isGeoLiveActive,
@@ -26,7 +26,7 @@ export function buildContentClassName(
     peerColorClass,
     hasOutsideReactions,
   }: {
-    poll?: ApiPoll;
+    poll?: ApiMessagePoll;
     webPage?: ApiWebPage;
     hasSubheader?: boolean;
     isCustomShape?: boolean | number;
@@ -35,7 +35,7 @@ export function buildContentClassName(
     hasThread?: boolean;
     forceSenderName?: boolean;
     hasCommentCounter?: boolean;
-    hasCommentButton?: boolean;
+    hasBottomCommentButton?: boolean;
     hasActionButton?: boolean;
     hasReactions?: boolean;
     isGeoLiveActive?: boolean;
@@ -61,11 +61,13 @@ export function buildContentClassName(
   const isInvertibleMedia = photo || (video && !isRoundVideo) || album || webPage;
 
   const classNames = [MESSAGE_CONTENT_CLASS_NAME];
-  const isMedia = storyData || photo || video || location || invoice?.extendedMedia || paidMedia;
-  const hasText = text || location?.mediaType === 'venue' || isGeoLiveActive || hasFactCheck;
+  const pollMedia = poll?.attachedMedia;
+  const isMedia = storyData || photo || video || location || invoice?.extendedMedia || paidMedia
+    || pollMedia?.photo || pollMedia?.video || pollMedia?.location;
+  const hasText = text || location?.mediaType === 'venue' || isGeoLiveActive || hasFactCheck || poll;
   const isMediaWithNoText = isMedia && !hasText;
   const hasInlineKeyboard = Boolean(message.inlineButtons);
-  const isViaBot = Boolean(message.viaBotId);
+  const isViaBot = Boolean(message.viaBotId || message.guestChatViaId);
 
   const hasFooter = (() => {
     if (isInvertedMedia && isInvertibleMedia) {
@@ -81,10 +83,10 @@ export function buildContentClassName(
     classNames.push(peerColorClass);
   }
 
-  if (!isMedia && message.emojiOnlyCount) {
+  if (!isMedia && text?.emojiOnlyCount) {
     classNames.push('emoji-only');
-    if (message.emojiOnlyCount <= EMOJI_SIZES) {
-      classNames.push(`emoji-only-${message.emojiOnlyCount}`);
+    if (text.emojiOnlyCount <= EMOJI_SIZES) {
+      classNames.push(`emoji-only-${text.emojiOnlyCount}`);
     }
   } else if (hasText) {
     classNames.push('text');
@@ -113,6 +115,10 @@ export function buildContentClassName(
   }
   if (isMedia && !withVoiceTranscription) {
     classNames.push('media');
+    // Custom-shape media (round video) has fixed dimensions and must not stretch to the message width
+    if (!isCustomShape) {
+      classNames.push('has-adaptive-width');
+    }
   } else if (video) {
     classNames.push('video');
   } else if (audio) {
@@ -126,15 +132,13 @@ export function buildContentClassName(
     classNames.push('document');
   } else if (contact) {
     classNames.push('contact');
-  } else if (poll) {
-    classNames.push('poll');
   } else if (giveaway || giveawayResults) {
     classNames.push('giveaway');
   } else if (webPage?.webpageType === 'full') {
     classNames.push('web-page');
 
     if (webPage.photo || webPage.video) {
-      classNames.push('media');
+      classNames.push('media', 'has-adaptive-width');
     }
 
     if (webPage.document) {
@@ -144,6 +148,14 @@ export function buildContentClassName(
     if (webPage.gift) {
       classNames.push('gift');
     }
+
+    if (webPage.auction) {
+      classNames.push('auction');
+    }
+  }
+
+  if (poll) {
+    classNames.push('poll');
   }
 
   if (invoice && !invoice.extendedMedia) {
@@ -202,7 +214,7 @@ export function buildContentClassName(
       classNames.push('has-fact-check');
     }
 
-    if (isLastInGroup && !hasInlineKeyboard && (photo || !isMediaWithNoText || hasCommentButton)) {
+    if (isLastInGroup && !hasInlineKeyboard && (photo || !isMediaWithNoText || hasBottomCommentButton)) {
       classNames.push('has-appendix');
     }
   }

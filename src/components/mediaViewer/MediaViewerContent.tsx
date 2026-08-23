@@ -1,19 +1,18 @@
-import type React from '../../lib/teact/teact';
 import { memo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
-  ApiDimensions, ApiMessage, ApiSponsoredMessage,
+  ApiDimensions, ApiMessage, ApiPageCaption, ApiSponsoredMessage,
 } from '../../api/types';
 import type { MediaViewerOrigin, ThreadId } from '../../types';
 import type { MediaViewerItem, ViewableMedia } from './helpers/getViewableMedia';
 
 import { MEDIA_TIMESTAMP_SAVE_MINIMUM_DURATION } from '../../config';
+import { hasRichText } from '../../global/helpers/richMessage';
 import {
   selectIsMessageProtected, selectTabState,
 } from '../../global/selectors';
 import { selectMessageTimestampableDuration } from '../../global/selectors/media';
-import { ARE_WEBCODECS_SUPPORTED } from '../../util/browser/globalEnvironment';
 import { IS_TOUCH_ENV } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 import stopEvent from '../../util/stopEvent';
@@ -27,9 +26,11 @@ import useLastCallback from '../../hooks/useLastCallback';
 import useOldLang from '../../hooks/useOldLang';
 import { useSignalEffect } from '../../hooks/useSignalEffect';
 import useThrottledCallback from '../../hooks/useThrottledCallback';
+import useUniqueId from '../../hooks/useUniqueId';
 import useControlsSignal from './hooks/useControlsSignal';
 import { useMediaProps } from './hooks/useMediaProps';
 
+import RichText from '../iv/RichText';
 import Spinner from '../ui/Spinner';
 import MediaViewerFooter from './MediaViewerFooter';
 import VideoPlayer from './VideoPlayer';
@@ -87,10 +88,11 @@ const MediaViewerContent = ({
   const { updateLastPlaybackTimestamp } = getActions();
 
   const lang = useOldLang();
+  const captionContainerId = useUniqueId();
 
   const isAvatar = item.type === 'avatar';
   const isSponsoredMessage = item.type === 'sponsoredMessage';
-  const { media } = viewableMedia || {};
+  const { media, caption } = viewableMedia || {};
 
   const {
     isVideo,
@@ -99,7 +101,6 @@ const MediaViewerContent = ({
     bestData,
     dimensions,
     isGif,
-    isLocal,
     isVideoAvatar,
     mediaSize,
     loadProgress,
@@ -159,7 +160,6 @@ const MediaViewerContent = ({
             fileSize={mediaSize!}
             isMediaViewerOpen={isOpen && isActive}
             isProtected={isProtected}
-            isPreviewDisabled={!ARE_WEBCODECS_SUPPORTED || isLocal}
             noPlay={!isActive}
             onClose={onClose}
             isMuted
@@ -182,8 +182,17 @@ const MediaViewerContent = ({
       : renderMessageText({
         message: textMessage, maxTimestamp, threadId, forcePlayback: true, isForMediaViewer: true,
       }));
+  const captionParts = caption && renderPageCaption(
+    caption,
+    lang('PageContentUnsupported'),
+    captionContainerId,
+    item.type === 'pageBlock' ? item.pageMedia.pageUrl : undefined,
+    item.type === 'pageBlock' ? item.pageMedia.chatId : undefined,
+    item.type === 'pageBlock' ? item.pageMedia.messageId : undefined,
+    item.type === 'pageBlock' ? item.pageMedia.threadId : undefined,
+  );
   const buttonText = textMessage && 'buttonText' in textMessage ? textMessage.buttonText : undefined;
-  const hasFooter = Boolean(textParts);
+  const hasFooter = Boolean(textParts || captionParts);
   const posterSize = calculateMediaViewerDimensions(dimensions!, hasFooter, isVideo);
   const isForceMobileVersion = isMobile || shouldForceMobileVersion(posterSize);
 
@@ -207,6 +216,7 @@ const MediaViewerContent = ({
         <VideoPlayer
           key={media.id}
           url={bestData}
+          storyboardInfo={'storyboardInfo' in media ? media.storyboardInfo : undefined}
           isGif={isGif}
           posterData={bestImageData}
           posterSize={posterSize}
@@ -214,7 +224,6 @@ const MediaViewerContent = ({
           fileSize={mediaSize!}
           isMediaViewerOpen={isOpen && isActive}
           noPlay={!isActive}
-          isPreviewDisabled={!ARE_WEBCODECS_SUPPORTED || isLocal}
           onClose={onClose}
           isMuted={isMuted}
           isHidden={isHidden}
@@ -228,9 +237,9 @@ const MediaViewerContent = ({
           timestamp={timestamp}
         />
       ))}
-      {textParts && (
+      {(textParts || captionParts) && (
         <MediaViewerFooter
-          text={textParts}
+          text={textParts || captionParts!}
           buttonText={buttonText}
           onClick={onFooterClick}
           isProtected={isProtected}
@@ -257,14 +266,15 @@ export default memo(withGlobal<OwnProps>(
     const message = item.type === 'message' ? item.message : undefined;
     const sponsoredMessage = item.type === 'sponsoredMessage' ? item.message : undefined;
     const textMessage = message || sponsoredMessage;
-    const viewableMedia = selectViewableMedia(global, item);
+    const pageMedia = item.type === 'pageBlock' ? item.pageMedia : undefined;
+    const viewableMedia = selectViewableMedia(global, origin, item);
 
     const maxTimestamp = message && selectMessageTimestampableDuration(global, message, true);
 
     return {
       origin,
       textMessage,
-      isProtected: message && selectIsMessageProtected(global, message),
+      isProtected: pageMedia?.isProtected || (message && selectIsMessageProtected(global, message)),
       volume,
       isMuted,
       isHidden,
@@ -276,6 +286,50 @@ export default memo(withGlobal<OwnProps>(
     };
   },
 )(MediaViewerContent));
+
+function renderPageCaption(
+  caption: ApiPageCaption,
+  unsupportedText: string,
+  containerId: string,
+  pageUrl?: string,
+  chatId?: string,
+  messageId?: number,
+  threadId?: ThreadId,
+) {
+  const hasText = hasRichText(caption.text);
+  const hasCredit = hasRichText(caption.credit);
+  if (!hasText && !hasCredit) {
+    return undefined;
+  }
+
+  return (
+    <>
+      {hasText && (
+        <RichText
+          text={caption.text}
+          unsupportedText={unsupportedText}
+          containerId={containerId}
+          pageUrl={pageUrl}
+          chatId={chatId}
+          messageId={messageId}
+          threadId={threadId}
+        />
+      )}
+      {hasText && hasCredit && <br />}
+      {hasCredit && (
+        <RichText
+          text={caption.credit}
+          unsupportedText={unsupportedText}
+          containerId={containerId}
+          pageUrl={pageUrl}
+          chatId={chatId}
+          messageId={messageId}
+          threadId={threadId}
+        />
+      )}
+    </>
+  );
+}
 
 function renderPhoto(blobUrl?: string, imageSize?: ApiDimensions, canDrag?: boolean, isProtected?: boolean) {
   return blobUrl

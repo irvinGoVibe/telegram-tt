@@ -1,5 +1,4 @@
 import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
@@ -19,11 +18,10 @@ import useHistoryBack from '../../hooks/useHistoryBack';
 import useOldLang from '../../hooks/useOldLang';
 
 import CustomEmojiPicker from '../common/CustomEmojiPicker';
-import Icon from '../common/icons/Icon';
 import TopicIcon from '../common/TopicIcon';
+import Island from '../gili/layout/Island';
 import FloatingActionButton from '../ui/FloatingActionButton';
 import InputText from '../ui/InputText';
-import Spinner from '../ui/Spinner';
 import Transition from '../ui/Transition';
 
 import styles from './ManageTopic.module.scss';
@@ -116,7 +114,7 @@ const CreateTopic: FC<OwnProps & StateProps> = ({
   return (
     <div className={styles.root}>
       <div className={buildClassName(styles.content, 'custom-scroll')}>
-        <div className={buildClassName(styles.section, styles.top)}>
+        <Island className={styles.top}>
           <span className={styles.heading}>{lang('CreateTopicTitle')}</span>
           <Transition
             name="zoomFade"
@@ -140,8 +138,8 @@ const CreateTopic: FC<OwnProps & StateProps> = ({
             disabled={isLoading}
             teactExperimentControlled
           />
-        </div>
-        <div className={buildClassName(styles.section, styles.bottom)}>
+        </Island>
+        <Island className={styles.bottom}>
           <CustomEmojiPicker
             idPrefix="create-topic-icons-set-"
             isHidden={!isActive}
@@ -151,20 +149,16 @@ const CreateTopic: FC<OwnProps & StateProps> = ({
             pickerListClassName="fab-padding-bottom"
             withDefaultTopicIcons
           />
-        </div>
+        </Island>
       </div>
       <FloatingActionButton
         isShown={isTouched}
         disabled={isLoading}
         onClick={handleCreateTopic}
         ariaLabel={lang('Save')}
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <Icon name="check" />
-        )}
-      </FloatingActionButton>
+        iconName="check"
+        isLoading={isLoading}
+      />
     </div>
   );
 };

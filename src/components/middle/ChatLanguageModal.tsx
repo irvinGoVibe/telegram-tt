@@ -1,15 +1,17 @@
 import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useState,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
+
+import type { TranslationTone } from '../../types';
 
 import { SUPPORTED_TRANSLATION_LANGUAGES } from '../../config';
 import {
   selectLanguageCode,
   selectRequestedChatTranslationLanguage,
   selectRequestedMessageTranslationLanguage,
+  selectRequestedMessageTranslationTone,
   selectTabState,
 } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
@@ -39,6 +41,7 @@ type StateProps = {
   messageId?: number;
   activeTranslationLanguage?: string;
   currentLanguageCode: string;
+  currentTone?: TranslationTone;
 };
 
 const ChatLanguageModal: FC<OwnProps & StateProps> = ({
@@ -47,6 +50,7 @@ const ChatLanguageModal: FC<OwnProps & StateProps> = ({
   messageId,
   activeTranslationLanguage,
   currentLanguageCode,
+  currentTone,
 }) => {
   const {
     requestMessageTranslation,
@@ -62,7 +66,7 @@ const ChatLanguageModal: FC<OwnProps & StateProps> = ({
     if (!chatId) return;
 
     if (messageId) {
-      requestMessageTranslation({ chatId, id: messageId, toLanguageCode: langCode });
+      requestMessageTranslation({ chatId, id: messageId, toLanguageCode: langCode, tone: currentTone });
     } else {
       setSettingOption({ translationLanguage: langCode });
       requestChatTranslation({ chatId, toLanguageCode: langCode });
@@ -157,11 +161,16 @@ export default memo(withGlobal<OwnProps>(
         : selectRequestedChatTranslationLanguage(global, chatId)
       : undefined;
 
+    const currentTone = chatId && messageId
+      ? selectRequestedMessageTranslationTone(global, chatId, messageId)
+      : undefined;
+
     return {
       chatId,
       messageId,
       activeTranslationLanguage,
       currentLanguageCode,
+      currentTone,
     };
   },
 )(ChatLanguageModal));

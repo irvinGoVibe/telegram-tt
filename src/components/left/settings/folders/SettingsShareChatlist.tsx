@@ -24,11 +24,10 @@ import useLastCallback from '../../../../hooks/useLastCallback';
 import useOldLang from '../../../../hooks/useOldLang';
 
 import AnimatedIcon from '../../../common/AnimatedIcon';
-import Icon from '../../../common/icons/Icon';
 import LinkField from '../../../common/LinkField';
 import PeerPicker from '../../../common/pickers/PeerPicker';
+import Island, { IslandTitle } from '../../../gili/layout/Island';
 import FloatingActionButton from '../../../ui/FloatingActionButton';
-import Spinner from '../../../ui/Spinner';
 
 type OwnProps = {
   isActive?: boolean;
@@ -172,15 +171,18 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
         )}
       </div>
 
-      <LinkField
-        className="settings-item"
-        link={!url ? oldLang('Loading') : url}
-        withShare
-        onRevoke={handleRevoke}
-        isDisabled={!chatsCount || isTouched}
-      />
+      <IslandTitle>{oldLang('InviteLink.InviteLink')}</IslandTitle>
+      <Island>
+        <LinkField
+          link={!url ? oldLang('Loading') : url}
+          withShare
+          noTitle
+          onRevoke={handleRevoke}
+          isDisabled={!chatsCount || isTouched}
+        />
+      </Island>
 
-      <div className="settings-item settings-item-picker">
+      <Island>
         <PeerPicker
           itemIds={itemIds}
           lockedUnselectedIds={lockedIds}
@@ -191,20 +193,16 @@ const SettingsShareChatlist: FC<OwnProps & StateProps> = ({
           withStatus
           itemInputType="checkbox"
         />
-      </div>
+      </Island>
 
       <FloatingActionButton
         isShown={isLoading || isTouched}
         disabled={isDisabled}
         onClick={handleSubmit}
         ariaLabel="Save changes"
-      >
-        {isLoading ? (
-          <Spinner color="white" />
-        ) : (
-          <Icon name="check" />
-        )}
-      </FloatingActionButton>
+        iconName="check"
+        isLoading={isLoading}
+      />
     </div>
   );
 };

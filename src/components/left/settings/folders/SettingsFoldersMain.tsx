@@ -1,33 +1,35 @@
-import type { FC } from '../../../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useMemo, useState,
 } from '../../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../../global';
 
 import type { ApiChatFolder } from '../../../../api/types';
-import type { SharedSettings } from '../../../../global/types';
-import type { IRadioOption } from '../../../ui/RadioGroup';
+import type { FoldersPosition } from '../../../../types';
 
-import { ALL_FOLDER_ID, STICKER_SIZE_FOLDER_SETTINGS } from '../../../../config';
+import {
+  ALL_FOLDER_ID, FOLDERS_POSITION_LEFT, FOLDERS_POSITION_TOP, STICKER_SIZE_FOLDER_SETTINGS,
+} from '../../../../config';
 import { getFolderDescriptionText } from '../../../../global/helpers';
 import { selectIsCurrentUserPremium } from '../../../../global/selectors';
 import { selectCurrentLimit } from '../../../../global/selectors/limits';
-import { selectSharedSettings } from '../../../../global/selectors/sharedState';
 import buildClassName from '../../../../util/buildClassName';
 import { isBetween } from '../../../../util/math';
 import { MEMO_EMPTY_ARRAY } from '../../../../util/memo';
 import { throttle } from '../../../../util/schedulers';
 import { LOCAL_TGS_URLS } from '../../../common/helpers/animatedAssets';
-import { getApiPeerColorClass } from '../../../common/helpers/peerColor';
 import { renderTextWithEntities } from '../../../common/helpers/renderTextWithEntities';
 
 import { useFolderManagerForChatsCount } from '../../../../hooks/useFolderManager';
 import useHistoryBack from '../../../../hooks/useHistoryBack';
 import useLang from '../../../../hooks/useLang';
+import useLastCallback from '../../../../hooks/useLastCallback';
+import { getPeerColorClass } from '../../../../hooks/usePeerColor';
 import usePreviousDeprecated from '../../../../hooks/usePreviousDeprecated';
 
 import AnimatedIconWithPreview from '../../../common/AnimatedIconWithPreview';
 import Icon from '../../../common/icons/Icon';
+import Island, { IslandOutside, IslandTitle } from '../../../gili/layout/Island';
+import Surface from '../../../gili/layout/Surface';
 import Button from '../../../ui/Button';
 import Checkbox from '../../../ui/Checkbox';
 import Draggable from '../../../ui/Draggable';
@@ -37,6 +39,7 @@ import RadioGroup from '../../../ui/RadioGroup';
 
 type OwnProps = {
   isActive?: boolean;
+  isMobile?: boolean;
   onCreateFolder: () => void;
   onEditFolder: (folder: ApiChatFolder) => void;
   onReset: () => void;
@@ -49,7 +52,7 @@ type StateProps = {
   maxFolders: number;
   isPremium?: boolean;
   areTagsEnabled?: boolean;
-  chatFolderLayout: SharedSettings['chatFolderLayout'];
+  foldersPosition: FoldersPosition;
 };
 
 type SortState = {
@@ -61,19 +64,20 @@ type SortState = {
 const FOLDER_HEIGHT_PX = 56;
 const runThrottledForLoadRecommended = throttle((cb) => cb(), 60000, true);
 
-const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
+const SettingsFoldersMain = ({
   isActive,
-  onCreateFolder,
-  onEditFolder,
-  onReset,
-  folderIds,
   foldersById,
   isPremium,
   recommendedChatFolders,
   maxFolders,
   areTagsEnabled,
-  chatFolderLayout,
-}) => {
+  foldersPosition,
+  isMobile,
+  onCreateFolder,
+  onEditFolder,
+  onReset,
+  folderIds,
+}: OwnProps & StateProps) => {
   const {
     loadRecommendedChatFolders,
     addChatFolder,
@@ -125,19 +129,6 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
   }, [foldersById, maxFolders, onCreateFolder, openLimitReachedModal]);
 
   const lang = useLang();
-
-  const folderLayoutOptions: IRadioOption[] = [{
-    label: lang('ChatFoldersLayoutTabs'),
-    value: 'tabs',
-  }, {
-    label: lang('ChatFoldersLayoutSidebar'),
-    subLabel: lang('ChatFoldersLayoutSidebarHint'),
-    value: 'sidebar',
-  }];
-
-  const handleFolderLayoutChange = useCallback((value: string) => {
-    setSharedSettingOption({ chatFolderLayout: value as SharedSettings['chatFolderLayout'] });
-  }, [setSharedSettingOption]);
 
   useHistoryBack({
     isActive,
@@ -227,13 +218,17 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
     });
   }, [sortChatFolders]);
 
+  const handleFoldersPositionChange = useLastCallback((value: string) => {
+    setSharedSettingOption({ foldersPosition: value as FoldersPosition });
+  });
+
   const canCreateNewFolder = useMemo(() => {
     return !isPremium || Object.keys(foldersById).length < maxFolders - 1;
   }, [foldersById, isPremium, maxFolders]);
 
   return (
-    <div className="settings-content no-border custom-scroll">
-      <div className="settings-content-header">
+    <Surface scrollable className="settings-content no-border">
+      <IslandOutside className="settings-content-header">
         <AnimatedIconWithPreview
           size={STICKER_SIZE_FOLDER_SETTINGS}
           tgsUrl={LOCAL_TGS_URLS.FoldersAll}
@@ -246,35 +241,21 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
 
         {canCreateNewFolder && (
           <Button
-          // TODO: Move icon into button prop
             className="settings-button with-icon"
             color="primary"
             pill
             fluid
             onClick={handleCreateFolder}
             isRtl={lang.isRtl}
+            iconName="add"
           >
-            <Icon name="add" />
             {lang('CreateNewFilter')}
           </Button>
         )}
-      </div>
+      </IslandOutside>
 
-      <div className="settings-item pt-3">
-        <h4 className="settings-item-header" dir={lang.isRtl ? 'rtl' : undefined}>
-          {lang('ChatFoldersLayout')}
-        </h4>
-        <RadioGroup
-          name="chat-folder-layout"
-          options={folderLayoutOptions}
-          selected={chatFolderLayout}
-          onChange={handleFolderLayoutChange}
-        />
-      </div>
-
-      <div className="settings-item pt-3">
-        <h4 className="settings-item-header mb-3" dir={lang.isRtl ? 'rtl' : undefined}>{lang('Filters')}</h4>
-
+      <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>{lang('Filters')}</IslandTitle>
+      <Island>
         <div className="settings-sortable-container" style={`height: ${(folderIds?.length || 0) * FOLDER_HEIGHT_PX}px`}>
           {userFolders?.length ? userFolders.map((folder, i) => {
             const isBlocked = i > maxFolders - 1;
@@ -282,7 +263,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
             const draggedTop = (state.orderedFolderIds?.indexOf(folder.id) ?? 0) * FOLDER_HEIGHT_PX;
             const top = (state.dragOrderIds?.indexOf(folder.id) ?? 0) * FOLDER_HEIGHT_PX;
 
-            const shouldRenderColor = folder?.color !== undefined && folder.color !== -1 && isPremium;
+            const shouldRenderColor = folder?.color !== undefined && folder.color !== -1 && areTagsEnabled;
 
             if (folder.id === ALL_FOLDER_ID) {
               return (
@@ -324,7 +305,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
                 onDrag={handleDrag}
                 onDragEnd={handleDragEnd}
                 style={`top: ${isDragged ? draggedTop : top}px;`}
-                knobStyle={`${lang.isRtl ? 'left' : 'right'}: ${shouldRenderColor ? '3.5rem' : '3rem'};`}
+                knobStyle={`${lang.isRtl ? 'left' : 'right'}: ${shouldRenderColor ? '4rem' : '2.5rem'};`}
                 isDisabled={isBlocked || !isActive}
               >
                 <ListItem
@@ -370,7 +351,7 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
                     shouldRenderColor && (
                       <div className={buildClassName(
                         'settings-folders-color-circle',
-                        getApiPeerColorClass({ color: folder.color }),
+                        folder.color !== undefined && folder.color !== -1 && getPeerColorClass(folder.color),
                       )}
                       />
                     )
@@ -385,48 +366,49 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
             </p>
           ) : <Loading />}
         </div>
-      </div>
+      </Island>
 
       {(recommendedChatFolders && Boolean(recommendedChatFolders.length)) && (
-        <div className="settings-item pt-3">
-          <h4 className="settings-item-header mb-3" dir={lang.isRtl ? 'rtl' : undefined}>
+        <>
+          <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>
             {lang('FilterRecommended')}
-          </h4>
+          </IslandTitle>
+          <Island>
+            {recommendedChatFolders.map((folder) => (
+              <ListItem
+                key={folder.id}
+                narrow
+                onClick={() => handleCreateFolderFromRecommended(folder)}
+              >
+                <div className="settings-folders-recommended-item">
+                  <div className="multiline-item">
+                    <span className="title">
+                      {renderTextWithEntities({
+                        text: folder.title.text,
+                        entities: folder.title.entities,
+                        noCustomEmojiPlayback: folder.noTitleAnimations,
+                      })}
+                    </span>
+                    <span className="subtitle">{folder.description}</span>
+                  </div>
 
-          {recommendedChatFolders.map((folder) => (
-            <ListItem
-              narrow
-
-              onClick={() => handleCreateFolderFromRecommended(folder)}
-            >
-              <div className="settings-folders-recommended-item">
-                <div className="multiline-item">
-                  <span className="title">
-                    {renderTextWithEntities({
-                      text: folder.title.text,
-                      entities: folder.title.entities,
-                      noCustomEmojiPlayback: folder.noTitleAnimations,
-                    })}
-                  </span>
-                  <span className="subtitle">{folder.description}</span>
+                  <Button
+                    className="px-3"
+                    color="primary"
+                    size="tiny"
+                    pill
+                    fluid
+                    isRtl={lang.isRtl}
+                  >
+                    {lang('Add')}
+                  </Button>
                 </div>
-
-                <Button
-                  className="px-3"
-                  color="primary"
-                  size="tiny"
-                  pill
-                  fluid
-                  isRtl={lang.isRtl}
-                >
-                  {lang('Add')}
-                </Button>
-              </div>
-            </ListItem>
-          ))}
-        </div>
+              </ListItem>
+            ))}
+          </Island>
+        </>
       )}
-      <div className="settings-item pt-3">
+      <Island>
         <div className="settings-item-relative">
           <Checkbox
             label={lang('ShowFolderTags')}
@@ -442,8 +424,27 @@ const SettingsFoldersMain: FC<OwnProps & StateProps> = ({
           />
           {!isPremium && <Icon name="lock-badge" className="settings-folders-lock-icon" />}
         </div>
-      </div>
-    </div>
+      </Island>
+      {!isMobile && (
+        <>
+          <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>{lang('TabsPosition')}</IslandTitle>
+          <Island>
+            <RadioGroup
+              name="tabsPosition"
+              options={[{
+                label: lang('TabsPositionLeft'),
+                value: FOLDERS_POSITION_LEFT,
+              }, {
+                label: lang('TabsPositionTop'),
+                value: FOLDERS_POSITION_TOP,
+              }]}
+              selected={foldersPosition}
+              onChange={handleFoldersPositionChange}
+            />
+          </Island>
+        </>
+      )}
+    </Surface>
   );
 };
 
@@ -463,7 +464,7 @@ export default memo(withGlobal<OwnProps>(
       recommendedChatFolders,
       maxFolders: selectCurrentLimit(global, 'dialogFilters'),
       areTagsEnabled,
-      chatFolderLayout: selectSharedSettings(global).chatFolderLayout,
+      foldersPosition: global.sharedState.settings.foldersPosition,
     };
   },
 )(SettingsFoldersMain));

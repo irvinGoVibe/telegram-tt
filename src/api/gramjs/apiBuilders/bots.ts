@@ -15,21 +15,25 @@ import type {
   ApiBotMenuButton,
   ApiInlineQueryPeerType,
   ApiInlineResultType,
+  ApiJoinChatBotResult,
   ApiKeyboardButton,
+  ApiKeyboardButtonBase,
+  ApiKeyboardButtonStyle,
   ApiMessagesBotApp,
   ApiReplyKeyboard,
   MediaContainer,
   MediaContent,
 } from '../../types';
 
-import { numberToHexColor } from '../../../util/colors';
-import { pick } from '../../../util/iteratees';
+import { int2hex } from '../../../util/colors';
+import { omitUndefined, pick } from '../../../util/iteratees';
+import { toJSNumber } from '../../../util/numbers';
 import { addDocumentToLocalDb } from '../helpers/localDb';
 import { serializeBytes } from '../helpers/misc';
 import { buildApiMessageEntity, buildApiPhoto } from './common';
-import { omitVirtualClassFields } from './helpers';
 import {
   buildApiDocument,
+  buildApiRichMessage,
   buildApiWebDocument,
   buildAudioFromDocument,
   buildGeoPoint,
@@ -49,24 +53,23 @@ export function buildReplyButtons(
 
   const markup = replyMarkup.rows.map(({ buttons }) => {
     return buttons.map((button): ApiKeyboardButton | undefined => {
-      const { text } = button;
+      const { text, style } = button;
+
+      const baseButton = omitUndefined<ApiKeyboardButtonBase>({
+        style: style && buildApiKeyboardButtonStyle(style),
+      });
 
       if (button instanceof GramJs.KeyboardButton) {
         return {
+          ...baseButton,
           type: 'command',
           text,
         };
       }
 
       if (button instanceof GramJs.KeyboardButtonUrl) {
-        if (button.url.includes('?startgroup=')) {
-          return {
-            type: 'unsupported',
-            text,
-          };
-        }
-
         return {
+          ...baseButton,
           type: 'url',
           text,
           url: button.url,
@@ -76,12 +79,14 @@ export function buildReplyButtons(
       if (button instanceof GramJs.KeyboardButtonCallback) {
         if (button.requiresPassword) {
           return {
+            ...baseButton,
             type: 'unsupported',
             text,
           };
         }
 
         return {
+          ...baseButton,
           type: 'callback',
           text,
           data: serializeBytes(button.data),
@@ -90,6 +95,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonRequestPoll) {
         return {
+          ...baseButton,
           type: 'requestPoll',
           text,
           isQuiz: button.quiz,
@@ -98,6 +104,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonRequestPhone) {
         return {
+          ...baseButton,
           type: 'requestPhone',
           text,
         };
@@ -106,11 +113,13 @@ export function buildReplyButtons(
       if (button instanceof GramJs.KeyboardButtonBuy) {
         if (receiptMessageId) {
           return {
+            ...baseButton,
             type: 'receipt',
             receiptMessageId,
           };
         }
         return {
+          ...baseButton,
           type: 'buy',
           text,
         };
@@ -118,6 +127,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonGame) {
         return {
+          ...baseButton,
           type: 'game',
           text,
         };
@@ -125,6 +135,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonSwitchInline) {
         return {
+          ...baseButton,
           type: 'switchBotInline',
           text,
           query: button.query,
@@ -134,6 +145,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonUserProfile) {
         return {
+          ...baseButton,
           type: 'userProfile',
           text,
           userId: button.userId.toString(),
@@ -142,6 +154,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonSimpleWebView) {
         return {
+          ...baseButton,
           type: 'simpleWebView',
           text,
           url: button.url,
@@ -150,6 +163,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonWebView) {
         return {
+          ...baseButton,
           type: 'webView',
           text,
           url: button.url,
@@ -158,6 +172,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonUrlAuth) {
         return {
+          ...baseButton,
           type: 'urlAuth',
           text,
           url: button.url,
@@ -167,6 +182,7 @@ export function buildReplyButtons(
 
       if (button instanceof GramJs.KeyboardButtonCopy) {
         return {
+          ...baseButton,
           type: 'copy',
           text,
           copyText: button.copyText,
@@ -174,6 +190,7 @@ export function buildReplyButtons(
       }
 
       return {
+        ...baseButton,
         type: 'unsupported',
         text,
       };
@@ -189,6 +206,17 @@ export function buildReplyButtons(
       isKeyboardSingleUse: replyMarkup.singleUse,
       isKeyboardSelective: replyMarkup.selective,
     }),
+  };
+}
+
+export function buildApiKeyboardButtonStyle(
+  style: GramJs.TypeKeyboardButtonStyle,
+): ApiKeyboardButtonStyle | undefined {
+  const { bgPrimary, bgDanger, bgSuccess, icon } = style;
+
+  return {
+    type: bgPrimary ? 'primary' : bgDanger ? 'destructive' : bgSuccess ? 'success' : undefined,
+    iconId: icon?.toString(),
   };
 }
 
@@ -252,8 +280,10 @@ export function buildBotInlineMessage(
       description: sendMessage.description,
       photo: buildApiWebDocument(sendMessage.photo),
       currency: sendMessage.currency,
-      amount: sendMessage.totalAmount.toJSNumber(),
+      amount: toJSNumber(sendMessage.totalAmount),
     };
+  } else if (sendMessage instanceof GramJs.BotInlineMessageRichMessage) {
+    content.richMessage = buildApiRichMessage(sendMessage.richMessage);
   }
 
   return {
@@ -379,10 +409,10 @@ export function buildApiBotInfo(botInfo: GramJs.BotInfo, chatId: string): ApiBot
 export function buildBotAppSettings(settings: GramJs.BotAppSettings): ApiBotAppSettings {
   const placeholderPath = settings.placeholderPath && buildSvgPath(settings.placeholderPath);
   return {
-    backgroundColor: settings.backgroundColor ? numberToHexColor(settings.backgroundColor) : undefined,
-    backgroundDarkColor: settings.backgroundDarkColor ? numberToHexColor(settings.backgroundDarkColor) : undefined,
-    headerColor: settings.headerColor ? numberToHexColor(settings.headerColor) : undefined,
-    headerDarkColor: settings.headerDarkColor ? numberToHexColor(settings.headerDarkColor) : undefined,
+    backgroundColor: settings.backgroundColor ? int2hex(settings.backgroundColor) : undefined,
+    backgroundDarkColor: settings.backgroundDarkColor ? int2hex(settings.backgroundDarkColor) : undefined,
+    headerColor: settings.headerColor ? int2hex(settings.headerColor) : undefined,
+    headerDarkColor: settings.headerDarkColor ? int2hex(settings.headerDarkColor) : undefined,
     placeholderPath,
   };
 }
@@ -390,7 +420,9 @@ export function buildBotAppSettings(settings: GramJs.BotAppSettings): ApiBotAppS
 export function buildApiBotCommand(botId: string, command: GramJs.BotCommand): ApiBotCommand {
   return {
     botId,
-    ...omitVirtualClassFields(command),
+    command: command.command,
+    description: command.description,
+    isEphemeral: command.ephemeral,
   };
 }
 
@@ -406,6 +438,23 @@ export function buildApiBotMenuButton(menuButton?: GramJs.TypeBotMenuButton): Ap
   return {
     type: 'commands',
   };
+}
+
+export function buildApiJoinChatBotResult(result: GramJs.TypeJoinChatBotResult): ApiJoinChatBotResult {
+  if (result instanceof GramJs.JoinChatBotResultApproved) {
+    return { type: 'approved' };
+  }
+  if (result instanceof GramJs.JoinChatBotResultDeclined) {
+    return { type: 'declined' };
+  }
+  if (result instanceof GramJs.JoinChatBotResultWebView) {
+    return { type: 'webView', url: result.url };
+  }
+  if (result instanceof GramJs.JoinChatBotResultQueued) {
+    return { type: 'queued' };
+  }
+
+  return undefined!; // Never reached
 }
 
 export function buildApiBotApp(app: GramJs.TypeBotApp): ApiBotApp | undefined {

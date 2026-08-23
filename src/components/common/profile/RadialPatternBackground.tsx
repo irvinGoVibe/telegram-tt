@@ -1,6 +1,5 @@
-import {
-  memo, useEffect, useMemo, useRef, useSignal, useState,
-} from '../../../lib/teact/teact';
+import Color from 'colorjs.io';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useSignal } from '../../../lib/teact/teact';
 
 import type { ApiSticker } from '../../../api/types';
 
@@ -9,8 +8,9 @@ import { getStickerMediaHash } from '../../../global/helpers';
 import buildClassName from '../../../util/buildClassName';
 import buildStyle from '../../../util/buildStyle';
 import { preloadImage } from '../../../util/files';
-import { clamp } from '../../../util/math';
+import { REM } from '../helpers/mediaDimensions';
 
+import useAsync from '../../../hooks/useAsync';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useMedia from '../../../hooks/useMedia';
 import useResizeObserver from '../../../hooks/useResizeObserver';
@@ -19,32 +19,53 @@ import useDevicePixelRatio from '../../../hooks/window/useDevicePixelRatio';
 import styles from './RadialPatternBackground.module.scss';
 
 type OwnProps = {
-  backgroundColors: string[];
-  patternColor?: string;
+  backgroundColors?: string[];
   patternIcon?: ApiSticker;
-  className?: string;
-  clearBottomSector?: boolean;
+  patternUrl?: string;
+  patternColor?: string;
   patternSize?: number;
-  patternOpacity?: number;
+  maxRadius?: number;
+  centerEmptiness?: number;
+  ringsCount?: number;
+  ovalFactor?: number;
+  withLinearGradient?: boolean;
+  className?: string;
+  canvasClassName?: string;
+  clearBottomSector?: boolean;
+  yPosition?: number;
+  withAdaptiveHeight?: boolean;
 };
 
-const RINGS = 3;
 const BASE_RING_ITEM_COUNT = 8;
 const RING_INCREMENT = 0.5;
-const CENTER_EMPTINESS = 0.05;
-const MAX_RADIUS = 0.4;
-const BASE_ICON_SIZE = 20;
+const DEFAULT_CENTER_EMPTINESS = 0.1;
+const DEFAULT_MAX_RADIUS = 0.42;
+const MIN_SIZE = 4 * REM;
+const RGB_CHANNEL_MAX = 255;
+const DARK_LUMA_THRESHOLD = RGB_CHANNEL_MAX * 0.2;
+const COLOR_PERCENT_MAX = 100;
+const LUMA_COEFFICIENTS = [0.2126, 0.7152, 0.0722] as const;
 
-const MIN_SIZE = 250;
+const DEFAULT_PATTERN_SIZE = 20;
+const DEFAULT_RINGS_COUNT = 3;
+const DEFAULT_OVAL_FACTOR = 1.4;
 
 const RadialPatternBackground = ({
   backgroundColors,
-  patternColor,
   patternIcon,
-  patternOpacity,
+  patternUrl,
+  patternColor,
+  patternSize = DEFAULT_PATTERN_SIZE,
+  centerEmptiness = DEFAULT_CENTER_EMPTINESS,
+  ringsCount = DEFAULT_RINGS_COUNT,
+  ovalFactor = DEFAULT_OVAL_FACTOR,
+  maxRadius = DEFAULT_MAX_RADIUS,
+  withLinearGradient,
   clearBottomSector,
   className,
-  patternSize = 1,
+  canvasClassName,
+  yPosition,
+  withAdaptiveHeight,
 }: OwnProps) => {
   const containerRef = useRef<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement>();
@@ -53,23 +74,22 @@ const RadialPatternBackground = ({
 
   const dpr = useDevicePixelRatio();
 
-  const [emojiImage, setEmojiImage] = useState<HTMLImageElement | undefined>();
-
   const previewMediaHash = patternIcon && getStickerMediaHash(patternIcon, 'preview');
   const previewUrl = useMedia(previewMediaHash);
 
-  useEffect(() => {
-    if (!previewUrl) return;
-    preloadImage(previewUrl).then(setEmojiImage);
-  }, [previewUrl]);
+  const imageUrl = previewUrl || patternUrl;
+
+  const { result: emojiImage } = useAsync(
+    () => (imageUrl ? preloadImage(imageUrl) : Promise.resolve(undefined)),
+    [imageUrl],
+  );
 
   const patternPositions = useMemo(() => {
     const coordinates: { x: number; y: number; sizeFactor: number }[] = [];
-    for (let ring = 1; ring <= RINGS; ring++) {
+    for (let ring = 1; ring <= ringsCount; ring++) {
       const ringItemCount = Math.floor(BASE_RING_ITEM_COUNT * (1 + (ring - 1) * RING_INCREMENT));
-      const ringProgress = ring / RINGS;
-      const ringRadius = CENTER_EMPTINESS + (MAX_RADIUS - CENTER_EMPTINESS) * ringProgress;
-
+      const ringProgress = ring / ringsCount;
+      const ringRadius = centerEmptiness + (maxRadius - centerEmptiness) * ringProgress;
       const angleShift = ring % 2 === 0 ? Math.PI / ringItemCount : 0;
 
       for (let i = 0; i < ringItemCount; i++) {
@@ -79,11 +99,9 @@ const RadialPatternBackground = ({
           continue;
         }
 
-        // Slightly oval
-        const xOffset = ringRadius * 1.71 * Math.cos(angle);
+        const xOffset = ringRadius * Math.cos(angle) * ovalFactor;
         const yOffset = ringRadius * Math.sin(angle);
-
-        const sizeFactor = 1.4 - ringProgress * Math.random();
+        const sizeFactor = 1.65 - ringProgress + Math.random() / ringsCount;
 
         coordinates.push({
           x: xOffset,
@@ -93,7 +111,7 @@ const RadialPatternBackground = ({
       }
     }
     return coordinates;
-  }, [clearBottomSector]);
+  }, [centerEmptiness, clearBottomSector, maxRadius, ovalFactor, ringsCount]);
 
   useResizeObserver(containerRef, (entry) => {
     setContainerSize({
@@ -119,59 +137,63 @@ const RadialPatternBackground = ({
     const { width, height } = canvas;
     if (!width || !height) return;
 
+    const centerX = width / 2;
+    const centerY = withAdaptiveHeight ? height / 2
+      : yPosition !== undefined ? yPosition * dpr : width / 2;
+
     ctx.clearRect(0, 0, width, height);
 
-    ctx.save();
     patternPositions.forEach(({
       x, y, sizeFactor,
     }) => {
-      const renderX = x * patternSize * Math.max(width, MIN_SIZE * dpr) + width / 2;
-      const renderY = y * patternSize * Math.max(height, MIN_SIZE * dpr) + height / 2;
-
-      const size = BASE_ICON_SIZE * dpr * patternSize * sizeFactor;
+      const renderX = x * Math.max(width, MIN_SIZE * dpr) + centerX;
+      const renderY = y * Math.max(withAdaptiveHeight ? height : width, MIN_SIZE * dpr) + centerY;
+      const size = patternSize * dpr * sizeFactor;
 
       ctx.drawImage(emojiImage, renderX - size / 2, renderY - size / 2, size, size);
     });
-    ctx.restore();
 
     if (patternColor) {
-      ctx.save();
       ctx.fillStyle = patternColor;
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.fillRect(0, 0, width, height);
-      ctx.restore();
+    } else {
+      const baseColor = backgroundColors?.[1] ?? backgroundColors?.[0] ?? '#000000';
+      const isDark = getPerceivedLuma(baseColor) < DARK_LUMA_THRESHOLD;
+      ctx.fillStyle = buildAdjustedHsvColor(baseColor, 0.5, isDark ? 0.28 : -0.28);
     }
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.fillRect(0, 0, width, height);
 
-    const radialGradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width / 2);
+    const radialGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, width * maxRadius);
+    radialGradient.addColorStop(0, 'rgb(255 255 255 / 0.4)');
+    radialGradient.addColorStop(1, 'rgb(255 255 255 / 0.9)');
 
-    const alpha = clamp(0.6 * (patternOpacity ?? 1), 0, 1);
-
-    radialGradient.addColorStop(0, `rgb(255 255 255 / ${1 - alpha})`);
-    radialGradient.addColorStop(1, `rgb(255 255 255 / 1)`);
+    // Scale around the gradient center
+    ctx.translate(centerX, centerY);
+    ctx.scale(1, 1 / ovalFactor);
+    ctx.translate(-centerX, -centerY);
 
     // Alpha mask
-    ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillStyle = radialGradient;
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
+    // The higher the ovalFactor, the more we need to extend vertically
+    const fillHeight = height * ovalFactor;
+    ctx.fillRect(0, -fillHeight, width, fillHeight * 2);
   });
 
   useEffect(() => {
     draw();
-  }, [emojiImage, patternOpacity, patternSize, patternColor, patternPositions]);
+  }, [emojiImage, patternPositions, yPosition, ovalFactor, patternColor]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const { width, height } = getContainerSize();
     const canvas = canvasRef.current;
     if (!width || !height || !canvas) {
       return;
     }
 
-    const maxSide = Math.max(width, height);
     requestMutation(() => {
-      canvas.width = maxSide * dpr;
-      canvas.height = maxSide * dpr;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
 
       draw();
     });
@@ -180,15 +202,20 @@ const RadialPatternBackground = ({
   return (
     <div
       ref={containerRef}
-      className={buildClassName(styles.root, className)}
+      className={buildClassName(
+        styles.root,
+        withLinearGradient && Boolean(backgroundColors?.length) && styles.withLinearGradient,
+        className,
+      )}
       style={buildStyle(
-        `--_bg-1: ${backgroundColors[0]}`,
-        `--_bg-2: ${backgroundColors[1] || backgroundColors[0]}`,
+        backgroundColors && `--_bg-light: ${backgroundColors[0]}`,
+        backgroundColors && `--_bg-dark: ${backgroundColors[1] ?? backgroundColors[0]}`,
+        yPosition !== undefined && `--_y-shift: ${yPosition}px`,
       )}
     >
       <canvas
         ref={canvasRef}
-        className={buildClassName(styles.canvas, emojiImage && styles.showing)}
+        className={buildClassName(styles.canvas, emojiImage && styles.showing, canvasClassName)}
         aria-hidden="true"
       />
     </div>
@@ -196,3 +223,22 @@ const RadialPatternBackground = ({
 };
 
 export default memo(RadialPatternBackground);
+
+function getPerceivedLuma(color: string) {
+  const [r, g, b] = new Color(color).to('srgb').coords;
+  const [rc, gc, bc] = LUMA_COEFFICIENTS;
+  return rc * (r! * RGB_CHANNEL_MAX) + gc * (g! * RGB_CHANNEL_MAX) + bc * (b! * RGB_CHANNEL_MAX);
+}
+
+function buildAdjustedHsvColor(color: string, satDelta: number, valDelta: number) {
+  const parsedColor = new Color(color);
+  const [h, initialS, initialV] = parsedColor.to('hsv').coords;
+  let s = initialS! / COLOR_PERCENT_MAX;
+  let v = initialV! / COLOR_PERCENT_MAX;
+
+  if (s > 0.1 && s < 0.9) s = Math.max(0, Math.min(1, s + satDelta));
+  v = Math.max(0, Math.min(1, v + valDelta));
+
+  return new Color('hsv', [h || 0, s * COLOR_PERCENT_MAX, v * COLOR_PERCENT_MAX], parsedColor.alpha)
+    .toString({ format: 'hex', collapse: false, alpha: true });
+}

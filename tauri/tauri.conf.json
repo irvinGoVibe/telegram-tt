@@ -47,13 +47,12 @@
       "appimage"
     ],
     "windows": {
-      "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "nsis": {
         "installerIcon": "icons/icon.ico"
       }
     }
   },
-  "identifier": "org.telegram.TelegramAir",
+  "identifier": "org.telegram.TelegramAirBeta",
   "productName": "Telegram Air"
 }

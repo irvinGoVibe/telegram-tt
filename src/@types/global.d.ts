@@ -1,16 +1,35 @@
-declare const process: NodeJS.Process;
+/// <reference types="user-agent-data-types" />
 
-declare module '*.module.scss';
+declare module '*.css';
+declare module '*.scss';
 
 declare const APP_VERSION: string;
-declare const APP_REVISION: string;
-declare const CHANGELOG_DATETIME: number | undefined;
+
+declare module 'virtual:git-info' {
+  export const APP_REVISION: string;
+}
+
+interface ImportMetaEnv {
+  readonly TG_APP_ENV: string;
+  readonly TG_APP_MOCKED_CLIENT: string;
+  readonly TG_APP_NAME?: string;
+  readonly TG_APP_TITLE: string;
+  readonly TG_PUBLIC_URL: string;
+  readonly TG_TELEGRAM_API_HASH?: string;
+  readonly TG_TELEGRAM_API_ID?: string;
+  readonly TG_TEST_SESSION?: string;
+  readonly TG_THREAD_API_URL?: string;
+}
 
 declare namespace React {
   interface HTMLAttributes {
     // Optimization for DOM nodes prepends and inserts
     teactFastList?: boolean;
     teactExperimentControlled?: boolean;
+  }
+
+  interface LiHTMLAttributes<_T> {
+    type?: string;
   }
 
   // Teact features
@@ -48,6 +67,8 @@ type AnyToVoidFunction = (...args: any[]) => void;
 type BooleanToVoidFunction = (value: boolean) => void;
 type NoneToVoidFunction = () => void;
 
+type StringAutocomplete<T> = T | (string & {});
+
 type Complete<T> = {
   [P in keyof Required<T>]: Pick<T, P> extends Required<Pick<T, P>> ? T[P] : (T[P] | undefined);
 };
@@ -80,11 +101,13 @@ declare module '*.jpg' {
   const url: string;
   export default url;
 }
-declare module '*.svg' {
+
+declare module '*.webp' {
   const url: string;
   export default url;
 }
-declare module '*.txt' {
+
+declare module '*.svg' {
   const url: string;
   export default url;
 }
@@ -96,13 +119,13 @@ declare module '*.wasm' {
   const url: string;
   export default url;
 }
-declare module '*.strings' {
+declare module '*.wasm?url' {
   const url: string;
   export default url;
 }
-
-declare module 'pako/dist/pako_inflate' {
-  function inflate(...args: any[]): string;
+declare module '*.strings?raw' {
+  const content: string;
+  export default content;
 }
 
 declare module 'opus-recorder' {
@@ -114,7 +137,7 @@ declare module 'opus-recorder' {
 
     sourceNode: MediaStreamAudioSourceNode;
 
-    ondataavailable: (typedArray: Uint8Array) => void;
+    ondataavailable: (typedArray: Uint8Array<ArrayBuffer>) => void;
   }
 
   const recorder: IOpusRecorder;
@@ -173,7 +196,6 @@ interface BooleanConstructor {
 
 interface Array<T> {
   filter<S extends T>(predicate: BooleanConstructor, thisArg?: unknown): Exclude<S, Falsy>[];
-  at(index: number): T; // Make it behave like arr[arr.length - 1]
 }
 interface ReadonlyArray<T> {
   filter<S extends T>(predicate: BooleanConstructor, thisArg?: unknown): Exclude<S, Falsy>[];

@@ -1,7 +1,7 @@
-import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
+import type { TeactNode } from '../../lib/teact/teact';
 import {
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -9,17 +9,22 @@ import {
 } from '../../lib/teact/teact';
 import { getActions } from '../../global';
 
-import type { ApiChat, ApiTopic } from '../../api/types';
+import type { ApiChat } from '../../api/types';
+import type { GlobalState } from '../../global/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
 
 import { getOrderedTopics } from '../../global/helpers';
+import { selectTopic } from '../../global/selectors';
+import { selectThread } from '../../global/selectors/threads';
 import buildClassName from '../../util/buildClassName';
+import { buildCollectionByCallback, mapTruthyValues } from '../../util/iteratees';
 import { REM } from './helpers/mediaDimensions';
 import renderText from './helpers/renderText';
 
+import { useShallowSelector } from '../../hooks/data/useSelector';
 import { getIsMobile } from '../../hooks/useAppLayout';
 import { useFastClick } from '../../hooks/useFastClick';
-import useOldLang from '../../hooks/useOldLang';
+import useLang from '../../hooks/useLang';
 
 import TopicIcon from './TopicIcon';
 
@@ -27,36 +32,52 @@ import styles from './ChatForumLastMessage.module.scss';
 
 type OwnProps = {
   chat: ApiChat;
-  topics?: Record<number, ApiTopic>;
-  renderLastMessage: () => React.ReactNode;
+  topicIds?: number[];
+  hasTags?: boolean;
+  renderLastMessage: () => TeactNode | undefined;
   observeIntersection?: ObserveFn;
-  noForumTitle?: boolean;
 };
 
 const NO_CORNER_THRESHOLD = Number(REM);
 const MAX_TOPICS = 3;
 
-const ChatForumLastMessage: FC<OwnProps> = ({
+const ChatForumLastMessage = ({
   chat,
-  topics,
+  topicIds,
+  hasTags,
   renderLastMessage,
   observeIntersection,
-  noForumTitle,
-}) => {
+}: OwnProps) => {
   const { openThread } = getActions();
 
   const lastMessageRef = useRef<HTMLDivElement>();
   const mainColumnRef = useRef<HTMLDivElement>();
 
-  const lang = useOldLang();
+  const lang = useLang();
+
+  const topicsThreadSelector = useCallback((global: GlobalState) => {
+    return buildCollectionByCallback(topicIds || [], (tId) => (
+      [tId, selectThread(global, chat.id, tId)]
+    ));
+  }, [chat.id, topicIds]);
+  const topicsThreads = useShallowSelector(topicsThreadSelector);
+
+  const topicsSelector = useCallback((global: GlobalState) => {
+    return topicIds?.map((tId) => selectTopic(global, chat.id, tId)).filter(Boolean);
+  }, [chat.id, topicIds]);
+  const topics = useShallowSelector(topicsSelector);
 
   const [lastActiveTopic, ...otherTopics] = useMemo(() => {
     if (!topics) {
       return [];
     }
 
-    return getOrderedTopics(Object.values(topics), undefined, true).slice(0, MAX_TOPICS);
-  }, [topics]);
+    const topicsThreadInfos = mapTruthyValues(topicsThreads, (t) => t?.threadInfo);
+
+    return getOrderedTopics(topics, topicsThreadInfos, undefined, true).slice(0, MAX_TOPICS);
+  }, [topics, topicsThreads]);
+
+  const lastActiveTopicReadState = lastActiveTopic ? topicsThreads[lastActiveTopic.id]?.readState : undefined;
 
   const [isReversedCorner, setIsReversedCorner] = useState(false);
   const [overwrittenWidth, setOverwrittenWidth] = useState<number | undefined>(undefined);
@@ -65,7 +86,8 @@ const ChatForumLastMessage: FC<OwnProps> = ({
     handleClick: handleOpenTopicClick,
     handleMouseDown: handleOpenTopicMouseDown,
   } = useFastClick((e: React.MouseEvent<HTMLDivElement>) => {
-    if (lastActiveTopic.unreadCount === 0 || chat.isForumAsMessages) return;
+    if (!lastActiveTopic) return;
+    if (lastActiveTopicReadState?.unreadCount === 0 || (chat.isForumAsMessages && !chat.isBotForum)) return;
 
     e.stopPropagation();
     e.preventDefault();
@@ -81,7 +103,7 @@ const ChatForumLastMessage: FC<OwnProps> = ({
   useEffect(() => {
     const lastMessageElement = lastMessageRef.current;
     const mainColumnElement = mainColumnRef.current;
-    if (!lastMessageElement || !mainColumnElement) return;
+    if (!lastMessageElement || !mainColumnElement || hasTags) return;
 
     const lastMessageWidth = lastMessageElement.offsetWidth;
     const mainColumnWidth = mainColumnElement.offsetWidth;
@@ -92,7 +114,7 @@ const ChatForumLastMessage: FC<OwnProps> = ({
       setOverwrittenWidth(undefined);
     }
     setIsReversedCorner(lastMessageWidth > mainColumnWidth);
-  }, [lastActiveTopic, renderLastMessage]);
+  }, [lastActiveTopic, renderLastMessage, hasTags]);
 
   return (
     <div
@@ -105,14 +127,14 @@ const ChatForumLastMessage: FC<OwnProps> = ({
       style={overwrittenWidth ? `--overwritten-width: ${overwrittenWidth}px` : undefined}
     >
       {
-        !noForumTitle && (
+        !hasTags && (
           <>
             {lastActiveTopic && (
               <div className={styles.titleRow}>
                 <div
                   className={buildClassName(
                     styles.mainColumn,
-                    lastActiveTopic.unreadCount && styles.unread,
+                    lastActiveTopicReadState?.unreadCount && styles.unread,
                   )}
                   ref={mainColumnRef}
                   onClick={handleOpenTopicClick}
@@ -134,7 +156,7 @@ const ChatForumLastMessage: FC<OwnProps> = ({
                   {otherTopics.map((topic) => (
                     <div
                       className={buildClassName(
-                        styles.otherColumn, topic.unreadCount && styles.unread,
+                        styles.otherColumn, topicsThreads[topic.id]?.readState?.unreadCount && styles.unread,
                       )}
                       key={topic.id}
                     >
@@ -160,7 +182,10 @@ const ChatForumLastMessage: FC<OwnProps> = ({
         )
       }
       <div
-        className={buildClassName(styles.lastMessage, lastActiveTopic?.unreadCount && !noForumTitle && styles.unread)}
+        className={buildClassName(
+          styles.lastMessage,
+          lastActiveTopicReadState?.unreadCount && !hasTags && styles.unread,
+        )}
         ref={lastMessageRef}
         onClick={handleOpenTopicClick}
         onMouseDown={handleOpenTopicMouseDown}

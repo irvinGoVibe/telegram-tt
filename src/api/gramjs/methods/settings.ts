@@ -1,15 +1,15 @@
-import BigInt from 'big-integer';
 import { Api as GramJs } from '../../../lib/gramjs';
 import { RPCError } from '../../../lib/gramjs/errors';
 
 import type { LANG_PACKS } from '../../../config';
 import type {
-  ApiAppConfig,
-  ApiConfig,
+  ApiBirthday,
+  ApiChat,
   ApiDisallowedGiftsSettings,
   ApiInputPrivacyRules,
   ApiLanguage,
   ApiNotifyPeerType,
+  ApiPasskeyRegistrationOption,
   ApiPeerNotifySettings,
   ApiPhoto,
   ApiPrivacyKey,
@@ -18,22 +18,20 @@ import type {
 
 import {
   ACCEPTABLE_USERNAME_ERRORS,
+  DEBUG,
   LANG_PACK,
   MUTE_INDEFINITE_TIMESTAMP,
   UNMUTE_TIMESTAMP,
 } from '../../../config';
 import { buildCollectionByKey } from '../../../util/iteratees';
+import { toJSNumber } from '../../../util/numbers';
 import { BLOCKED_LIST_LIMIT } from '../../../limits';
-import { buildAppConfig } from '../apiBuilders/appConfig';
 import { buildApiPhoto, buildPrivacyRules } from '../apiBuilders/common';
 import { buildApiDisallowedGiftsSettings } from '../apiBuilders/gifts';
 import {
-  buildApiConfig,
   buildApiCountryList,
   buildApiLanguage,
-  buildApiPeerColors,
-  buildApiPeerNotifySettings,
-  buildApiPeerProfileColors,
+  buildApiPasskey,
   buildApiSession,
   buildApiTimezone,
   buildApiWallpaper,
@@ -41,16 +39,25 @@ import {
   buildLangStrings,
   oldBuildLangPack,
 } from '../apiBuilders/misc';
-import { getApiChatIdFromMtpPeer } from '../apiBuilders/peers';
+import {
+  buildApiPeerColors,
+  buildApiPeerId,
+  buildApiPeerNotifySettings,
+  buildApiPeerProfileColors,
+  getApiChatIdFromMtpPeer,
+} from '../apiBuilders/peers';
 import {
   buildDisallowedGiftsSettings,
+  buildInputBirthday,
   buildInputChannel,
-  buildInputPeer, buildInputPhoto,
+  buildInputPeer,
+  buildInputPhoto,
   buildInputPrivacyKey,
   buildInputPrivacyRules,
   buildInputUser,
   DEFAULT_PRIMITIVES,
 } from '../gramjsBuilders';
+import { buildInputPasskeyCredential } from '../gramjsBuilders/passkeys';
 import { addPhotoToLocalDb } from '../helpers/localDb';
 import localDb from '../localDb';
 import { getClient, invokeRequest, uploadFile } from './client';
@@ -98,6 +105,33 @@ export async function checkUsername(username: string) {
 
 export function updateUsername(username: string) {
   return invokeRequest(new GramJs.account.UpdateUsername({ username }), {
+    shouldReturnTrue: true,
+  });
+}
+
+export function updateBirthday(birthday?: ApiBirthday) {
+  return invokeRequest(new GramJs.account.UpdateBirthday({
+    birthday: birthday ? buildInputBirthday(birthday) : undefined,
+  }), {
+    shouldReturnTrue: true,
+  });
+}
+
+export async function fetchAdminedPersonalChannelIds() {
+  const result = await invokeRequest(new GramJs.channels.GetAdminedPublicChannels({
+    forPersonal: true,
+  }));
+  if (!result) return undefined;
+
+  return result.chats.map(({ id }) => buildApiPeerId(id, 'channel'));
+}
+
+export function updatePersonalChannel(channel?: ApiChat) {
+  return invokeRequest(new GramJs.account.UpdatePersonalChannel({
+    channel: channel
+      ? buildInputChannel(channel.id, channel.accessHash)
+      : new GramJs.InputChannelEmpty(),
+  }), {
     shouldReturnTrue: true,
   });
 }
@@ -188,23 +222,14 @@ export async function fetchWallpapers() {
     return undefined;
   }
 
-  const filteredWallpapers = result.wallpapers.filter((wallpaper) => {
-    if (
-      !(wallpaper instanceof GramJs.WallPaper)
-      || !(wallpaper.document instanceof GramJs.Document)
-    ) {
-      return false;
+  result.wallpapers.forEach((wallpaper) => {
+    if (wallpaper instanceof GramJs.WallPaper && wallpaper.document instanceof GramJs.Document) {
+      localDb.documents[String(wallpaper.document.id)] = wallpaper.document;
     }
-
-    return !wallpaper.pattern && wallpaper.document.mimeType !== 'application/x-tgwallpattern';
-  }) as GramJs.WallPaper[];
-
-  filteredWallpapers.forEach((wallpaper) => {
-    localDb.documents[String(wallpaper.document.id)] = wallpaper.document as GramJs.Document;
   });
 
   return {
-    wallpapers: filteredWallpapers.map(buildApiWallpaper).filter(Boolean),
+    wallpapers: result.wallpapers.map(buildApiWallpaper).filter(Boolean),
   };
 }
 
@@ -600,21 +625,6 @@ export function updateContentSettings(isEnabled: boolean) {
   }));
 }
 
-export async function fetchAppConfig(hash?: number): Promise<ApiAppConfig | undefined> {
-  const result = await invokeRequest(new GramJs.help.GetAppConfig({ hash: hash ?? DEFAULT_PRIMITIVES.INT }));
-  if (!result || result instanceof GramJs.help.AppConfigNotModified) return undefined;
-
-  const { config, hash: resultHash } = result;
-  return buildAppConfig(config, resultHash);
-}
-
-export async function fetchConfig(): Promise<ApiConfig | undefined> {
-  const result = await invokeRequest(new GramJs.help.GetConfig());
-  if (!result) return undefined;
-
-  return buildApiConfig(result);
-}
-
 export async function fetchPeerColors(hash?: number) {
   const result = await invokeRequest(new GramJs.help.GetPeerColors({
     hash: hash ?? DEFAULT_PRIMITIVES.INT,
@@ -675,6 +685,19 @@ export async function fetchCountryList({ langCode = 'en' }: { langCode?: string 
   return buildApiCountryList(countryList.countries);
 }
 
+export async function fetchDefaultHistoryTtl() {
+  const result = await invokeRequest(new GramJs.messages.GetDefaultHistoryTTL());
+  if (!result) return undefined;
+
+  return result.period;
+}
+
+export function setDefaultHistoryTtl({ period }: { period: number }) {
+  return invokeRequest(new GramJs.messages.SetDefaultHistoryTTL({ period }), {
+    shouldReturnTrue: true,
+  });
+}
+
 export async function fetchGlobalPrivacySettings() {
   const result = await invokeRequest(new GramJs.account.GetGlobalPrivacySettings());
 
@@ -686,7 +709,7 @@ export async function fetchGlobalPrivacySettings() {
     shouldArchiveAndMuteNewNonContact: Boolean(result.archiveAndMuteNewNoncontactPeers),
     shouldHideReadMarks: Boolean(result.hideReadMarks),
     shouldNewNonContactPeersRequirePremium: Boolean(result.newNoncontactPeersRequirePremium),
-    nonContactPeersPaidStars: Number(result.noncontactPeersPaidStars),
+    nonContactPeersPaidStars: toJSNumber(result.noncontactPeersPaidStars),
     shouldDisplayGiftsButton: Boolean(result.displayGiftsButton),
     disallowedGifts: result.disallowedGifts && buildApiDisallowedGiftsSettings(result.disallowedGifts),
   };
@@ -726,7 +749,7 @@ export async function updateGlobalPrivacySettings({
     shouldArchiveAndMuteNewNonContact: Boolean(result.archiveAndMuteNewNoncontactPeers),
     shouldHideReadMarks: Boolean(result.hideReadMarks),
     shouldNewNonContactPeersRequirePremium: Boolean(result.newNoncontactPeersRequirePremium),
-    nonContactPeersPaidStars: Number(result.noncontactPeersPaidStars),
+    nonContactPeersPaidStars: toJSNumber(result.noncontactPeersPaidStars),
     shouldDisplayGiftsButton,
     disallowedGifts,
   };
@@ -769,4 +792,49 @@ export function reorderUsernames({ chatId, accessHash, usernames }: {
   return invokeRequest(new GramJs.account.ReorderUsernames({
     order: usernames,
   }));
+}
+
+export async function fetchPasskeys() {
+  const result = await invokeRequest(new GramJs.account.GetPasskeys());
+  if (!result) {
+    return undefined;
+  }
+
+  return {
+    passkeys: result.passkeys.map(buildApiPasskey),
+  };
+}
+
+export async function initPasskeyRegistration() {
+  const result = await invokeRequest(new GramJs.account.InitPasskeyRegistration());
+  if (!result) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(result.options.data) as ApiPasskeyRegistrationOption;
+  } catch (err: unknown) {
+    if (DEBUG) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to parse passkey registration options:', err);
+    }
+  }
+  return undefined;
+}
+
+export async function registerPasskey(credentialJson: RegistrationResponseJSON) {
+  const result = await invokeRequest(new GramJs.account.RegisterPasskey({
+    credential: buildInputPasskeyCredential(credentialJson),
+  }));
+  if (!result) {
+    return undefined;
+  }
+
+  return buildApiPasskey(result);
+}
+
+export function deletePasskey({ id }: { id: string }) {
+  return invokeRequest(new GramJs.account.DeletePasskey({ id }), {
+    shouldReturnTrue: true,
+  });
 }

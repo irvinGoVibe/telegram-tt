@@ -1,7 +1,4 @@
-import type { FC } from '../../../lib/teact/teact.ts';
-import type React from '../../../lib/teact/teact.ts';
-import { useState } from '../../../lib/teact/teact.ts';
-import { memo } from '../../../lib/teact/teact.ts';
+import { memo, useState } from '../../../lib/teact/teact';
 
 import type { ApiChat } from '../../../api/types/index';
 import type { ManagementScreens } from '../../../types/index';
@@ -10,15 +7,13 @@ import { ChatCreationProgress } from '../../../types/index';
 import { getActions, withGlobal } from '../../../global/index';
 import { selectChat, selectTabState } from '../../../global/selectors/index';
 
-import useHistoryBack from '../../../hooks/useHistoryBack.ts';
-import useLang from '../../../hooks/useLang.ts';
-import useLastCallback from '../../../hooks/useLastCallback.ts';
+import useHistoryBack from '../../../hooks/useHistoryBack';
+import useLang from '../../../hooks/useLang';
+import useLastCallback from '../../../hooks/useLastCallback';
 
-import Icon from '../../common/icons/Icon.tsx';
-import AvatarEditable from '../../ui/AvatarEditable.tsx';
-import FloatingActionButton from '../../ui/FloatingActionButton.tsx';
-import InputText from '../../ui/InputText.tsx';
-import Spinner from '../../ui/Spinner.tsx';
+import AvatarEditable from '../../ui/AvatarEditable';
+import FloatingActionButton from '../../ui/FloatingActionButton';
+import InputText from '../../ui/InputText';
 
 type OwnProps = {
   chatId: string;
@@ -33,13 +28,13 @@ type StateProps = {
   creationError?: string;
 };
 
-const NewDiscussionGroup: FC<OwnProps & StateProps> = ({
+const NewDiscussionGroup = ({
   chat,
   onClose,
   isActive,
   creationProgress,
   creationError,
-}) => {
+}: OwnProps & StateProps) => {
   const { createChannel } = getActions();
   const lang = useLang();
 
@@ -48,7 +43,7 @@ const NewDiscussionGroup: FC<OwnProps & StateProps> = ({
     onBack: onClose,
   });
 
-  const [title, setTitle] = useState(lang('NewDiscussionChatTitle', { name: chat?.title }));
+  const [title, setTitle] = useState(() => lang('NewDiscussionChatTitle', { name: chat?.title }));
   const [photo, setPhoto] = useState<File | undefined>();
   const [error, setError] = useState<string | undefined>();
 
@@ -113,13 +108,9 @@ const NewDiscussionGroup: FC<OwnProps & StateProps> = ({
             onClick={handleCreateGroup}
             disabled={isLoading}
             ariaLabel={lang('DiscussionCreateGroup')}
-          >
-            {isLoading ? (
-              <Spinner color="white" />
-            ) : (
-              <Icon name="arrow-right" />
-            )}
-          </FloatingActionButton>
+            iconName="arrow-right"
+            isLoading={isLoading}
+          />
         </div>
       </div>
     </div>

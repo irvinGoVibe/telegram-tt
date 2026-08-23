@@ -1,5 +1,4 @@
-import type { FC, TeactNode } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
+import type { TeactNode } from '../../lib/teact/teact';
 import { useEffect, useLayoutEffect, useRef } from '../../lib/teact/teact';
 
 import type { MenuItemContextAction } from './ListItem';
@@ -33,7 +32,7 @@ type OwnProps = {
   clickArg?: number;
   contextActions?: MenuItemContextAction[];
   contextRootElementSelector?: string;
-  shouldAnimatePlatform?: boolean;
+  icon?: TeactNode;
 };
 
 const classNames = {
@@ -41,7 +40,7 @@ const classNames = {
   badgeActive: 'Tab__badge--active',
 };
 
-const Tab: FC<OwnProps> = ({
+const Tab = ({
   className,
   title,
   isActive,
@@ -49,26 +48,22 @@ const Tab: FC<OwnProps> = ({
   badgeCount,
   isBadgeActive,
   previousActiveTab,
-  onClick,
-  clickArg,
   contextActions,
   contextRootElementSelector,
-  shouldAnimatePlatform = true,
-}) => {
+  icon,
+  clickArg,
+  onClick,
+}: OwnProps) => {
   const tabRef = useRef<HTMLDivElement>();
 
   useLayoutEffect(() => {
-    if (!shouldAnimatePlatform) return;
-
     // Set initial active state
     if (isActive && previousActiveTab === undefined && tabRef.current) {
       tabRef.current.classList.add(classNames.active);
     }
-  }, [isActive, previousActiveTab, shouldAnimatePlatform]);
+  }, [isActive, previousActiveTab]);
 
   useEffect(() => {
-    if (!shouldAnimatePlatform) return;
-
     if (!isActive || previousActiveTab === undefined) {
       return;
     }
@@ -109,7 +104,7 @@ const Tab: FC<OwnProps> = ({
         };
       });
     });
-  }, [isActive, previousActiveTab, shouldAnimatePlatform]);
+  }, [isActive, previousActiveTab]);
 
   const {
     contextMenuAnchor, handleContextMenu, handleBeforeContextMenu, handleContextMenuClose,
@@ -139,17 +134,13 @@ const Tab: FC<OwnProps> = ({
 
   return (
     <div
-      className={buildClassName(
-        'Tab',
-        onClick && 'Tab--interactive',
-        !shouldAnimatePlatform && isActive && classNames.active,
-        className,
-      )}
+      className={buildClassName('Tab', onClick && 'Tab--interactive', className)}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
       ref={tabRef}
     >
+      {icon}
       <span className="Tab_inner">
         {typeof title === 'string' ? renderText(title) : title}
         {Boolean(badgeCount) && (

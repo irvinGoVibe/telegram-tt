@@ -12,7 +12,7 @@ import { getCurrentTabId } from '../../../util/establishMultitabRole';
 import { buildCollectionByKey, isInsideSortedArrayRange } from '../../../util/iteratees';
 import { getSearchResultKey } from '../../../util/keys/searchResultKey';
 import { callApi } from '../../../api/gramjs';
-import { getChatMediaMessageIds, getIsSavedDialog, isSameReaction } from '../../helpers';
+import { getIsSavedDialog, getMessageContentIds, isSameReaction } from '../../helpers';
 import {
   addActionHandler, getGlobal, setGlobal,
 } from '../../index';
@@ -64,16 +64,17 @@ addActionHandler('performMiddleSearch', async (global, actions, payload): Promis
   currentSearch = selectCurrentMiddleSearch(global, tabId)!;
 
   const {
-    results, savedTag, type, isHashtag,
+    results, savedTag, type, isHashtag, fromPeerId,
   } = currentSearch;
   const shouldReuseParams = results?.query === query;
+  const fromPeer = fromPeerId ? selectPeer(global, fromPeerId) : undefined;
 
   const offsetId = shouldReuseParams ? results?.nextOffsetId : undefined;
   const offsetRate = shouldReuseParams ? results?.nextOffsetRate : undefined;
   const offsetPeerId = shouldReuseParams ? results?.nextOffsetPeerId : undefined;
   const offsetPeer = shouldReuseParams && offsetPeerId ? selectChat(global, offsetPeerId) : undefined;
 
-  const shouldHaveQuery = isHashtag || !savedTag;
+  const shouldHaveQuery = isHashtag || (!savedTag && !fromPeerId);
   if (shouldHaveQuery && !query) {
     global = updateMiddleSearch(global, realChatId, threadId, {
       fetchingQuery: undefined,
@@ -98,6 +99,7 @@ addActionHandler('performMiddleSearch', async (global, actions, payload): Promis
       offsetId,
       isSavedDialog,
       savedTag,
+      fromPeer,
     });
   }
 
@@ -479,7 +481,7 @@ async function searchChatMedia<T extends GlobalState>(
 
   const loadingState = calcLoadingState(direction, limit, newFoundIds.length, currentSegment);
 
-  const filteredIds = getChatMediaMessageIds(byId, newFoundIds, false);
+  const filteredIds = getMessageContentIds(byId, newFoundIds, 'media');
   currentSegment = mergeWithChatMediaSearchSegment(
     filteredIds,
     loadingState,

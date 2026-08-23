@@ -3,7 +3,7 @@ import { Api as GramJs } from '../../../lib/gramjs';
 import type {
   ApiAudio,
   ApiContact,
-  ApiDocument,
+  ApiDice,
   ApiFormattedText,
   ApiGame,
   ApiGiveaway,
@@ -12,11 +12,15 @@ import type {
   ApiMediaExtendedPreview,
   ApiMediaInvoice,
   ApiMediaTodo,
+  ApiMessagePoll,
   ApiMessageStoryData,
   ApiMessageWebPage,
   ApiPaidMedia,
   ApiPhoto,
   ApiPoll,
+  ApiPollAnswer,
+  ApiPollResults,
+  ApiRichMessage,
   ApiStarGiftUnique,
   ApiSticker,
   ApiTodoItem,
@@ -24,6 +28,7 @@ import type {
   ApiVoice,
   ApiWebDocument,
   ApiWebPage,
+  ApiWebPageAuctionData,
   ApiWebPageStickerData,
   ApiWebPageStoryData,
   BoughtPaidMedia,
@@ -31,10 +36,9 @@ import type {
 } from '../../types';
 import type { UniversalMessage } from './messages';
 
-import { SUPPORTED_PHOTO_CONTENT_TYPES, SUPPORTED_VIDEO_CONTENT_TYPES, VIDEO_WEBM_TYPE } from '../../../config';
 import { addTimestampEntities } from '../../../util/dates/timestamp';
-import { generateWaveform } from '../../../util/generateWaveform';
-import { pick } from '../../../util/iteratees';
+import { buildCollectionByKey, pick } from '../../../util/iteratees';
+import { toJSNumber } from '../../../util/numbers';
 import {
   addMediaToLocalDb, addStoryToLocalDb, addWebPageMediaToLocalDb, type MediaRepairContext,
 } from '../helpers/localDb';
@@ -43,14 +47,24 @@ import {
   buildApiFormattedText,
   buildApiMessageEntity,
   buildApiPhoto,
-  buildApiPhotoPreviewSizes,
-  buildApiPhotoSize,
-  buildApiThumbnailFromPath,
   buildApiThumbnailFromStripped,
 } from './common';
 import { buildApiStarGift } from './gifts';
+import {
+  buildApiInstantViewPage,
+  buildApiPageBlock,
+  buildApiPageMediaContext,
+} from './instantView';
+import {
+  buildApiAudioFromDocument,
+  buildApiDocument,
+  buildApiVideoFromDocument,
+  buildApiVoiceFromDocument,
+} from './media';
 import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
 import { buildStickerFromDocument, processStickerResult } from './symbols';
+
+export { buildApiDocument };
 
 export function buildMessageContent(
   mtpMessage: UniversalMessage | GramJs.UpdateServiceNotification,
@@ -64,10 +78,20 @@ export function buildMessageContent(
     };
   }
 
+  const richMessage = 'richMessage' in mtpMessage && mtpMessage.richMessage
+    ? buildApiRichMessage(mtpMessage.richMessage, 'peerId' in mtpMessage ? mtpMessage : undefined)
+    : undefined;
+  if (richMessage) {
+    content = {
+      ...content,
+      richMessage,
+    };
+  }
+
   const hasUnsupportedMedia = mtpMessage.media instanceof GramJs.MessageMediaUnsupported;
 
-  if (mtpMessage.message && !hasUnsupportedMedia
-    && !content.sticker && !content.pollId && !content.todo && !content.contact && !content.video?.isRound) {
+  if (!richMessage && mtpMessage.message && !hasUnsupportedMedia
+    && !content.sticker && !content.todo && !content.contact && !content.video?.isRound) {
     const text = buildMessageTextContent(mtpMessage.message, mtpMessage.entities);
     const textWithTimestamps = addTimestampEntities(text);
     content = {
@@ -77,6 +101,27 @@ export function buildMessageContent(
   }
 
   return content;
+}
+
+export function buildApiRichMessage(
+  richMessage: GramJs.RichMessage,
+  context?: MediaRepairContext,
+): ApiRichMessage | undefined {
+  if (!(richMessage instanceof GramJs.RichMessage)) {
+    return undefined;
+  }
+
+  const {
+    blocks, photos, documents, rtl, part,
+  } = richMessage;
+  const pageMediaContext = buildApiPageMediaContext(photos, documents, { message: context });
+
+  return {
+    blocks: blocks.map((block) => buildApiPageBlock(block, pageMediaContext)),
+    isRtl: rtl,
+    isPart: part,
+    partCutoff: part ? blocks.length : undefined,
+  };
 }
 
 export function buildMessageTextContent(
@@ -143,8 +188,7 @@ export function buildMessageMediaContent(
   if (photo) return { photo };
 
   const video = buildVideo(media);
-  const altVideos = buildAltVideos(media);
-  if (video) return { video, altVideos };
+  if (video) return { video };
 
   const audio = buildAudio(media);
   if (audio) return { audio };
@@ -173,13 +217,16 @@ export function buildMessageMediaContent(
   const game = buildGameFromMedia(media);
   if (game) return { game };
 
+  const dice = buildDiceFromMedia(media);
+  if (dice) return { dice };
+
   const storyData = buildMessageStoryData(media);
   if (storyData) return { storyData };
 
-  const giveaway = buildGiweawayFromMedia(media);
+  const giveaway = buildGiveawayFromMedia(media);
   if (giveaway) return { giveaway };
 
-  const giveawayResults = buildGiweawayResultsFromMedia(media);
+  const giveawayResults = buildGiveawayResultsFromMedia(media);
   if (giveawayResults) return { giveawayResults };
 
   const paidMedia = buildPaidMedia(media);
@@ -208,102 +255,15 @@ function buildPhoto(media: GramJs.TypeMessageMedia): ApiPhoto | undefined {
   return buildApiPhoto(media.photo, media.spoiler);
 }
 
-export function buildVideoFromDocument(document: GramJs.Document, params?: {
+export function buildVideoFromDocument(document: GramJs.Document, altDocuments?: GramJs.TypeDocument[], params?: {
   isSpoiler?: boolean;
   timestamp?: number;
 }): ApiVideo | undefined {
-  if (document instanceof GramJs.DocumentEmpty) {
-    return undefined;
-  }
-
-  const { isSpoiler, timestamp } = params || {};
-
-  const {
-    id, mimeType, thumbs, size, videoThumbs, attributes,
-  } = document;
-
-  if (mimeType === VIDEO_WEBM_TYPE && !(self as any).isWebmSupported) {
-    return undefined;
-  }
-
-  const videoAttr = attributes
-    .find((a): a is GramJs.DocumentAttributeVideo => a instanceof GramJs.DocumentAttributeVideo);
-
-  if (!videoAttr) {
-    return undefined;
-  }
-
-  const gifAttr = attributes
-    .find((a): a is GramJs.DocumentAttributeAnimated => a instanceof GramJs.DocumentAttributeAnimated);
-
-  const hasVideoPreview = videoThumbs?.some((thumb) => thumb instanceof GramJs.VideoSize && thumb.type === 'v');
-  const previewPhotoSizes = thumbs && buildApiPhotoPreviewSizes(thumbs);
-
-  const {
-    duration,
-    w: width,
-    h: height,
-    supportsStreaming = false,
-    roundMessage: isRound = false,
-    nosound,
-  } = videoAttr;
-
-  const waveform = isRound ? generateWaveform(duration) : undefined;
-
-  return {
-    mediaType: 'video',
-    id: String(id),
-    mimeType,
-    duration,
-    fileName: getFilenameFromDocument(document, 'video'),
-    width,
-    height,
-    supportsStreaming,
-    isRound,
-    isGif: Boolean(gifAttr),
-    thumbnail: buildApiThumbnailFromStripped(thumbs),
-    size: size.toJSNumber(),
-    isSpoiler,
-    timestamp,
-    hasVideoPreview,
-    previewPhotoSizes,
-    waveform,
-    ...(nosound && { noSound: true }),
-  };
+  return buildApiVideoFromDocument(document, altDocuments, params);
 }
 
 export function buildAudioFromDocument(document: GramJs.Document): ApiAudio | undefined {
-  if (document instanceof GramJs.DocumentEmpty) {
-    return undefined;
-  }
-
-  const {
-    id, mimeType, size, attributes,
-  } = document;
-
-  const audioAttributes = attributes
-    .find((a: any): a is GramJs.DocumentAttributeAudio => a instanceof GramJs.DocumentAttributeAudio);
-
-  if (!audioAttributes) {
-    return undefined;
-  }
-
-  const {
-    duration,
-    title,
-    performer,
-  } = audioAttributes;
-
-  return {
-    mediaType: 'audio',
-    id: String(id),
-    mimeType,
-    duration,
-    fileName: getFilenameFromDocument(document, 'audio'),
-    title,
-    performer,
-    size: size.toJSNumber(),
-  };
+  return buildApiAudioFromDocument(document, true);
 }
 
 function buildVideo(media: GramJs.TypeMessageMedia): ApiVideo | undefined {
@@ -315,23 +275,11 @@ function buildVideo(media: GramJs.TypeMessageMedia): ApiVideo | undefined {
     return undefined;
   }
 
-  return buildVideoFromDocument(media.document, { isSpoiler: media.spoiler, timestamp: media.videoTimestamp });
-}
-
-function buildAltVideos(media: GramJs.TypeMessageMedia): ApiVideo[] | undefined {
-  if (!(media instanceof GramJs.MessageMediaDocument) || !media.altDocuments) {
-    return undefined;
-  }
-
-  const altVideos = media.altDocuments.filter((d): d is GramJs.Document => (
-    d instanceof GramJs.Document && d.mimeType.startsWith('video')
-  )).map((alt) => buildVideoFromDocument(alt, { isSpoiler: media.spoiler }))
-    .filter(Boolean);
-  if (!altVideos.length) {
-    return undefined;
-  }
-
-  return altVideos;
+  return buildVideoFromDocument(
+    media.document,
+    media.altDocuments,
+    { isSpoiler: media.spoiler, timestamp: media.videoTimestamp },
+  );
 }
 
 function buildAudio(media: GramJs.TypeMessageMedia): ApiAudio | undefined {
@@ -343,28 +291,7 @@ function buildAudio(media: GramJs.TypeMessageMedia): ApiAudio | undefined {
     return undefined;
   }
 
-  const audioAttribute = media.document.attributes
-    .find((attr: any): attr is GramJs.DocumentAttributeAudio => (
-      attr instanceof GramJs.DocumentAttributeAudio
-    ));
-
-  if (!audioAttribute || audioAttribute.voice) {
-    return undefined;
-  }
-
-  const thumbnailSizes = media.document.thumbs && media.document.thumbs
-    .filter((thumb): thumb is GramJs.PhotoSize => thumb instanceof GramJs.PhotoSize)
-    .map((thumb) => buildApiPhotoSize(thumb));
-
-  return {
-    mediaType: 'audio',
-    id: String(media.document.id),
-    fileName: getFilenameFromDocument(media.document, 'audio'),
-    thumbnailSizes,
-    size: media.document.size.toJSNumber(),
-    ...pick(media.document, ['mimeType']),
-    ...pick(audioAttribute, ['duration', 'performer', 'title']),
-  };
+  return buildApiAudioFromDocument(media.document);
 }
 
 function isExpiredVoiceMessage(media: GramJs.TypeMessageMedia): boolean {
@@ -390,24 +317,7 @@ function buildVoice(media: GramJs.TypeMessageMedia): ApiVoice | undefined {
     return undefined;
   }
 
-  const audioAttribute = media.document.attributes
-    .find((attr: any): attr is GramJs.DocumentAttributeAudio => (
-      attr instanceof GramJs.DocumentAttributeAudio
-    ));
-
-  if (!audioAttribute || !audioAttribute.voice) {
-    return undefined;
-  }
-
-  const { duration, waveform } = audioAttribute;
-
-  return {
-    mediaType: 'voice',
-    id: String(media.document.id),
-    size: media.document.size.toJSNumber(),
-    duration,
-    waveform: waveform ? Array.from(waveform) : undefined,
-  };
+  return buildApiVoiceFromDocument(media.document);
 }
 
 function buildDocumentFromMedia(media: GramJs.TypeMessageMedia) {
@@ -416,76 +326,6 @@ function buildDocumentFromMedia(media: GramJs.TypeMessageMedia) {
   }
 
   return buildApiDocument(media.document);
-}
-
-export function buildApiDocument(document: GramJs.TypeDocument): ApiDocument | undefined {
-  if (!(document instanceof GramJs.Document)) {
-    return undefined;
-  }
-
-  const {
-    id, size, mimeType, date, thumbs, attributes,
-  } = document;
-
-  const photoSize = thumbs && thumbs.find((s): s is GramJs.PhotoSize => s instanceof GramJs.PhotoSize);
-  let thumbnail = thumbs && buildApiThumbnailFromStripped(thumbs);
-  if (!thumbnail && thumbs && photoSize) {
-    const photoPath = thumbs.find((s): s is GramJs.PhotoPathSize => s instanceof GramJs.PhotoPathSize);
-    if (photoPath) {
-      thumbnail = buildApiThumbnailFromPath(photoPath, photoSize);
-    }
-  }
-  const previewPhotoSizes = thumbs && buildApiPhotoPreviewSizes(thumbs);
-
-  let innerMediaType: ApiDocument['innerMediaType'] | undefined;
-  let mediaSize: ApiDocument['mediaSize'] | undefined;
-  if (photoSize) {
-    mediaSize = {
-      width: photoSize.w,
-      height: photoSize.h,
-    };
-
-    if (SUPPORTED_PHOTO_CONTENT_TYPES.has(mimeType)) {
-      innerMediaType = 'photo';
-
-      const imageAttribute = attributes
-        .find((a): a is GramJs.DocumentAttributeImageSize => a instanceof GramJs.DocumentAttributeImageSize);
-
-      if (imageAttribute) {
-        const { w: width, h: height } = imageAttribute;
-        mediaSize = {
-          width,
-          height,
-          fromDocumentAttribute: true,
-        };
-      }
-    } else if (SUPPORTED_VIDEO_CONTENT_TYPES.has(mimeType)) {
-      innerMediaType = 'video';
-      const videoAttribute = attributes
-        .find((a: any): a is GramJs.DocumentAttributeVideo => a instanceof GramJs.DocumentAttributeVideo);
-
-      if (videoAttribute) {
-        const { w: width, h: height } = videoAttribute;
-        mediaSize = {
-          width,
-          height,
-        };
-      }
-    }
-  }
-
-  return {
-    mediaType: 'document',
-    id: String(id),
-    size: size.toJSNumber(),
-    mimeType,
-    timestamp: date,
-    fileName: getFilenameFromDocument(document),
-    thumbnail,
-    innerMediaType,
-    mediaSize,
-    previewPhotoSizes,
-  };
 }
 
 function buildContact(media: GramJs.TypeMessageMedia): ApiContact | undefined {
@@ -514,12 +354,38 @@ function buildPollIdFromMedia(media: GramJs.TypeMessageMedia): string | undefine
   return media.poll.id.toString();
 }
 
-export function buildPollFromMedia(media: GramJs.TypeMessageMedia): ApiPoll | undefined {
+export function buildMessagePollFromMedia(media: GramJs.TypeMessageMedia): ApiMessagePoll | undefined {
   if (!(media instanceof GramJs.MessageMediaPoll)) {
     return undefined;
   }
 
-  return buildPoll(media.poll, media.results);
+  return buildMessagePoll(media);
+}
+
+export function buildWebPagesFromMedia(media: GramJs.TypeMessageMedia): ApiWebPage[] | undefined {
+  const webPages: ApiWebPage[] = [];
+
+  addWebPageFromMedia(webPages, media);
+
+  if (media instanceof GramJs.MessageMediaPoll) {
+    if (media.attachedMedia) {
+      addWebPageFromMedia(webPages, media.attachedMedia);
+    }
+    addWebPagesFromPoll(webPages, media.poll, media.results);
+  }
+
+  return webPages.length ? webPages : undefined;
+}
+
+export function buildWebPagesFromPoll(
+  poll?: GramJs.Poll,
+  pollResults?: GramJs.PollResults,
+): ApiWebPage[] | undefined {
+  const webPages: ApiWebPage[] = [];
+
+  addWebPagesFromPoll(webPages, poll, pollResults);
+
+  return webPages.length ? webPages : undefined;
 }
 
 function buildTodoFromMedia(media: GramJs.TypeMessageMedia): ApiMediaTodo | undefined {
@@ -627,7 +493,24 @@ function buildGame(media: GramJs.MessageMediaGame): ApiGame | undefined {
   };
 }
 
-function buildGiweawayFromMedia(media: GramJs.TypeMessageMedia): ApiGiveaway | undefined {
+function buildDiceFromMedia(media: GramJs.TypeMessageMedia): ApiDice | undefined {
+  if (!(media instanceof GramJs.MessageMediaDice)) {
+    return undefined;
+  }
+
+  return buildDice(media);
+}
+
+function buildDice(media: GramJs.MessageMediaDice): ApiDice | undefined {
+  const { value, emoticon } = media;
+  return {
+    mediaType: 'dice',
+    value,
+    emoticon,
+  };
+}
+
+function buildGiveawayFromMedia(media: GramJs.TypeMessageMedia): ApiGiveaway | undefined {
   if (!(media instanceof GramJs.MessageMediaGiveaway)) {
     return undefined;
   }
@@ -646,7 +529,7 @@ function buildGiveaway(media: GramJs.MessageMediaGiveaway): ApiGiveaway | undefi
     mediaType: 'giveaway',
     channelIds,
     months,
-    stars: stars?.toJSNumber(),
+    stars: toJSNumber(stars),
     quantity,
     untilDate,
     countries: countriesIso2,
@@ -655,7 +538,7 @@ function buildGiveaway(media: GramJs.MessageMediaGiveaway): ApiGiveaway | undefi
   };
 }
 
-function buildGiweawayResultsFromMedia(media: GramJs.TypeMessageMedia): ApiGiveawayResults | undefined {
+function buildGiveawayResultsFromMedia(media: GramJs.TypeMessageMedia): ApiGiveawayResults | undefined {
   if (!(media instanceof GramJs.MessageMediaGiveawayResults)) {
     return undefined;
   }
@@ -702,30 +585,81 @@ export function buildMessageStoryData(media: GramJs.TypeMessageMedia): ApiMessag
   };
 }
 
-export function buildPoll(poll: GramJs.Poll, pollResults: GramJs.PollResults): ApiPoll {
-  const { id, answers: rawAnswers } = poll;
-  const answers = rawAnswers.map((answer) => ({
-    text: buildApiFormattedText(answer.text),
-    option: serializeBytes(answer.option),
-  }));
+export function buildMessagePoll(media: GramJs.MessageMediaPoll): ApiMessagePoll {
+  const { poll, results, attachedMedia } = media;
 
   return {
     mediaType: 'poll',
-    id: String(id),
-    summary: {
-      isPublic: poll.publicVoters,
-      question: buildApiFormattedText(poll.question),
-      ...pick(poll, [
-        'closed',
-        'multipleChoice',
-        'quiz',
-        'closePeriod',
-        'closeDate',
-      ]),
-      answers,
-    },
-    results: buildPollResults(pollResults),
+    summary: buildPoll(poll),
+    results: buildPollResults(results),
+    attachedMedia: attachedMedia ? buildMessageMediaContent(attachedMedia) : undefined,
   };
+}
+
+export function buildPollAnswer(answer: GramJs.TypePollAnswer): ApiPollAnswer | undefined {
+  if (!(answer instanceof GramJs.PollAnswer)) return undefined;
+  const { text, option, media, addedBy, date } = answer;
+
+  return {
+    text: buildApiFormattedText(text),
+    option: serializeBytes(option),
+    media: media ? buildMessageMediaContent(media) : undefined,
+    addedByPeerId: addedBy ? getApiChatIdFromMtpPeer(addedBy) : undefined,
+    date,
+  };
+}
+
+export function buildPoll(poll: GramJs.Poll): ApiPoll {
+  const {
+    id, closed, publicVoters, multipleChoice, quiz, closePeriod, closeDate, answers, question, creator,
+    hideResultsUntilClose, revotingDisabled, shuffleAnswers, openAnswers, subscribersOnly, countriesIso2, hash,
+  } = poll;
+  const apiAnswers = answers.map(buildPollAnswer).filter(Boolean);
+
+  return {
+    id: id.toString(),
+    isClosed: closed,
+    isPublic: publicVoters,
+    isMultipleChoice: multipleChoice,
+    isQuiz: quiz,
+    closePeriod,
+    closeDate,
+    isCreator: creator,
+    shouldHideResultsUntilClose: hideResultsUntilClose,
+    isRevoteDisabled: revotingDisabled,
+    shouldShuffleAnswers: shuffleAnswers,
+    isRestrictedToSubscribers: subscribersOnly,
+    allowedCountryCodes: countriesIso2,
+    question: buildApiFormattedText(question),
+    answers: apiAnswers,
+    hash: hash.toString(),
+    canAddAnswers: openAnswers,
+  };
+}
+
+function addWebPagesFromPoll(
+  webPages: ApiWebPage[],
+  poll?: GramJs.Poll,
+  pollResults?: GramJs.PollResults,
+) {
+  poll?.answers.forEach((answer) => {
+    if (!(answer instanceof GramJs.PollAnswer) || !answer.media) {
+      return;
+    }
+
+    addWebPageFromMedia(webPages, answer.media);
+  });
+
+  if (pollResults?.solutionMedia) {
+    addWebPageFromMedia(webPages, pollResults.solutionMedia);
+  }
+}
+
+function addWebPageFromMedia(webPages: ApiWebPage[], media: GramJs.TypeMessageMedia) {
+  const webPage = buildWebPageFromMedia(media);
+  if (!webPage) return;
+
+  webPages.push(webPage);
 }
 
 export function buildTodoItem(item: GramJs.TodoItem): ApiTodoItem {
@@ -742,7 +676,7 @@ export function buildTodo(todo: GramJs.TodoList, completions?: GramJs.TodoComple
 
   const todoCompletions = completions?.map((completion) => ({
     itemId: completion.id,
-    completedBy: completion.completedBy.toString(),
+    completedBy: getApiChatIdFromMtpPeer(completion.completedBy),
     completedAt: completion.date,
   }));
 
@@ -772,33 +706,39 @@ export function buildMediaInvoice(media: GramJs.MessageMediaInvoice): ApiMediaIn
     description,
     photo: buildApiWebDocument(photo),
     receiptMessageId: receiptMsgId,
-    amount: totalAmount.toJSNumber(),
+    amount: toJSNumber(totalAmount),
     currency,
     isTest: test,
     extendedMedia: preview,
   };
 }
 
-export function buildPollResults(pollResults: GramJs.PollResults): ApiPoll['results'] {
+export function buildPollResults(pollResults: GramJs.PollResults): ApiPollResults {
   const {
-    results: rawResults, totalVoters, recentVoters, solution, solutionEntities: entities, min,
+    results: rawResults, totalVoters, recentVoters, solution, solutionEntities: entities, min, solutionMedia,
   } = pollResults;
   const results = rawResults?.map(({
-    option, chosen, correct, voters,
+    option, chosen, correct, voters, recentVoters: recentAnswerVoters,
   }) => ({
     isChosen: chosen,
     isCorrect: correct,
     option: serializeBytes(option),
-    votersCount: voters,
+    votersCount: voters ?? 0,
+    recentVoterIds: recentAnswerVoters?.map((peer) => getApiChatIdFromMtpPeer(peer)),
   }));
+
+  if (solutionMedia) {
+    addMediaToLocalDb(solutionMedia);
+  }
 
   return {
     isMin: min,
     totalVoters,
     recentVoterIds: recentVoters?.map((peer) => getApiChatIdFromMtpPeer(peer)),
-    results,
+    resultByOption: results && buildCollectionByKey(results, 'option'),
     solution,
-    ...(entities && { solutionEntities: entities.map(buildApiMessageEntity) }),
+    solutionEntities: entities?.map(buildApiMessageEntity),
+    solutionMedia: solutionMedia ? buildMessageMediaContent(solutionMedia) : undefined,
   };
 }
 
@@ -851,24 +791,24 @@ export function buildWebPage(webPage: GramJs.TypeWebPage): ApiWebPage | undefine
 
   if (webPage instanceof GramJs.WebPage) {
     const {
-      id, photo, document, attributes,
+      id, photo, document, attributes, cachedPage,
     } = webPage;
 
-    let video;
-    let audio;
-    if (document instanceof GramJs.Document && document.mimeType.startsWith('video/')) {
-      video = buildVideoFromDocument(document);
-    }
-    if (document instanceof GramJs.Document && document.mimeType.startsWith('audio/')) {
-      audio = buildAudioFromDocument(document);
-    }
+    const video = document instanceof GramJs.Document ? buildVideoFromDocument(document) : undefined;
+    const audio = document instanceof GramJs.Document ? buildAudioFromDocument(document) : undefined;
+
     let story: ApiWebPageStoryData | undefined;
     let gift: ApiStarGiftUnique | undefined;
+    let auction: ApiWebPageAuctionData | undefined;
     let stickers: ApiWebPageStickerData | undefined;
     const attributeStory = attributes
       ?.find((a): a is GramJs.WebPageAttributeStory => a instanceof GramJs.WebPageAttributeStory);
     const attributeGift = attributes
       ?.find((a): a is GramJs.WebPageAttributeUniqueStarGift => a instanceof GramJs.WebPageAttributeUniqueStarGift);
+    const attributeAuction = attributes
+      ?.find((a): a is GramJs.WebPageAttributeStarGiftAuction => (
+        a instanceof GramJs.WebPageAttributeStarGiftAuction
+      ));
     if (attributeStory) {
       const peerId = getApiChatIdFromMtpPeer(attributeStory.peer);
       story = {
@@ -884,6 +824,15 @@ export function buildWebPage(webPage: GramJs.TypeWebPage): ApiWebPage | undefine
       const starGift = buildApiStarGift(attributeGift.gift);
       gift = starGift.type === 'starGiftUnique' ? starGift : undefined;
     }
+    if (attributeAuction) {
+      const starGift = buildApiStarGift(attributeAuction.gift);
+      if (starGift.type === 'starGift') {
+        auction = {
+          gift: starGift,
+          endDate: attributeAuction.endDate,
+        };
+      }
+    }
     const attributeStickers = attributes?.find((a): a is GramJs.WebPageAttributeStickerSet => (
       a instanceof GramJs.WebPageAttributeStickerSet
     ));
@@ -894,6 +843,10 @@ export function buildWebPage(webPage: GramJs.TypeWebPage): ApiWebPage | undefine
         isWithTextColor: attributeStickers.textColor,
       };
     }
+
+    const attributeAiTone = attributes?.find((a): a is GramJs.WebPageAttributeAiComposeTone => (
+      a instanceof GramJs.WebPageAttributeAiComposeTone
+    ));
 
     return {
       mediaType: 'webpage',
@@ -907,6 +860,7 @@ export function buildWebPage(webPage: GramJs.TypeWebPage): ApiWebPage | undefine
         'title',
         'description',
         'duration',
+        'hash',
         'hasLargeMedia',
       ]),
       photo: photo instanceof GramJs.Photo ? buildApiPhoto(photo) : undefined,
@@ -915,7 +869,10 @@ export function buildWebPage(webPage: GramJs.TypeWebPage): ApiWebPage | undefine
       audio,
       story,
       gift,
+      auction,
       stickers,
+      cachedPage: cachedPage instanceof GramJs.Page ? buildApiInstantViewPage(cachedPage, webPage) : undefined,
+      aiComposeToneEmojiId: attributeAiTone?.emojiId.toString(),
     };
   }
 
@@ -934,7 +891,7 @@ function buildPaidMedia(media: GramJs.TypeMessageMedia): ApiPaidMedia | undefine
   if (isBought) {
     return {
       mediaType: 'paidMedia',
-      starsAmount: starsAmount.toJSNumber(),
+      starsAmount: toJSNumber(starsAmount),
       isBought,
       extendedMedia: buildBoughtMediaContent(extendedMedia)!,
     };
@@ -942,27 +899,13 @@ function buildPaidMedia(media: GramJs.TypeMessageMedia): ApiPaidMedia | undefine
 
   return {
     mediaType: 'paidMedia',
-    starsAmount: starsAmount.toJSNumber(),
+    starsAmount: toJSNumber(starsAmount),
     extendedMedia: extendedMedia
       .filter((paidMedia): paidMedia is GramJs.MessageExtendedMediaPreview => (
         paidMedia instanceof GramJs.MessageExtendedMediaPreview
       ))
       .map((paidMedia) => buildApiMessageExtendedMediaPreview(paidMedia)),
   };
-}
-
-function getFilenameFromDocument(document: GramJs.Document, defaultBase = 'file') {
-  const { mimeType, attributes } = document;
-  const filenameAttribute = attributes
-    .find((a: any): a is GramJs.DocumentAttributeFilename => a instanceof GramJs.DocumentAttributeFilename);
-
-  if (filenameAttribute) {
-    return filenameAttribute.fileName;
-  }
-
-  const extension = mimeType.split('/')[1];
-
-  return `${defaultBase}${String(document.id)}.${extension}`;
 }
 
 export function buildApiMessageExtendedMediaPreview(

@@ -11,7 +11,7 @@
     "build:app": "node scripts/capture-convex-url.mjs && npm run check",
     "build": "npm run build:app",
     "test:unit": "node --test tests/*.test.mjs",
-    "test:convex": "vitest run tests/convex.test.ts",
+    "test:convex": "vitest run --config vitest.config.ts tests/convex.test.ts",
     "test:ui:chat": "node tests/live_chat_ui.mjs",
     "test:ui:tasks": "node tests/live_tasks_ui.mjs",
     "test": "npm run test:unit && npm run test:convex"

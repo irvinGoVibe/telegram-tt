@@ -16,10 +16,9 @@ import type {
   TypeStatisticsGraph,
 } from '../../types';
 
-import { buildApiUsernames, buildAvatarPhotoId } from './common';
-import { buildApiPeerId, getApiChatIdFromMtpPeer } from './peers';
-
-const DECIMALS = 10 ** 9;
+import { buildApiUsernames } from './common';
+import { buildApiCurrencyAmount } from './payments';
+import { buildApiPeerId, buildAvatarPhotoId, getApiChatIdFromMtpPeer } from './peers';
 
 export function buildChannelStatistics(stats: GramJs.stats.BroadcastStats): ApiChannelStatistics {
   return {
@@ -58,7 +57,9 @@ export function buildChannelMonetizationStatistics(
   return {
     // Graphs
     topHoursGraph: stats.topHoursGraph ? buildGraph(stats.topHoursGraph) : undefined,
-    revenueGraph: buildGraph(stats.revenueGraph, undefined, true, stats.usdRate),
+    revenueGraph: buildGraph(stats.revenueGraph, undefined, {
+      label: 'USD ≈', multiplier: stats.usdRate, prefix: '$',
+    }),
 
     // Statistics overview
     balances: buildChannelMonetizationBalances(stats.status),
@@ -152,12 +153,14 @@ export function buildStoryPublicForwards(
       storyId: story.id,
       viewsCount: (story as GramJs.StoryItem).views?.viewsCount || 0,
       reactionsCount: (story as GramJs.StoryItem).views?.reactionsCount || 0,
-    } as ApiStoryPublicForward;
+    } satisfies ApiStoryPublicForward;
   });
 }
 
 export function buildGraph(
-  result: GramJs.TypeStatsGraph, isPercentage?: boolean, isCurrency?: boolean, currencyRate?: number,
+  result: GramJs.TypeStatsGraph, isPercentage?: boolean, secondaryYAxis?: {
+    label: string; multiplier: number; prefix?: string; suffix?: string;
+  },
 ): TypeStatisticsGraph {
   if (result instanceof GramJs.StatsGraphError) {
     return {
@@ -184,19 +187,20 @@ export function buildGraph(
     labelFormatter: data.xTickFormatter,
     tooltipFormatter: data.xTooltipFormatter,
     labels: x.slice(1),
-    hideCaption: !data.subchart.show,
+    noCaption: !data.subchart.show,
+    withMinimap: true,
     hasSecondYAxis,
     isStacked: data.stacked && !hasSecondYAxis,
     isPercentage,
-    isCurrency,
-    currencyRate,
+    secondaryYAxis,
     datasets: y.map((item: any) => {
       const key = item[0];
+      const values = item.slice(1);
 
       return {
         name: data.names[key],
         color: extractColor(data.colors[key]),
-        values: item.slice(1),
+        values: secondaryYAxis ? values.map((v: number) => v / 1e9) : values,
       };
     }),
     ...calculateMinimapRange(data.subchart.defaultZoom, x.slice(1)),
@@ -226,7 +230,7 @@ function calculateMinimapRange(range: Array<number>, values: Array<number>) {
   const begin = Math.max(0, minIndex / (values.length - 1));
   const end = Math.min(1, maxIndex / (values.length - 1));
 
-  return { minimapRange: { begin, end }, labelFromIndex: minIndex, labelToIndex: maxIndex };
+  return { minimapRange: [begin, end] as [number, number], labelFromIndex: minIndex, labelToIndex: maxIndex };
 }
 
 function buildStatisticsOverview({ current, previous }: GramJs.StatsAbsValueAndPrev): StatisticsOverviewItem {
@@ -275,16 +279,16 @@ function buildApiMessagePublicForward(message: GramJs.TypeMessage, chats: GramJs
   };
 }
 
-function buildChannelMonetizationBalances({
-  currentBalance,
-  availableBalance,
-  overallRevenue,
-  withdrawalEnabled,
-}: GramJs.StarsRevenueStatus): ChannelMonetizationBalances {
+function buildChannelMonetizationBalances(revenueStatus: GramJs.StarsRevenueStatus): ChannelMonetizationBalances {
+  const currentBalance = buildApiCurrencyAmount(revenueStatus.currentBalance);
+  const availableBalance = buildApiCurrencyAmount(revenueStatus.availableBalance);
+  const overallRevenue = buildApiCurrencyAmount(revenueStatus.overallRevenue);
+  const withdrawalEnabled = revenueStatus.withdrawalEnabled;
+
   return {
-    currentBalance: Number(currentBalance) / DECIMALS,
-    availableBalance: Number(availableBalance) / DECIMALS,
-    overallRevenue: Number(overallRevenue) / DECIMALS,
+    currentBalance,
+    availableBalance,
+    overallRevenue,
     isWithdrawalEnabled: withdrawalEnabled,
   };
 }

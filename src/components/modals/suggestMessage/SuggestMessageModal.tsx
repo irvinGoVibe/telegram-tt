@@ -1,11 +1,9 @@
-import type React from '../../../lib/teact/teact';
 import {
-  memo, useEffect,
-  useState } from '../../../lib/teact/teact';
+  memo, useEffect, useState,
+} from '../../../lib/teact/teact';
 import { getActions, withGlobal } from '../../../global';
 
-import type { ApiDraft, ApiStarsAmount, ApiTypeCurrencyAmount } from '../../../api/types';
-import type { ApiPeer } from '../../../api/types';
+import type { ApiDraft, ApiPeer, ApiStarsAmount, ApiTypeCurrencyAmount } from '../../../api/types';
 import type { TabState } from '../../../global/types';
 import { MAIN_THREAD_ID } from '../../../api/types';
 
@@ -14,9 +12,9 @@ import {
   TON_CURRENCY_CODE,
 } from '../../../config';
 import { selectIsMonoforumAdmin, selectPeer } from '../../../global/selectors';
-import { selectDraft } from '../../../global/selectors/messages';
+import { selectDraft } from '../../../global/selectors/threads';
 import buildClassName from '../../../util/buildClassName';
-import { formatScheduledDateTime, formatShortDuration } from '../../../util/dates/dateFormat';
+import { formatScheduledDateTime, formatShortDuration } from '../../../util/dates/oldDateFormat';
 import { convertTonFromNanos, convertTonToNanos } from '../../../util/formatCurrency';
 import {
   formatStarsAsIcon,
@@ -31,6 +29,7 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import CalendarModal from '../../common/CalendarModal';
+import GramIcon from '../../common/icons/GramIcon';
 import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import InputText from '../../ui/InputText';
@@ -108,7 +107,7 @@ const SuggestMessageModal = ({
   const oldLang = useOldLang();
 
   const isCurrencyStars = selectedCurrency === STARS_CURRENCY_CODE;
-  const now = Math.floor(Date.now() / 1000);
+  const now = getServerTime();
   const minAt = (now + futureMin) * 1000;
   const maxAt = (now + futureMax) * 1000;
   const defaultSelectedTime = (now + futureMin * 2) * 1000;
@@ -214,8 +213,8 @@ const SuggestMessageModal = ({
               noFastClick
               onClick={() => setSelectedCurrency(TON_CURRENCY_CODE)}
             >
-              <Icon name="toncoin" className={styles.currencyIcon} />
-              {lang('CurrencyTon')}
+              <GramIcon className={styles.currencyIcon} />
+              {lang('CurrencyGram')}
             </Button>
           </div>
           <InputText
@@ -236,7 +235,7 @@ const SuggestMessageModal = ({
               { withNodes: true, withMarkdown: true })
               : isCurrencyStars
                 ? lang('SuggestMessagePriceDescriptionStars')
-                : lang('SuggestMessagePriceDescriptionTon')}
+                : lang('SuggestMessagePriceDescriptionGram')}
           </div>
         </div>
 
@@ -283,6 +282,7 @@ const SuggestMessageModal = ({
           className={styles.offerButton}
           onClick={handleOffer}
           disabled={isDisabled}
+          inline
         >
           {isInSuggestChangesMode ? lang('ButtonUpdateTerms')
             : currencyAmount ? lang('ButtonOfferAmount', {

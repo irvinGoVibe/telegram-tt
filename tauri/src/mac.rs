@@ -84,8 +84,7 @@ pub fn setup_traffic_light_positioner<R: Runtime>(
   use cocoa::delegate;
   use cocoa::foundation::NSUInteger;
   use objc::runtime::{Object, Sel};
-  use rand::Rng;
-  use rand::distr::Alphanumeric;
+  use rand::distr::{Alphanumeric, Distribution};
   use std::ffi::c_void;
 
   position_traffic_lights(
@@ -125,6 +124,24 @@ pub fn setup_traffic_light_positioner<R: Runtime>(
     extern "C" fn on_window_did_resize<R: Runtime>(this: &Object, _cmd: Sel, notification: id) {
       unsafe {
         with_window_state(&*this, |state: &mut WindowState<R>| {
+          let position = if let Ok(states) = crate::window::WINDOW_STATES.lock() {
+            if let Some(ws) = states.get(state.window.label()) {
+              if ws.is_overlay {
+                if ws.is_mobile {
+                  *crate::TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE
+                } else {
+                  *crate::TRAFFIC_LIGHT_POSITION_OVERLAY
+                }
+              } else {
+                crate::TRAFFIC_LIGHT_POSITION_DEFAULT
+              }
+            } else {
+              state.traffic_position
+            }
+          } else {
+            state.traffic_position
+          };
+
           let id = state
             .window
             .ns_window()
@@ -132,7 +149,7 @@ pub fn setup_traffic_light_positioner<R: Runtime>(
 
           position_traffic_lights(
             UnsafeWindowHandle(id as *mut c_void),
-            state.traffic_position,
+            position,
           );
         });
 
@@ -259,10 +276,28 @@ pub fn setup_traffic_light_positioner<R: Runtime>(
             .emit("did-exit-fullscreen", ())
             .expect("Failed to emit event");
 
+          let position = if let Ok(states) = crate::window::WINDOW_STATES.lock() {
+            if let Some(ws) = states.get(state.window.label()) {
+              if ws.is_overlay {
+                if ws.is_mobile {
+                  *crate::TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE
+                } else {
+                  *crate::TRAFFIC_LIGHT_POSITION_OVERLAY
+                }
+              } else {
+                crate::TRAFFIC_LIGHT_POSITION_DEFAULT
+              }
+            } else {
+              state.traffic_position
+            }
+          } else {
+            state.traffic_position
+          };
+
           let id = state.window.ns_window().expect("Failed to emit event") as id;
           position_traffic_lights(
             UnsafeWindowHandle(id as *mut c_void),
-            state.traffic_position,
+            position,
           );
         });
 
@@ -325,8 +360,8 @@ pub fn setup_traffic_light_positioner<R: Runtime>(
       traffic_position,
     };
     let app_box = Box::into_raw(Box::new(app_state)) as *mut c_void;
-    let random_str: String = rand::rng()
-      .sample_iter(&Alphanumeric)
+    let random_str: String = Alphanumeric
+      .sample_iter(rand::rng())
       .take(20)
       .map(char::from)
       .collect();

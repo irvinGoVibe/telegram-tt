@@ -5,18 +5,18 @@ import type {
   ApiUser,
   ApiUserCommonChats,
   ApiUserFullInfo,
+  ApiUserSavedMusic,
   ApiUserStatus,
 } from '../../api/types';
 import type { BotAppPermissions } from '../../types';
-import type { GlobalState, TabArgs, TabState } from '../types';
+import type { GlobalState, TabArgs } from '../types';
 
 import { areDeepEqual } from '../../util/areDeepEqual';
 import { getCurrentTabId } from '../../util/establishMultitabRole';
 import { omit, omitUndefined, unique } from '../../util/iteratees';
 import { MEMO_EMPTY_ARRAY } from '../../util/memo';
 import { getSavedGiftKey } from '../helpers/stars';
-import { selectActiveGiftsCollectionId } from '../selectors';
-import { selectTabState } from '../selectors';
+import { selectActiveGiftsCollectionId, selectTabState } from '../selectors';
 import { updateTabState } from './tabs';
 
 export function replaceUsers<T extends GlobalState>(global: T, newById: Record<string, ApiUser>): T {
@@ -139,10 +139,10 @@ function getUpdatedUser(global: GlobalState, userId: string, userUpdate: Partial
     omitProps.push('usernames');
   }
 
-  const updatedUser = {
+  const updatedUser: ApiUser = {
     ...user,
     ...omit(userUpdate, omitProps),
-  } as ApiUser;
+  };
 
   if (!updatedUser.id || !updatedUser.type) {
     return undefined;
@@ -184,28 +184,6 @@ export function deleteContact<T extends GlobalState>(global: T, userId: string):
   return updateUserFullInfo(global, userId, {
     settings: undefined,
   });
-}
-
-export function updateUserSearch<T extends GlobalState>(
-  global: T,
-  searchStatePartial: Partial<TabState['userSearch']>,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-): T {
-  return updateTabState(global, {
-    userSearch: {
-      ...selectTabState(global, tabId).userSearch,
-      ...searchStatePartial,
-    },
-  }, tabId);
-}
-
-export function updateUserSearchFetchingStatus<T extends GlobalState>(
-  global: T, newState: boolean,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-): T {
-  return updateUserSearch(global, {
-    fetchingStatus: newState,
-  }, tabId);
 }
 
 export function updateUserBlockedState<T extends GlobalState>(global: T, userId: string, isBlocked: boolean): T {
@@ -258,6 +236,21 @@ export function updateUserCommonChats<T extends GlobalState>(
       commonChatsById: {
         ...global.users.commonChatsById,
         [userId]: commonChats,
+      },
+    },
+  };
+}
+
+export function updateUserSavedMusic<T extends GlobalState>(
+  global: T, userId: string, savedMusic: ApiUserSavedMusic,
+): T {
+  return {
+    ...global,
+    users: {
+      ...global.users,
+      savedMusicByPeerId: {
+        ...global.users.savedMusicByPeerId,
+        [userId]: savedMusic,
       },
     },
   };

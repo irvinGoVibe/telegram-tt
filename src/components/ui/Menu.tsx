@@ -1,9 +1,5 @@
-import type {
-  ElementRef } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
-  beginHeavyAnimation,
-  type FC, memo, useEffect, useRef,
+  beginHeavyAnimation, type ElementRef, memo, useEffect, useRef,
 } from '../../lib/teact/teact';
 
 import type { MenuPositionOptions } from '../../hooks/useMenuPosition';
@@ -36,6 +32,7 @@ type OwnProps =
     id?: string;
     className?: string;
     bubbleClassName?: string;
+    ariaLabel?: string;
     ariaLabelledBy?: string;
     autoClose?: boolean;
     footer?: string;
@@ -49,19 +46,21 @@ type OwnProps =
     onMouseEnterBackdrop?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
     onMouseLeave?: (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => void;
     withPortal?: boolean;
+    nested?: boolean;
     children?: React.ReactNode;
   }
   & MenuPositionOptions;
 
 const ANIMATION_DURATION = 200;
 
-const Menu: FC<OwnProps> = ({
+const Menu = ({
   ref: externalRef,
   shouldCloseFast,
   isOpen,
   id,
   className,
   bubbleClassName,
+  ariaLabel,
   ariaLabelledBy,
   children,
   autoClose = false,
@@ -75,8 +74,9 @@ const Menu: FC<OwnProps> = ({
   onMouseLeave,
   withPortal,
   onMouseEnterBackdrop,
+  nested,
   ...positionOptions
-}) => {
+}: OwnProps) => {
   const { isTouchScreen } = useAppLayout();
 
   const containerRef = useRef<HTMLDivElement>();
@@ -106,14 +106,32 @@ const Menu: FC<OwnProps> = ({
     }
   }, [isOpen]);
 
-  const handleKeyDown = useKeyboardListNavigation(bubbleRef, isOpen, autoClose ? onClose : undefined, undefined, true);
+  const navigateWithKeyboard = useKeyboardListNavigation(
+    bubbleRef, isOpen, undefined, '.MenuItem:not(.disabled), [role="menuitemradio"]:not(:disabled)', true,
+  );
+
+  const handleKeyDown = useLastCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    navigateWithKeyboard(e);
+    if (!autoClose || (e.key !== 'Enter' && e.key !== ' ')) {
+      return;
+    }
+
+    const menuItem = e.target instanceof HTMLElement ? e.target.closest('.MenuItem') : undefined;
+    if (menuItem && !menuItem.classList.contains('submenu')) {
+      onClose();
+    }
+  });
+
+  const fullExcludedSelector = backdropExcludedSelector
+    ? `${backdropExcludedSelector}, .submenu`
+    : '.submenu';
 
   useVirtualBackdrop(
     isOpen,
     containerRef,
     noCloseOnBackdrop ? undefined : onClose,
     undefined,
-    backdropExcludedSelector,
+    fullExcludedSelector,
   );
 
   const bubbleFullClassName = buildClassName(
@@ -141,13 +159,14 @@ const Menu: FC<OwnProps> = ({
         withPortal && 'in-portal',
         className,
       )}
+      aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
-      role={ariaLabelledBy ? 'menu' : undefined}
+      role={ariaLabel || ariaLabelledBy ? 'menu' : undefined}
       onKeyDown={isOpen ? handleKeyDown : undefined}
       onMouseEnter={onMouseEnter}
       onMouseLeave={isOpen ? onMouseLeave : undefined}
     >
-      {isOpen && (
+      {isOpen && !nested && (
         // This only prevents click events triggering on underlying elements
         <div
           className="backdrop"

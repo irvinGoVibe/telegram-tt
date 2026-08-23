@@ -1,7 +1,7 @@
 import type { ApiGroupCall, ApiPhoneCallDiscardReason } from './calls';
-import type { ApiBotApp, ApiFormattedText, ApiPhoto } from './messages';
-import type { ApiTodoItem } from './messages';
+import type { ApiBotApp, ApiFormattedText, ApiPhoto, ApiPollAnswer, ApiTodoItem } from './messages';
 import type { ApiStarGiftRegular, ApiStarGiftUnique, ApiTypeCurrencyAmount } from './stars';
+import type { ApiBirthday } from './users';
 
 interface ActionMediaType {
   mediaType: 'action';
@@ -58,12 +58,23 @@ export interface ApiMessageActionChannelMigrateFrom extends ActionMediaType {
   chatId: string;
 }
 
+export interface ApiMessageActionChangeCommunity extends ActionMediaType {
+  type: 'changeCommunity';
+  communityId?: string;
+}
+
 export interface ApiMessageActionPinMessage extends ActionMediaType {
   type: 'pinMessage';
 }
 
 export interface ApiMessageActionHistoryClear extends ActionMediaType {
   type: 'historyClear';
+}
+
+export interface ApiMessageActionSetMessagesTtl extends ActionMediaType {
+  type: 'setMessagesTtl';
+  period: number;
+  autoSettingFromId?: string;
 }
 
 export interface ApiMessageActionGameScore extends ActionMediaType {
@@ -142,7 +153,7 @@ export interface ApiMessageActionGiftPremium extends ActionMediaType {
   type: 'giftPremium';
   currency: string;
   amount: number;
-  months: number;
+  days: number;
   cryptoCurrency?: string;
   cryptoAmount?: number;
   message?: ApiFormattedText;
@@ -168,12 +179,17 @@ export interface ApiMessageActionSuggestProfilePhoto extends ActionMediaType {
   photo: ApiPhoto;
 }
 
+export interface ApiMessageActionSuggestBirthday extends ActionMediaType {
+  type: 'suggestBirthday';
+  birthday: ApiBirthday;
+}
+
 export interface ApiMessageActionGiftCode extends ActionMediaType {
   type: 'giftCode';
   isViaGiveaway?: true;
   isUnclaimed?: true;
   boostPeerId?: string;
-  months: number;
+  days: number;
   slug: string;
   currency?: string;
   amount?: number;
@@ -242,14 +258,20 @@ export interface ApiMessageActionStarGift extends ActionMediaType {
   isUpgraded?: true;
   isRefunded?: true;
   canUpgrade?: true;
+  isPrepaidUpgrade?: true;
+  isAuctionAcquired?: true;
   gift: ApiStarGiftRegular;
   message?: ApiFormattedText;
   starsToConvert?: number;
   upgradeMsgId?: number;
+  giftMsgId?: number;
   alreadyPaidUpgradeStars?: number;
   fromId?: string;
   peerId?: string;
   savedId?: string;
+  prepaidUpgradeHash?: string;
+  toId?: string;
+  giftNumber?: number;
 }
 
 export interface ApiMessageActionStarGiftUnique extends ActionMediaType {
@@ -258,6 +280,8 @@ export interface ApiMessageActionStarGiftUnique extends ActionMediaType {
   isTransferred?: true;
   isSaved?: true;
   isRefunded?: true;
+  isPrepaidUpgrade?: true;
+  isFromOffer?: true;
   gift: ApiStarGiftUnique;
   canExportAt?: number;
   transferStars?: number;
@@ -265,6 +289,8 @@ export interface ApiMessageActionStarGiftUnique extends ActionMediaType {
   peerId?: string;
   savedId?: string;
   resaleAmount?: ApiTypeCurrencyAmount;
+  dropOriginalDetailsStars?: number;
+  canCraftAt?: number;
 }
 
 export interface ApiMessageActionChannelJoined extends ActionMediaType {
@@ -321,6 +347,55 @@ export interface ApiMessageActionTodoAppendTasks extends ActionMediaType {
   items: ApiTodoItem[];
 }
 
+export interface ApiMessageActionPollAppendAnswer extends ActionMediaType {
+  type: 'pollAppendAnswer';
+  answer: ApiPollAnswer;
+}
+
+export interface ApiMessageActionPollDeleteAnswer extends ActionMediaType {
+  type: 'pollDeleteAnswer';
+  answer: ApiPollAnswer;
+}
+
+export interface ApiMessageActionStarGiftPurchaseOffer extends ActionMediaType {
+  type: 'starGiftPurchaseOffer';
+  isAccepted?: true;
+  isDeclined?: true;
+  gift: ApiStarGiftUnique;
+  price: ApiTypeCurrencyAmount;
+  expiresAt: number;
+}
+
+export interface ApiMessageActionStarGiftPurchaseOfferDeclined extends ActionMediaType {
+  type: 'starGiftPurchaseOfferDeclined';
+  isExpired?: true;
+  gift: ApiStarGiftUnique;
+  price: ApiTypeCurrencyAmount;
+}
+
+export interface ApiMessageActionNewCreatorPending extends ActionMediaType {
+  type: 'newCreatorPending';
+  newCreatorId: string;
+}
+
+export interface ApiMessageActionChangeCreator extends ActionMediaType {
+  type: 'changeCreator';
+  newCreatorId: string;
+}
+
+export interface ApiMessageActionNoForwardsToggle extends ActionMediaType {
+  type: 'noForwardsToggle';
+  prevValue: boolean;
+  newValue: boolean;
+}
+
+export interface ApiMessageActionNoForwardsRequest extends ActionMediaType {
+  type: 'noForwardsRequest';
+  isExpired?: boolean;
+  prevValue: boolean;
+  newValue: boolean;
+}
+
 export interface ApiMessageActionUnsupported extends ActionMediaType {
   type: 'unsupported';
 }
@@ -329,15 +404,21 @@ export type ApiMessageAction = ApiMessageActionUnsupported | ApiMessageActionCha
   | ApiMessageActionChatEditPhoto | ApiMessageActionChatDeletePhoto | ApiMessageActionChatAddUser
   | ApiMessageActionChatDeleteUser | ApiMessageActionChatJoinedByLink | ApiMessageActionChannelCreate
   | ApiMessageActionChatMigrateTo | ApiMessageActionChannelMigrateFrom | ApiMessageActionPinMessage
-  | ApiMessageActionHistoryClear | ApiMessageActionGameScore | ApiMessageActionPaymentSent | ApiMessageActionPhoneCall
+  | ApiMessageActionHistoryClear | ApiMessageActionSetMessagesTtl
+  | ApiMessageActionGameScore | ApiMessageActionPaymentSent | ApiMessageActionPhoneCall
   | ApiMessageActionScreenshotTaken | ApiMessageActionCustomAction | ApiMessageActionBotAllowed
   | ApiMessageActionBoostApply | ApiMessageActionContactSignUp | ApiMessageActionExpiredContent
   | ApiMessageActionGroupCall | ApiMessageActionInviteToGroupCall | ApiMessageActionGroupCallScheduled
   | ApiMessageActionChatJoinedByRequest | ApiMessageActionWebViewDataSent | ApiMessageActionGiftPremium
   | ApiMessageActionTopicCreate | ApiMessageActionTopicEdit | ApiMessageActionSuggestProfilePhoto
+  | ApiMessageActionSuggestBirthday
   | ApiMessageActionChannelJoined | ApiMessageActionGiftCode | ApiMessageActionGiveawayLaunch
   | ApiMessageActionGiveawayResults | ApiMessageActionPaymentRefunded | ApiMessageActionGiftStars
   | ApiMessageActionGiftTon | ApiMessageActionPrizeStars | ApiMessageActionStarGift | ApiMessageActionStarGiftUnique
   | ApiMessageActionPaidMessagesRefunded | ApiMessageActionPaidMessagesPrice | ApiMessageActionSuggestedPostApproval
   | ApiMessageActionSuggestedPostSuccess | ApiMessageActionSuggestedPostRefund | ApiMessageActionTodoCompletions
-  | ApiMessageActionTodoAppendTasks;
+  | ApiMessageActionTodoAppendTasks | ApiMessageActionPollAppendAnswer | ApiMessageActionPollDeleteAnswer
+  | ApiMessageActionStarGiftPurchaseOffer
+  | ApiMessageActionStarGiftPurchaseOfferDeclined | ApiMessageActionNewCreatorPending
+  | ApiMessageActionChangeCreator | ApiMessageActionNoForwardsToggle | ApiMessageActionNoForwardsRequest
+  | ApiMessageActionChangeCommunity;

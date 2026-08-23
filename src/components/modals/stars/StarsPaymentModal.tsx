@@ -170,7 +170,7 @@ const StarPaymentModal = ({
       onClose={closeStarsPaymentModal}
     >
       <BalanceBlock balance={starsBalanceState?.balance} className={styles.modalBalance} />
-      <div className={styles.paymentImages} dir={oldLang.isRtl ? 'ltr' : 'rtl'}>
+      <div className={styles.paymentImages} dir={lang.isRtl ? 'ltr' : 'rtl'}>
         {paidMediaMessage ? (
           <PaidMediaThumb media={paidMediaMessage.content.paidMedia!.extendedMedia} />
         ) : inviteCustomPeer ? (
@@ -198,7 +198,7 @@ const StarPaymentModal = ({
       <div className={styles.description}>
         {renderText(descriptionText, ['simple_markdown', 'emoji'])}
       </div>
-      <Button className={styles.paymentButton} onClick={handlePayment} isLoading={isLoading}>
+      <Button className={styles.paymentButton} inline onClick={handlePayment} isLoading={isLoading}>
         {lang(isBotSubscription ? 'StarsSubscribeBotButtonMonth' : 'StarsPay', {
           amount: formatStarsAsIcon(lang, amount!, { asFont: true }),
         }, {

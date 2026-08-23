@@ -1,12 +1,12 @@
-import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
 import type { TabState } from '../../global/types';
 import { ApiMediaFormat } from '../../api/types';
 
+import { FOLDERS_POSITION_LEFT } from '../../config';
 import { getChatAvatarHash } from '../../global/helpers/chats'; // Direct import for better module splitting
-import { selectIsRightColumnShown, selectTabState } from '../../global/selectors';
+import { selectAreFoldersPresent, selectIsRightColumnShown, selectTabState } from '../../global/selectors';
+import { selectSharedSettings } from '../../global/selectors/sharedState';
 import buildClassName from '../../util/buildClassName';
 import { preloadImage } from '../../util/files';
 import preloadFonts from '../../util/fonts';
@@ -19,12 +19,10 @@ import useEffectOnce from '../../hooks/useEffectOnce';
 import useFlag from '../../hooks/useFlag';
 import useShowTransitionDeprecated from '../../hooks/useShowTransitionDeprecated';
 
-// Workaround for incorrect bundling by Webpack: force including in the main chunk
-import '../ui/Modal.scss';
-import './Avatar.scss';
 import appStyles from '../App.module.scss';
 import styles from './UiLoader.module.scss';
 
+import starIconPath from '../../assets/icons/star/star.webp';
 import lockPreviewPath from '../../assets/lock.png';
 import monkeyPath from '../../assets/monkey.svg';
 import spoilerMaskPath from '../../assets/spoilers/mask.svg';
@@ -48,11 +46,24 @@ type OwnProps = {
 type StateProps = Pick<TabState, 'uiReadyState' | 'shouldSkipHistoryAnimations'> & {
   isRightColumnShown?: boolean;
   leftColumnWidth?: number;
+  isFoldersSidebarShown?: boolean;
 };
 
 const MAX_PRELOAD_DELAY = 700;
 const SECOND_STATE_DELAY = 1000;
 const AVATARS_TO_PRELOAD = 10;
+
+function loadRequiredBundle(page?: UiLoaderPage) {
+  if (page === 'main' || page === 'lock') {
+    return loadModule(Bundles.Main);
+  }
+
+  if (page === 'authCode' || page === 'authPassword') {
+    return loadModule(Bundles.Auth);
+  }
+
+  return Promise.resolve();
+}
 
 function preloadAvatars() {
   const { listIds, byId } = getGlobal().chats;
@@ -60,7 +71,7 @@ function preloadAvatars() {
     return undefined;
   }
 
-  return Promise.all(listIds.active.slice(0, AVATARS_TO_PRELOAD).map((chatId) => {
+  return Promise.all(listIds.active.slice(0, AVATARS_TO_PRELOAD).map(async (chatId) => {
     const chat = byId[chatId];
     if (!chat) {
       return undefined;
@@ -77,10 +88,10 @@ function preloadAvatars() {
 
 const preloadTasks = {
   main: () => Promise.all([
-    loadModule(Bundles.Main)
-      .then(preloadFonts),
+    preloadFonts(),
     preloadAvatars(),
     preloadImage(spoilerMaskPath),
+    preloadImage(starIconPath),
     localizationReadyPromise,
   ]),
   authPhoneNumber: () => Promise.all([
@@ -98,13 +109,14 @@ const preloadTasks = {
   },
 };
 
-const UiLoader: FC<OwnProps & StateProps> = ({
+const UiLoader = ({
   page,
   children,
   isRightColumnShown,
   shouldSkipHistoryAnimations,
   leftColumnWidth,
-}) => {
+  isFoldersSidebarShown,
+}: OwnProps & StateProps) => {
   const { setIsUiReady } = getActions();
 
   const [isReady, markReady] = useFlag();
@@ -115,17 +127,20 @@ const UiLoader: FC<OwnProps & StateProps> = ({
   useEffectOnce(() => {
     let timeout: number | undefined;
 
-    const safePreload = async () => {
+    const safePreload = async (currentPage: UiLoaderPage) => {
       try {
-        await preloadTasks[page!]();
+        await preloadTasks[currentPage]();
       } catch (err) {
         // Do nothing
       }
     };
 
-    Promise.race([
-      pause(MAX_PRELOAD_DELAY),
-      page ? safePreload() : Promise.resolve(),
+    Promise.all([
+      loadRequiredBundle(page),
+      Promise.race([
+        pause(MAX_PRELOAD_DELAY),
+        page ? safePreload(page) : Promise.resolve(),
+      ]),
     ]).then(() => {
       markReady();
       setIsUiReady({ uiReadyState: 1 });
@@ -151,12 +166,13 @@ const UiLoader: FC<OwnProps & StateProps> = ({
       {shouldRenderMask && !shouldSkipHistoryAnimations && Boolean(page) && (
         <div className={buildClassName(styles.mask, transitionClassNames)}>
           {page === 'main' ? (
-            <div className={styles.main}>
+            <div className={buildClassName(styles.main, isFoldersSidebarShown && styles.foldersSidebarVisible)}>
+              {isFoldersSidebarShown && <div className={styles.foldersSidebar} />}
               <div
                 className={styles.left}
                 style={leftColumnWidth ? `width: ${leftColumnWidth}px` : undefined}
               />
-              <div className={buildClassName(styles.middle, appStyles.bg)} />
+              <div className={styles.middle} />
               {isRightColumnShown && <div className={styles.right} />}
             </div>
           ) : (page === 'inactive' || page === 'lock') ? (
@@ -174,11 +190,14 @@ export default withGlobal<OwnProps>(
   (global, { isMobile }): Complete<StateProps> => {
     const tabState = selectTabState(global);
 
+    const { foldersPosition } = selectSharedSettings(global);
+
     return {
       shouldSkipHistoryAnimations: tabState.shouldSkipHistoryAnimations,
       uiReadyState: tabState.uiReadyState,
       isRightColumnShown: selectIsRightColumnShown(global, isMobile),
       leftColumnWidth: global.leftColumnWidth,
+      isFoldersSidebarShown: foldersPosition === FOLDERS_POSITION_LEFT && !isMobile && selectAreFoldersPresent(global),
     };
   },
 )(UiLoader);

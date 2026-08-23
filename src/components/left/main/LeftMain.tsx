@@ -9,10 +9,12 @@ import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReduc
 import { LeftColumnContent } from '../../../types';
 
 import { DEBUG } from '../../../config';
+import { selectCommunityPanelId } from '../../../global/selectors';
 import { IS_TAURI } from '../../../util/browser/globalEnvironment';
 import { IS_TOUCH_ENV } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
 
+import useSelector from '../../../hooks/data/useSelector';
 import useInterval from '../../../hooks/schedulers/useInterval';
 import useForumPanelRender from '../../../hooks/useForumPanelRender';
 import useLastCallback from '../../../hooks/useLastCallback';
@@ -24,8 +26,9 @@ import Transition from '../../ui/Transition';
 import NewChatButton from '../NewChatButton';
 import LeftSearch from '../search/LeftSearch.async';
 import ChatFolders from './ChatFolders';
+import CommunityPanel from './community/CommunityPanel';
 import ContactList from './ContactList.async';
-import ForumPanel from './ForumPanel';
+import ForumPanel from './forum/ForumPanel';
 import LeftMainHeader from './LeftMainHeader';
 
 import './LeftMain.scss';
@@ -44,6 +47,7 @@ type OwnProps = {
   onTopicSearch: NoneToVoidFunction;
   isAccountFrozen?: boolean;
   onReset: () => void;
+  isFoldersSidebarShown?: boolean;
 };
 
 const TRANSITION_RENDER_COUNT = Object.keys(LeftColumnContent).length / 2;
@@ -66,8 +70,9 @@ const LeftMain: FC<OwnProps> = ({
   onReset,
   onTopicSearch,
   isAccountFrozen,
+  isFoldersSidebarShown,
 }) => {
-  const { closeForumPanel, openLeftColumnContent } = getActions();
+  const { openLeftColumnContent } = getActions();
   const [isNewChatButtonShown, setIsNewChatButtonShown] = useState(IS_TOUCH_ENV);
   const [tauriUpdate, setTauriUpdate] = useState<Update>();
   const [isTauriUpdateDownloading, setIsTauriUpdateDownloading] = useState(false);
@@ -79,23 +84,32 @@ const LeftMain: FC<OwnProps> = ({
   const isForumPanelRendered = isForumPanelOpen && content === LeftColumnContent.ChatList;
   const isForumPanelVisible = isForumPanelRendered && isAnimationStarted;
 
+  const communityPanelId = useSelector((global) => selectCommunityPanelId(global));
+  const isCommunityPanelOpen = Boolean(communityPanelId);
+  const {
+    shouldRenderForumPanel: shouldRenderCommunityPanel,
+    handleForumPanelAnimationEnd: handleCommunityPanelAnimationEnd,
+    handleForumPanelAnimationStart: handleCommunityPanelAnimationStart,
+  } = useForumPanelRender(isCommunityPanelOpen);
+  const isCommunityPanelRendered = isCommunityPanelOpen && content === LeftColumnContent.ChatList;
+
   const {
     shouldRender: shouldRenderUpdateButton,
     transitionClassNames: updateButtonClassNames,
   } = useShowTransitionDeprecated(isAppUpdateAvailable || Boolean(tauriUpdate));
 
-  const isMouseInside = useRef(false);
+  const isMouseInsideRef = useRef(false);
 
   const handleMouseEnter = useLastCallback(() => {
     if (content !== LeftColumnContent.ChatList) {
       return;
     }
-    isMouseInside.current = true;
+    isMouseInsideRef.current = true;
     setIsNewChatButtonShown(true);
   });
 
   const handleMouseLeave = useLastCallback(() => {
-    isMouseInside.current = false;
+    isMouseInsideRef.current = false;
 
     if (closeTimeout) {
       clearTimeout(closeTimeout);
@@ -103,23 +117,14 @@ const LeftMain: FC<OwnProps> = ({
     }
 
     closeTimeout = window.setTimeout(() => {
-      if (!isMouseInside.current) {
+      if (!isMouseInsideRef.current) {
         setIsNewChatButtonShown(false);
       }
     }, BUTTON_CLOSE_DELAY_MS);
   });
 
-  const handleSelectSettings = useLastCallback(() => {
-    openLeftColumnContent({ contentKey: LeftColumnContent.Settings });
-  });
-
   const handleSelectContacts = useLastCallback(() => {
     openLeftColumnContent({ contentKey: LeftColumnContent.Contacts });
-  });
-
-  const handleSelectArchived = useLastCallback(() => {
-    openLeftColumnContent({ contentKey: LeftColumnContent.Archived });
-    closeForumPanel();
   });
 
   const handleUpdateClick = useLastCallback(async () => {
@@ -155,7 +160,7 @@ const LeftMain: FC<OwnProps> = ({
       autoCloseTimeout = window.setTimeout(() => {
         setIsNewChatButtonShown(false);
       }, BUTTON_CLOSE_DELAY_MS);
-    } else if (isMouseInside.current || IS_TOUCH_ENV) {
+    } else if (isMouseInsideRef.current || IS_TOUCH_ENV) {
       setIsNewChatButtonShown(true);
     }
 
@@ -198,12 +203,10 @@ const LeftMain: FC<OwnProps> = ({
         content={content}
         contactsFilter={contactsFilter}
         onSearchQuery={onSearchQuery}
-        onSelectSettings={handleSelectSettings}
-        onSelectContacts={handleSelectContacts}
-        onSelectArchived={handleSelectArchived}
         onReset={onReset}
         shouldSkipTransition={shouldSkipTransition}
         isClosingSearch={isClosingSearch}
+        isFoldersSidebarShown={isFoldersSidebarShown}
       />
       <Transition
         name={shouldSkipTransition ? 'none' : 'zoomFade'}
@@ -219,9 +222,9 @@ const LeftMain: FC<OwnProps> = ({
             case LeftColumnContent.ChatList:
               return (
                 <ChatFolders
-                  shouldHideFolderTabs={isForumPanelVisible}
                   foldersDispatch={foldersDispatch}
                   isForumPanelOpen={isForumPanelVisible}
+                  isFoldersSidebarShown={isFoldersSidebarShown}
                 />
               );
             case LeftColumnContent.GlobalSearch:
@@ -250,6 +253,14 @@ const LeftMain: FC<OwnProps> = ({
         >
           {lang('lng_update_telegram')}
         </Button>
+      )}
+      {shouldRenderCommunityPanel && (
+        <CommunityPanel
+          isOpen={isCommunityPanelOpen}
+          isHidden={!isCommunityPanelRendered}
+          onOpenAnimationStart={handleCommunityPanelAnimationStart}
+          onCloseAnimationEnd={handleCommunityPanelAnimationEnd}
+        />
       )}
       {shouldRenderForumPanel && (
         <ForumPanel

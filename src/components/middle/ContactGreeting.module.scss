@@ -1,3 +1,5 @@
+@use "../../styles/mixins";
+
 .root {
   display: flex;
   flex-direction: column;
@@ -7,6 +9,8 @@
 
   width: 100%;
   height: 100%;
+  padding-top: var(--message-list-top-inset);
+  padding-bottom: var(--message-list-bottom-inset);
 
   text-align: center;
 
@@ -21,7 +25,7 @@
 
     color: #fff;
 
-    background: var(--pattern-color);
+    @include mixins.action-message-bg($isModule: true);
   }
 
   .explainer {
@@ -33,7 +37,7 @@
     color: #fff;
     text-wrap: balance;
 
-    background: var(--pattern-color);
+    @include mixins.action-message-bg($isModule: true);
   }
 
   .title {

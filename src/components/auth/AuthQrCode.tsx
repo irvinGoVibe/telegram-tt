@@ -10,6 +10,7 @@ import { disableStrict, enableStrict } from '../../lib/fasterdom/stricterdom';
 import { selectSharedSettings } from '../../global/selectors/sharedState';
 import buildClassName from '../../util/buildClassName';
 import { oldSetLanguage } from '../../util/oldLangProvider';
+import { createStyledQrCode } from '../../util/qrCode/buildStyledQrCode';
 import { LOCAL_TGS_URLS } from '../common/helpers/animatedAssets';
 import { navigateBack } from './helpers/backNavigation';
 import { getSuggestedLanguage } from './helpers/getSuggestedLanguage';
@@ -23,42 +24,33 @@ import useMediaTransitionDeprecated from '../../hooks/useMediaTransitionDeprecat
 import useMultiaccountInfo from '../../hooks/useMultiaccountInfo';
 
 import AnimatedIcon from '../common/AnimatedIcon';
-import Icon from '../common/icons/Icon';
 import Button from '../ui/Button';
 import Loading from '../ui/Loading';
 
-import blankUrl from '../../assets/blank.png';
-
-type StateProps =
-  Pick<GlobalState, 'connectionState' | 'authState' | 'authQrCode'>
-  & {
-    language?: string;
-  };
+type StateProps = {
+  auth: GlobalState['auth'];
+  connectionState: GlobalState['connectionState'];
+  language?: string;
+};
 
 const DATA_PREFIX = 'tg://login?token=';
 const QR_SIZE = 280;
 const QR_PLANE_SIZE = 54;
+const QR_IMAGE_SIZE_RATIO = 0.4;
 const QR_CODE_MUTATION_DURATION = 50; // The library is asynchronous and we need to wait for its mutation code
-
-let qrCodeStylingPromise: Promise<typeof import('qr-code-styling')> | undefined;
-
-function ensureQrCodeStyling() {
-  if (!qrCodeStylingPromise) {
-    qrCodeStylingPromise = import('qr-code-styling');
-  }
-  return qrCodeStylingPromise;
-}
 
 const AuthCode = ({
   connectionState,
-  authState,
-  authQrCode,
+  auth,
   language,
 }: StateProps) => {
   const {
     returnToAuthPhoneNumber,
     setSharedSettingOption,
+    loginWithPasskey,
   } = getActions();
+
+  const { state, qrCode: authQrCode, passkeyOption } = auth;
 
   const suggestedLanguage = getSuggestedLanguage();
   const lang = useLang();
@@ -72,29 +64,10 @@ const AuthCode = ({
   const accountsInfo = useMultiaccountInfo();
   const hasActiveAccount = Object.values(accountsInfo).length > 0;
 
-  const { result: qrCode } = useAsync(async () => {
-    const QrCodeStyling = (await ensureQrCodeStyling()).default;
-    return new QrCodeStyling({
-      width: QR_SIZE,
-      height: QR_SIZE,
-      image: blankUrl,
-      margin: 10,
-      type: 'svg',
-      dotsOptions: {
-        type: 'rounded',
-      },
-      cornersSquareOptions: {
-        type: 'extra-rounded',
-      },
-      imageOptions: {
-        imageSize: 0.4,
-        margin: 8,
-      },
-      qrOptions: {
-        errorCorrectionLevel: 'M',
-      },
-    });
-  }, []);
+  const { result: qrCode } = useAsync(() => createStyledQrCode({
+    size: QR_SIZE,
+    imageSize: QR_IMAGE_SIZE_RATIO,
+  }), []);
 
   const transitionClassNames = useMediaTransitionDeprecated(isQrMounted);
 
@@ -126,7 +99,7 @@ const AuthCode = ({
     }
 
     if (STRICTERDOM_ENABLED) {
-      setTimeout(() => {
+      window.setTimeout(() => {
         enableStrict();
       }, QR_CODE_MUTATION_DURATION);
     }
@@ -152,14 +125,23 @@ const AuthCode = ({
     returnToAuthPhoneNumber();
   });
 
-  const isAuthReady = authState === 'authorizationStateWaitQrCode';
+  const handleLoginWithPasskey = useLastCallback(() => {
+    loginWithPasskey();
+  });
+
+  const isAuthReady = state === 'authorizationStateWaitQrCode';
 
   return (
     <div id="auth-qr-form" className="custom-scroll">
       {hasActiveAccount && (
-        <Button size="smaller" round color="translucent" className="auth-close" onClick={handleBackNavigation}>
-          <Icon name="close" />
-        </Button>
+        <Button
+          size="smaller"
+          round
+          color="translucent"
+          className="auth-close"
+          iconName="close"
+          onClick={handleBackNavigation}
+        />
       )}
       <div className="auth-form qr">
         <div className="qr-outer">
@@ -194,6 +176,11 @@ const AuthCode = ({
             {lang('LoginQRCancel')}
           </Button>
         )}
+        {passkeyOption && (
+          <Button className="auth-button" isText onClick={handleLoginWithPasskey}>
+            {lang('LoginPasskey')}
+          </Button>
+        )}
         {suggestedLanguage && suggestedLanguage !== language && continueText && (
           <Button className="auth-button" isText isLoading={isLoading} onClick={handleLangChange}>
             {continueText}
@@ -207,15 +194,14 @@ const AuthCode = ({
 export default memo(withGlobal(
   (global): Complete<StateProps> => {
     const {
-      connectionState, authState, authQrCode,
+      connectionState, auth,
     } = global;
 
     const { language } = selectSharedSettings(global);
 
     return {
       connectionState,
-      authState,
-      authQrCode,
+      auth,
       language,
     };
   },

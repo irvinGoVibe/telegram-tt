@@ -42,6 +42,13 @@ export function addMediaToLocalDb(media: GramJs.TypeMessageMedia, context?: Medi
   if (media instanceof GramJs.MessageMediaDocument && media.document) {
     const document = addMessageRepairInfo(media.document, context);
     addDocumentToLocalDb(document);
+
+    if (media.altDocuments) {
+      for (const altDocument of media.altDocuments) {
+        const doc = addMessageRepairInfo(altDocument, context);
+        addDocumentToLocalDb(doc);
+      }
+    }
   }
 
   if (media instanceof GramJs.MessageMediaGame) {
@@ -77,6 +84,12 @@ export function addMediaToLocalDb(media: GramJs.TypeMessageMedia, context?: Medi
       }
     });
   }
+
+  if (media instanceof GramJs.MessageMediaPoll) {
+    if (media.attachedMedia) {
+      addMediaToLocalDb(media.attachedMedia, context);
+    }
+  }
 }
 
 export function addStoryToLocalDb(story: GramJs.TypeStoryItem, peerId: string) {
@@ -110,9 +123,16 @@ export function addPhotoToLocalDb(photo: GramJs.TypePhoto) {
   }
 }
 
-export function addDocumentToLocalDb(document: GramJs.TypeDocument) {
+export function addDocumentToLocalDb(document: GramJs.TypeDocument & RepairInfo) {
   if (document instanceof GramJs.Document) {
-    localDb.documents[String(document.id)] = document;
+    const id = String(document.id);
+    const current = localDb.documents[id];
+    if (current && document.accessHash === current.accessHash && document.fileReference === current.fileReference
+      && !document.localRepairInfo
+    ) {
+      return;
+    }
+    localDb.documents[id] = document;
   }
 }
 
@@ -146,6 +166,19 @@ export function addMessageRepairInfo<T extends GramJs.TypeDocument | GramJs.Type
   return repairableMedia;
 }
 
+export function addSavedMusicRepairInfo<T extends GramJs.TypeDocument>(
+  media: T, peerId: string,
+): T & RepairInfo {
+  if (!(media instanceof GramJs.Document)) return media;
+
+  const repairableMedia = media as T & RepairInfo;
+  repairableMedia.localRepairInfo = {
+    type: 'savedMusic',
+    peerId,
+  };
+  return repairableMedia;
+}
+
 export function addWebPageRepairInfo<T extends GramJs.TypeDocument | GramJs.TypeWebDocument | GramJs.TypePhoto>(
   media: T, webPage?: GramJs.TypeWebPage,
 ): T & RepairInfo {
@@ -162,7 +195,9 @@ export function addWebPageRepairInfo<T extends GramJs.TypeDocument | GramJs.Type
   return repairableMedia;
 }
 
-export function addChatToLocalDb(chat: GramJs.Chat | GramJs.Channel) {
+export function addChatToLocalDb(
+  chat: GramJs.Chat | GramJs.Channel | GramJs.Community,
+) {
   const id = buildApiPeerId(chat.id, chat instanceof GramJs.Chat ? 'chat' : 'channel');
   const storedChat = localDb.chats[id];
 

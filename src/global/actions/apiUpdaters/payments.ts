@@ -2,10 +2,16 @@ import type { ActionReturnType } from '../../types';
 
 import { formatCurrencyAsString } from '../../../util/formatCurrency';
 import * as langProvider from '../../../util/oldLangProvider';
-import { addActionHandler, setGlobal } from '../../index';
-import { updateStarsBalance } from '../../reducers';
+import { getPeerTitle } from '../../helpers/peers';
+import { addActionHandler, getGlobal, setGlobal } from '../../index';
+import {
+  removeGiftInfoOriginalDetails,
+  updateGiftAuctionState,
+  updateGiftAuctionUserState,
+  updateStarsBalance,
+} from '../../reducers';
 import { updateTabState } from '../../reducers/tabs';
-import { selectTabState } from '../../selectors';
+import { selectPeer, selectTabState } from '../../selectors';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
   switch (update['@type']) {
@@ -146,6 +152,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
             },
             tabId,
           });
+          actions.reloadPeerSavedGifts({ peerId: starGiftModalState.forPeerId });
           actions.requestConfetti({ withStars: true, tabId });
           actions.closeGiftModal({ tabId });
         }
@@ -155,6 +162,10 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
         const starGiftModalState = selectTabState(global, tabId).giftInfoModal;
 
         if (starGiftModalState) {
+          const { craftSlotIndex, gift } = starGiftModalState;
+          const actualGift = 'gift' in gift ? gift.gift : gift;
+          const giftId = actualGift.type === 'starGiftUnique' ? actualGift.id : undefined;
+
           actions.showNotification({
             message: {
               key: 'StarsGiftBought',
@@ -166,12 +177,72 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           }
           actions.reloadPeerSavedGifts({ peerId: inputInvoice.peerId });
           actions.requestConfetti({ withStars: true, tabId });
+
+          if (craftSlotIndex !== undefined && giftId) {
+            actions.selectPurchasedGiftForCraft({ giftId, slotIndex: craftSlotIndex, tabId });
+          }
+
           actions.closeGiftInfoModal({ tabId });
         }
       }
 
       if (inputInvoice?.type === 'stargiftUpgrade' && global.currentUserId) {
         actions.reloadPeerSavedGifts({ peerId: global.currentUserId });
+      }
+
+      if (inputInvoice?.type === 'stargiftDropOriginalDetails') {
+        global = getGlobal();
+        global = removeGiftInfoOriginalDetails(global, tabId);
+        setGlobal(global);
+
+        actions.closeGiftDescriptionRemoveModal({ tabId });
+        actions.showNotification({
+          message: { key: 'RemoveGiftDescriptionSuccessMessage' },
+          tabId,
+        });
+
+        if (global.currentUserId) {
+          actions.reloadPeerSavedGifts({ peerId: global.currentUserId });
+        }
+      }
+
+      if (inputInvoice?.type === 'stargiftPrepaidUpgrade') {
+        actions.reloadPeerSavedGifts({ peerId: inputInvoice.peerId });
+
+        const lang = langProvider.getTranslationFn();
+        const peer = selectPeer(global, inputInvoice.peerId);
+        const peerTitle = peer ? getPeerTitle(lang, peer) : undefined;
+
+        actions.showNotification({
+          icon: 'gift',
+          title: { key: 'GiftUpgradeSentTitle' },
+          message: {
+            key: 'GiftUpgradeSentMessage',
+            variables: { user: peerTitle },
+          },
+          tabId,
+        });
+      }
+
+      if (inputInvoice?.type === 'stargiftAuctionBid') {
+        const giftAuction = global.giftAuctionByGiftId?.[inputInvoice.giftId];
+        const giftsPerRound = giftAuction?.gift.giftsPerRound;
+
+        actions.showNotification({
+          icon: 'auction-filled',
+          title: {
+            key: inputInvoice.isUpdateBid ? 'GiftAuctionBidIncreasedTitle' : 'GiftAuctionBidPlacedTitle',
+          },
+          message: {
+            key: 'GiftAuctionBidPlacedMessage',
+            variables: { count: giftsPerRound },
+          },
+          tabId,
+        });
+
+        if (giftAuction) {
+          actions.loadGiftAuction({ giftId: inputInvoice.giftId });
+        }
       }
 
       break;
@@ -183,6 +254,45 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       setGlobal(global);
 
       actions.loadStarStatus();
+      break;
+    }
+
+    case 'updateStarGiftAuctionState': {
+      const { giftId, state } = update;
+
+      global = updateGiftAuctionState(global, giftId, state);
+
+      setGlobal(global);
+      break;
+    }
+
+    case 'updateStarGiftAuctionUserState': {
+      const { giftId, userState } = update;
+
+      if (!global.giftAuctionByGiftId?.[giftId]) {
+        actions.loadActiveGiftAuctions();
+        return;
+      }
+
+      global = updateGiftAuctionUserState(global, giftId, userState);
+
+      setGlobal(global);
+      break;
+    }
+
+    case 'updateStarGiftCraftFail': {
+      Object.values(global.byTabId).forEach(({ id: tabId }) => {
+        const modal = selectTabState(global, tabId).giftCraftModal;
+        if (modal) {
+          global = updateTabState(global, {
+            giftCraftModal: {
+              ...modal,
+              craftResult: { success: false },
+            },
+          }, tabId);
+        }
+      });
+      setGlobal(global);
       break;
     }
   }

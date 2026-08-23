@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import { memo, useMemo } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
@@ -21,22 +20,20 @@ import Spinner from '../../ui/Spinner';
 import './CommentButton.scss';
 
 type OwnProps = {
-  threadInfo: ApiCommentsInfo;
+  threadInfo?: ApiCommentsInfo;
   disabled?: boolean;
   isLoading?: boolean;
   isCustomShape?: boolean;
-  asActionButton?: boolean;
 };
 
 const SHOW_LOADER_DELAY = 450;
 
-const CommentButton: FC<OwnProps> = ({
+const CommentButton = ({
   isCustomShape,
   threadInfo,
   disabled,
   isLoading,
-  asActionButton,
-}) => {
+}: OwnProps) => {
   const { openThread, openFrozenAccountModal } = getActions();
 
   const shouldRenderLoading = useAsyncRendering([isLoading], SHOW_LOADER_DELAY);
@@ -44,11 +41,16 @@ const CommentButton: FC<OwnProps> = ({
   const oldLang = useOldLang();
   const lang = useLang();
   const {
-    originMessageId, chatId, messagesCount, lastMessageId, lastReadInboxMessageId, recentReplierIds, originChannelId,
-  } = threadInfo;
+    originMessageId, chatId, messagesCount, recentReplierIds, originChannelId, hasUnread,
+  } = threadInfo || {};
 
   const handleClick = useLastCallback(() => {
     const global = getGlobal();
+
+    if (!originMessageId || !originChannelId) {
+      return;
+    }
+
     if (selectIsCurrentUserFrozen(global)) {
       openFrozenAccountModal();
       return;
@@ -71,14 +73,10 @@ const CommentButton: FC<OwnProps> = ({
     }).filter(Boolean);
   }, [recentReplierIds]);
 
-  if (messagesCount === undefined) {
-    return undefined;
-  }
-
   function renderRecentRepliers() {
     return (
       Boolean(recentRepliers?.length) && (
-        <div className="recent-repliers" dir={oldLang.isRtl ? 'rtl' : 'ltr'}>
+        <div className="recent-repliers" dir={lang.isRtl ? 'rtl' : 'ltr'}>
           {recentRepliers.map((peer) => (
             <Avatar
               key={peer.id}
@@ -91,8 +89,6 @@ const CommentButton: FC<OwnProps> = ({
     );
   }
 
-  const hasUnread = Boolean(lastReadInboxMessageId && lastMessageId && lastReadInboxMessageId < lastMessageId);
-
   const commentsText = messagesCount ? (oldLang('CommentsCount', '%COMMENTS_COUNT%', undefined, messagesCount))
     .split('%')
     .map((s) => {
@@ -102,16 +98,15 @@ const CommentButton: FC<OwnProps> = ({
 
   return (
     <div
-      data-cnt={formatIntegerCompact(lang, messagesCount)}
+      data-cnt={formatIntegerCompact(lang, messagesCount || 0)}
       className={buildClassName(
         'CommentButton',
         hasUnread && 'has-unread',
         disabled && 'disabled',
         isCustomShape && 'CommentButton-custom-shape',
         isLoading && 'loading',
-        asActionButton && 'as-action-button',
       )}
-      dir={oldLang.isRtl ? 'rtl' : 'ltr'}
+      dir={lang.isRtl ? 'rtl' : 'ltr'}
       onClick={handleClick}
       role="button"
       tabIndex={0}

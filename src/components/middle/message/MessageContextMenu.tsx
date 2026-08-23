@@ -1,4 +1,3 @@
-import type { FC } from '../../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useRef,
 } from '../../../lib/teact/teact';
@@ -9,8 +8,8 @@ import type {
   ApiChat,
   ApiChatReactions,
   ApiMessage,
+  ApiMessagePoll,
   ApiPeer,
-  ApiPoll,
   ApiReaction,
   ApiStickerSet,
   ApiThreadInfo,
@@ -18,18 +17,24 @@ import type {
   ApiUser,
   ApiWebPage,
 } from '../../../api/types';
-import type { IAnchorPosition } from '../../../types';
+import type {
+  IAnchorPosition, MessageListType, ThreadId, TranslationTone,
+} from '../../../types';
+import type { ClipboardTextFormat, MessageCopyRequest } from '../../../types/messageCopy';
 
 import {
   getUserFullName,
   groupStatefulContent,
 } from '../../../global/helpers';
+import { getPeerTitle } from '../../../global/helpers/peers';
 import buildClassName from '../../../util/buildClassName';
 import { isUserId } from '../../../util/entities/ids';
 import { disableScrolling } from '../../../util/scrollLock';
+import { getServerTime } from '../../../util/serverTime';
 import { REM } from '../../common/helpers/mediaDimensions';
 import renderText from '../../common/helpers/renderText';
 import { getMessageCopyOptions } from './helpers/copyOptions';
+import { getPollCountryRestrictionMessage, getPollSubscriberRestrictionMessage } from './poll/helpers';
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import useFlag from '../../../hooks/useFlag';
@@ -38,10 +43,14 @@ import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
 
 import AvatarList from '../../common/AvatarList';
+import Icon from '../../common/icons/Icon';
 import Menu from '../../ui/Menu';
 import MenuItem from '../../ui/MenuItem';
 import MenuSeparator from '../../ui/MenuSeparator';
+import NestedMenuItem from '../../ui/NestedMenuItem';
 import Skeleton from '../../ui/placeholder/Skeleton';
+import Transition from '../../ui/Transition';
+import AutoDeleteTimeMenuItem from './AutoDeleteTimeMenuItem';
 import LastEditTimeMenuItem from './LastEditTimeMenuItem';
 import ReactionSelector from './reactions/ReactionSelector';
 import ReadTimeMenuItem from './ReadTimeMenuItem';
@@ -56,8 +65,12 @@ type OwnProps = {
   isOpen: boolean;
   anchor: IAnchorPosition;
   targetHref?: string;
+  isAltKeyPressed?: boolean;
   message: ApiMessage;
-  poll?: ApiPoll;
+  threadId: ThreadId;
+  messageListType: MessageListType;
+  chat?: ApiChat;
+  poll?: ApiMessagePoll;
   webPage?: ApiWebPage;
   story?: ApiTypeStory;
   canSendNow?: boolean;
@@ -87,10 +100,15 @@ type OwnProps = {
   canTranslate?: boolean;
   canShowOriginal?: boolean;
   canSelectLanguage?: boolean;
+  currentTranslationTone?: TranslationTone;
   isPrivate?: boolean;
   isCurrentUserPremium?: boolean;
   canDownload?: boolean;
   canSaveGif?: boolean;
+  canManageMusicInProfile?: boolean;
+  isMusicProfileStatusLoaded?: boolean;
+  isMusicProfileActionLoading?: boolean;
+  isMusicSaved?: boolean;
   canRevote?: boolean;
   canClosePoll?: boolean;
   isDownloading?: boolean;
@@ -121,15 +139,17 @@ type OwnProps = {
   onClose: NoneToVoidFunction;
   onCloseAnimationEnd?: NoneToVoidFunction;
   onCopyLink?: NoneToVoidFunction;
-  onCopyMessages?: (messageIds: number[]) => void;
+  onCopyMessages?: (request: MessageCopyRequest, textFormat?: ClipboardTextFormat) => void;
   onCopyNumber?: NoneToVoidFunction;
   onDownload?: NoneToVoidFunction;
   onSaveGif?: NoneToVoidFunction;
+  onToggleMusicInProfile?: NoneToVoidFunction;
   onCancelVote?: NoneToVoidFunction;
   onClosePoll?: NoneToVoidFunction;
   onShowSeenBy?: NoneToVoidFunction;
   onShowReactors?: NoneToVoidFunction;
   onTranslate?: NoneToVoidFunction;
+  onTranslateWithTone?: (tone: TranslationTone) => void;
   onShowOriginal?: NoneToVoidFunction;
   onSelectLanguage?: NoneToVoidFunction;
   onToggleReaction?: (reaction: ApiReaction) => void;
@@ -138,19 +158,23 @@ type OwnProps = {
   onReactionPickerOpen?: (position: IAnchorPosition) => void;
   userFullName?: string;
   canGift?: boolean;
+  noForwardsNotice?: string;
 };
 
 const SCROLLBAR_WIDTH = 10;
 const REACTION_SELECTOR_WIDTH_REM = 19.25;
 const ANIMATION_DURATION = 200;
 
-const MessageContextMenu: FC<OwnProps> = ({
+const MessageContextMenu = ({
   isReactionPickerOpen,
   availableReactions,
   topReactions,
   defaultTagReactions,
   isOpen,
   message,
+  threadId,
+  messageListType,
+  chat,
   poll,
   webPage,
   story,
@@ -161,6 +185,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   reactionsLimit,
   anchor,
   targetHref,
+  isAltKeyPressed,
   canSendNow,
   canReschedule,
   canBuyPremium,
@@ -182,11 +207,16 @@ const MessageContextMenu: FC<OwnProps> = ({
   canSelect,
   canDownload,
   canSaveGif,
+  canManageMusicInProfile,
+  isMusicProfileStatusLoaded,
+  isMusicProfileActionLoading,
+  isMusicSaved,
   canRevote,
   canClosePoll,
   canTranslate,
   canShowOriginal,
   canSelectLanguage,
+  currentTranslationTone,
   isDownloading,
   repliesThreadInfo,
   canShowSeenBy,
@@ -220,6 +250,7 @@ const MessageContextMenu: FC<OwnProps> = ({
   onCopyNumber,
   onDownload,
   onSaveGif,
+  onToggleMusicInProfile,
   onCancelVote,
   onClosePoll,
   onShowSeenBy,
@@ -230,11 +261,13 @@ const MessageContextMenu: FC<OwnProps> = ({
   onCopyMessages,
   onReactionPickerOpen,
   onTranslate,
+  onTranslateWithTone,
   onShowOriginal,
   onSelectLanguage,
   userFullName,
   canGift,
-}) => {
+  noForwardsNotice,
+}: OwnProps) => {
   const {
     showNotification, openStickerSet, openCustomEmojiSets, loadStickers, openGiftModal,
   } = getActions();
@@ -253,11 +286,34 @@ const MessageContextMenu: FC<OwnProps> = ({
   const isStarGiftUnique = message.content.action?.type === 'starGiftUnique';
   const shouldShowGiftButton = isUserId(message.chatId)
     && canGift && (isPremiumGift || isGiftCode || isStarGift || isStarGiftUnique);
+  const pollCountryRestrictionMessage = useMemo(
+    () => getPollCountryRestrictionMessage(lang, poll?.summary.allowedCountryCodes),
+    [lang, poll?.summary.allowedCountryCodes],
+  );
+  const pollSubscriberRestrictionChannel = chat && getPeerTitle(lang, chat);
+  const pollSubscriberRestrictionMessage = useMemo(
+    () => getPollSubscriberRestrictionMessage(
+      pollSubscriberRestrictionChannel,
+      poll?.summary.isRestrictedToSubscribers,
+    ),
+    [poll?.summary.isRestrictedToSubscribers, pollSubscriberRestrictionChannel],
+  );
+  const hasPollRestrictionMessage = Boolean(pollSubscriberRestrictionMessage) || Boolean(pollCountryRestrictionMessage);
+  const autoDeleteAt = message.ttlPeriod ? message.date + message.ttlPeriod : undefined;
+  const hasAutoDeleteTimer = Boolean(autoDeleteAt && autoDeleteAt > getServerTime());
+  const shouldRenderInfoSection = Boolean(
+    canLoadReadDate || shouldRenderShowWhen || isEdited || noForwardsNotice || hasPollRestrictionMessage
+    || hasAutoDeleteTimer,
+  );
 
-  const [areItemsHidden, hideItems] = useFlag();
   const [isReady, markIsReady, unmarkIsReady] = useFlag();
-  const { isMobile, isDesktop } = useAppLayout();
+  const { isMobile } = useAppLayout();
   const seenByDatesCount = useMemo(() => (seenByDates ? Object.keys(seenByDates).length : 0), [seenByDates]);
+  const totalSeenCount = useMemo(() => {
+    const ids = new Set(seenByDates ? Object.keys(seenByDates) : []);
+    message.reactors?.reactions?.forEach(({ peerId }) => ids.add(peerId));
+    return ids.size;
+  }, [seenByDates, message.reactors?.reactions]);
 
   const handleAfterCopy = useLastCallback(() => {
     showNotification({
@@ -270,12 +326,6 @@ const MessageContextMenu: FC<OwnProps> = ({
     openGiftModal({ forUserId: message.chatId });
     onClose();
   });
-
-  useEffect(() => {
-    if (isOpen && areItemsHidden && !isReactionPickerOpen) {
-      onClose();
-    }
-  }, [onClose, isOpen, isReactionPickerOpen, areItemsHidden]);
 
   useEffect(() => {
     if (customEmojiSets?.length) {
@@ -309,6 +359,8 @@ const MessageContextMenu: FC<OwnProps> = ({
   const copyOptions = getMessageCopyOptions(
     message,
     groupStatefulContent({ poll, webPage, story }),
+    threadId,
+    messageListType,
     targetHref,
     canCopy,
     handleAfterCopy,
@@ -318,27 +370,20 @@ const MessageContextMenu: FC<OwnProps> = ({
   );
 
   const getTriggerElement = useLastCallback(() => {
-    return document.querySelector(`.Transition_slide-active > .MessageList div[data-message-id="${message.id}"]`);
+    return document.querySelector(`.Transition_slide-active > .MessageList`);
   });
 
-  const getRootElement = useLastCallback(() => document.querySelector('.Transition_slide-active > .MessageList'));
+  const getRootElement = useLastCallback(() => document.body);
 
   const getMenuElement = useLastCallback(() => document.querySelector('.MessageContextMenu .bubble'));
 
   const getLayout = useLastCallback(() => {
-    const extraHeightAudioPlayer = (isMobile
-      && (document.querySelector<HTMLElement>('.AudioPlayer-content'))?.offsetHeight) || 0;
-    const middleColumn = document.getElementById('MiddleColumn')!;
-    const middleColumnComputedStyle = getComputedStyle(middleColumn);
-    const headerToolsHeight = parseFloat(middleColumnComputedStyle.getPropertyValue('--middle-header-panes-height'));
-    const extraHeightPinned = headerToolsHeight || 0;
-
     return {
       extraPaddingX: SCROLLBAR_WIDTH,
       extraTopPadding: (document.querySelector<HTMLElement>('.MiddleHeader')!).offsetHeight,
-      extraMarginTop: extraHeightPinned + extraHeightAudioPlayer,
-      shouldAvoidNegativePosition: !isDesktop,
+      shouldAvoidNegativePosition: true,
       menuElMinWidth: withReactions && isMobile ? REACTION_SELECTOR_WIDTH_REM * REM : undefined,
+      withPortal: true,
     };
   });
 
@@ -348,10 +393,14 @@ const MessageContextMenu: FC<OwnProps> = ({
       return;
     }
 
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       markIsReady();
     }, ANIMATION_DURATION);
-  }, [isOpen, markIsReady, unmarkIsReady]);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     return disableScrolling(scrollableRef.current, '.ReactionPicker');
@@ -359,7 +408,7 @@ const MessageContextMenu: FC<OwnProps> = ({
 
   const handleOpenMessageReactionPicker = useLastCallback((position: IAnchorPosition) => {
     onReactionPickerOpen!(position);
-    hideItems();
+    onClose();
   });
 
   return (
@@ -375,6 +424,7 @@ const MessageContextMenu: FC<OwnProps> = ({
       className={buildClassName(
         'MessageContextMenu', 'fluid', withReactions && 'with-reactions',
       )}
+      withPortal
       onClose={onClose}
       onCloseAnimationEnd={onCloseAnimationEnd}
     >
@@ -398,7 +448,6 @@ const MessageContextMenu: FC<OwnProps> = ({
           canPlayAnimatedEmojis={canPlayAnimatedEmojis}
           onShowMore={handleOpenMessageReactionPicker}
           onClose={onClose}
-          className={buildClassName(areItemsHidden && 'ReactionSelector-hidden')}
         />
       )}
 
@@ -406,9 +455,8 @@ const MessageContextMenu: FC<OwnProps> = ({
         ref={scrollableRef}
         className={buildClassName(
           'MessageContextMenu_items scrollable-content custom-scroll',
-          areItemsHidden && 'MessageContextMenu_items-hidden',
         )}
-        dir={oldLang.isRtl ? 'rtl' : undefined}
+        dir={lang.isRtl ? 'rtl' : undefined}
       >
         {shouldShowGiftButton
           && (
@@ -448,28 +496,101 @@ const MessageContextMenu: FC<OwnProps> = ({
         {canUnfaveSticker && (
           <MenuItem icon="favorite" onClick={onUnfaveSticker}>{oldLang('Stickers.RemoveFromFavorites')}</MenuItem>
         )}
-        {canTranslate && <MenuItem icon="language" onClick={onTranslate}>{oldLang('TranslateMessage')}</MenuItem>}
+        {canTranslate && (
+          <MenuItem icon="language" onClick={() => onTranslate?.()}>{oldLang('TranslateMessage')}</MenuItem>
+        )}
         {canShowOriginal && (
           <MenuItem icon="language" onClick={onShowOriginal}>
             {oldLang('ShowOriginalButton')}
           </MenuItem>
         )}
+        {canShowOriginal && (
+          <NestedMenuItem
+            icon="tone"
+            submenuClassName="translation-tone-menu"
+            submenu={(
+              <>
+                <MenuItem
+                  icon={currentTranslationTone === 'neutral' ? 'message-succeeded' : undefined}
+                  customIcon={currentTranslationTone !== 'neutral' ? <Icon name="placeholder" /> : undefined}
+                  onClick={() => onTranslateWithTone?.('neutral')}
+                >
+                  {lang('TranslationToneNeutral')}
+                </MenuItem>
+                <MenuItem
+                  icon={currentTranslationTone === 'formal' ? 'message-succeeded' : undefined}
+                  customIcon={currentTranslationTone !== 'formal' ? <Icon name="placeholder" /> : undefined}
+                  onClick={() => onTranslateWithTone?.('formal')}
+                >
+                  {lang('TranslationToneFormal')}
+                </MenuItem>
+                <MenuItem
+                  icon={currentTranslationTone === 'casual' ? 'message-succeeded' : undefined}
+                  customIcon={currentTranslationTone !== 'casual' ? <Icon name="placeholder" /> : undefined}
+                  onClick={() => onTranslateWithTone?.('casual')}
+                >
+                  {lang('TranslationToneCasual')}
+                </MenuItem>
+              </>
+            )}
+          >
+            {lang('TranslationTone')}
+          </NestedMenuItem>
+        )}
         {canSelectLanguage && (
           <MenuItem icon="web" onClick={onSelectLanguage}>{oldLang('lng_settings_change_lang')}</MenuItem>
         )}
         {copyOptions.map((option) => (
-          <MenuItem
-            key={option.label}
-            icon={option.icon}
-            onClick={option.handler}
-            withPreventDefaultOnMouseDown
-          >
-            {oldLang(option.label)}
-          </MenuItem>
+          isAltKeyPressed && option.canCopyWithFormat ? (
+            <NestedMenuItem
+              key={option.label}
+              icon={option.icon}
+              submenu={(
+                <>
+                  <MenuItem onClick={() => option.handler('plainText')}>{lang('CopyAsText')}</MenuItem>
+                  <MenuItem onClick={() => option.handler('html')}>{lang('CopyAsHtml')}</MenuItem>
+                  <MenuItem onClick={() => option.handler('markdown')}>{lang('CopyAsMarkdown')}</MenuItem>
+                </>
+              )}
+            >
+              {lang('Copy')}
+            </NestedMenuItem>
+          ) : (
+            <MenuItem
+              key={option.label}
+              icon={option.icon}
+              onClick={() => option.handler()}
+              withPreventDefaultOnMouseDown
+            >
+              {oldLang(option.label)}
+            </MenuItem>
+          )
         ))}
         {canPin && <MenuItem icon="pin" onClick={onPin}>{oldLang('DialogPin')}</MenuItem>}
         {canUnpin && <MenuItem icon="unpin" onClick={onUnpin}>{oldLang('DialogUnpin')}</MenuItem>}
         {canSaveGif && <MenuItem icon="gifs" onClick={onSaveGif}>{oldLang('lng_context_save_gif')}</MenuItem>}
+        {canManageMusicInProfile && (
+          <Transition
+            activeKey={!isMusicProfileStatusLoaded ? 0 : (isMusicSaved ? 2 : 1)}
+            name="fade"
+            className="profile-music-menu-item-transition"
+            shouldCleanup
+          >
+            {!isMusicProfileStatusLoaded ? (
+              <MenuItem customIcon={<span className="profile-music-menu-icon-placeholder" />} disabled>
+                <Skeleton className="profile-music-menu-label-placeholder" animation="wave" />
+              </MenuItem>
+            ) : (
+              <MenuItem
+                icon={isMusicSaved ? 'remove-music' : 'add-music'}
+                disabled={isMusicProfileActionLoading}
+                onClick={onToggleMusicInProfile}
+              >
+                {lang(isMusicSaved ? 'AudioRemoveFromProfile' : 'AudioAddToProfile')}
+              </MenuItem>
+            )}
+          </Transition>
+        )}
         {canRevote && <MenuItem icon="revote" onClick={onCancelVote}>{oldLang('lng_polls_retract')}</MenuItem>}
         {canClosePoll && <MenuItem icon="stop" onClick={onClosePoll}>{oldLang('lng_polls_stop')}</MenuItem>}
         {canDownload && (
@@ -481,13 +602,21 @@ const MessageContextMenu: FC<OwnProps> = ({
         {canSelect && <MenuItem icon="select" onClick={onSelect}>{oldLang('Common.Select')}</MenuItem>}
         {canReport && <MenuItem icon="flag" onClick={onReport}>{oldLang('lng_context_report_msg')}</MenuItem>}
         {canDelete && <MenuItem destructive icon="delete" onClick={onDelete}>{oldLang('Delete')}</MenuItem>}
+        {message.isEphemeral && (
+          <>
+            <MenuSeparator size="thick" />
+            <MenuItem disabled withWrap>
+              {lang('EphemeralContextMenuNotice')}
+            </MenuItem>
+          </>
+        )}
         {hasCustomEmoji && (
           <>
             <MenuSeparator size="thick" />
             {!customEmojiSets && (
               <>
-                <Skeleton inline className="menu-loading-row" />
-                <Skeleton inline className="menu-loading-row" />
+                <Skeleton inline className="menu-loading-row" animation="wave" />
+                <Skeleton inline className="menu-loading-row" animation="wave" />
               </>
             )}
             {customEmojiSets && customEmojiSets.length === 1 && (
@@ -513,14 +642,18 @@ const MessageContextMenu: FC<OwnProps> = ({
               disabled={!canShowReactionsCount && !seenByDatesCount}
             >
               <span className="MessageContextMenu--seen-by-label-wrapper">
-                <span className="MessageContextMenu--seen-by-label" dir={oldLang.isRtl ? 'rtl' : undefined}>
+                <span className="MessageContextMenu--seen-by-label" dir={lang.isRtl ? 'rtl' : undefined}>
                   {canShowReactionsCount && message.reactors?.count ? (
                     canShowSeenBy && seenByDatesCount
-                      ? oldLang(
-                        'Chat.OutgoingContextMixedReactionCount',
-                        [message.reactors.count, seenByDatesCount],
+                      ? lang(
+                        'ChatOutgoingContextMixedReactionCount',
+                        { count: message.reactors.count, total: totalSeenCount },
                       )
-                      : oldLang('Chat.ContextReactionCount', message.reactors.count, 'i')
+                      : lang(
+                        'ChatContextReactionCount',
+                        { count: message.reactors.count },
+                        { pluralValue: message.reactors.count },
+                      )
                   ) : (
                     seenByDatesCount === 1 && seenByRecentPeers
                       ? renderText(
@@ -529,8 +662,12 @@ const MessageContextMenu: FC<OwnProps> = ({
                           : (seenByRecentPeers[0] as ApiChat).title,
                       ) : (
                         seenByDatesCount
-                          ? oldLang('Conversation.ContextMenuSeen', seenByDatesCount, 'i')
-                          : oldLang('Conversation.ContextMenuNoViews')
+                          ? lang(
+                            'ConversationContextMenuSeen',
+                            { count: seenByDatesCount },
+                            { pluralValue: seenByDatesCount },
+                          )
+                          : lang('ConversationContextMenuNoViews')
                       )
                   )}
                 </span>
@@ -539,8 +676,11 @@ const MessageContextMenu: FC<OwnProps> = ({
             </MenuItem>
           </>
         )}
-        {(canLoadReadDate || shouldRenderShowWhen || isEdited) && (
+        {shouldRenderInfoSection && (
           <MenuSeparator size={hasCustomEmoji ? 'thin' : 'thick'} />
+        )}
+        {hasAutoDeleteTimer && (
+          <AutoDeleteTimeMenuItem endsAt={autoDeleteAt!} />
         )}
         {(canLoadReadDate || shouldRenderShowWhen) && (
           <ReadTimeMenuItem
@@ -554,6 +694,21 @@ const MessageContextMenu: FC<OwnProps> = ({
           <LastEditTimeMenuItem
             message={message}
           />
+        )}
+        {pollSubscriberRestrictionMessage && (
+          <MenuItem disabled withWrap className="poll-subscriber-restriction-notice">
+            {lang.with(pollSubscriberRestrictionMessage)}
+          </MenuItem>
+        )}
+        {pollCountryRestrictionMessage && (
+          <MenuItem disabled withWrap className="poll-country-restriction-notice">
+            {lang.with(pollCountryRestrictionMessage)}
+          </MenuItem>
+        )}
+        {noForwardsNotice && (
+          <MenuItem disabled withWrap className="no-forwards-notice">
+            {noForwardsNotice}
+          </MenuItem>
         )}
       </div>
     </Menu>

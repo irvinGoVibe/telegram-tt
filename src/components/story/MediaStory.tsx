@@ -1,4 +1,3 @@
-import type React from '../../lib/teact/teact';
 import {
   memo, useCallback, useEffect, useRef,
 } from '../../lib/teact/teact';
@@ -9,11 +8,12 @@ import type { ApiTypeStory } from '../../api/types';
 import { getStoryMediaHash } from '../../global/helpers';
 import { selectChat, selectPinnedStories } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import { formatMediaDuration } from '../../util/dates/dateFormat';
+import { formatMediaDuration } from '../../util/dates/oldDateFormat';
 import stopEvent from '../../util/stopEvent';
 import { preventMessageInputBlurWithBubbling } from '../middle/helpers/preventMessageInputBlur';
 
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useMedia from '../../hooks/useMedia';
 import useOldLang from '../../hooks/useOldLang';
@@ -27,6 +27,7 @@ import styles from './MediaStory.module.scss';
 
 interface OwnProps {
   story: ApiTypeStory;
+  className?: string;
   isArchive?: boolean;
 }
 
@@ -37,7 +38,7 @@ interface StateProps {
 }
 
 function MediaStory({
-  story, isProtected, isArchive, isPinned, canPin,
+  story, className, isProtected, isArchive, isPinned, canPin,
 }: OwnProps & StateProps) {
   const {
     openStoryViewer,
@@ -47,7 +48,8 @@ function MediaStory({
     showNotification,
   } = getActions();
 
-  const lang = useOldLang();
+  const lang = useLang();
+  const oldLang = useOldLang();
   const containerRef = useRef<HTMLDivElement>();
 
   const getTriggerElement = useLastCallback(() => containerRef.current);
@@ -59,6 +61,7 @@ function MediaStory({
   const isFullyLoaded = story && 'content' in story;
   const isOwn = isFullyLoaded && story.isOut;
   const isDeleted = story && 'isDeleted' in story;
+  const isUnsupportedStory = isFullyLoaded && Object.keys(story.content).length === 0;
   const video = isFullyLoaded ? (story).content.video : undefined;
   const duration = video && formatMediaDuration(video.duration);
   const imageHash = isFullyLoaded ? getStoryMediaHash(story) : undefined;
@@ -97,7 +100,7 @@ function MediaStory({
 
     toggleStoryInProfile({ peerId, storyId: story.id, isInProfile: true });
     showNotification({
-      message: lang('Story.ToastSavedToProfileText'),
+      message: oldLang('Story.ToastSavedToProfileText'),
     });
     handleContextMenuClose();
   });
@@ -107,7 +110,7 @@ function MediaStory({
 
     toggleStoryInProfile({ peerId, storyId: story.id, isInProfile: false });
     showNotification({
-      message: lang('Story.ToastRemovedFromProfileText'),
+      message: oldLang('Story.ToastRemovedFromProfileText'),
     });
     handleContextMenuClose();
   });
@@ -120,15 +123,21 @@ function MediaStory({
   return (
     <div
       ref={containerRef}
-      className={buildClassName(styles.root, 'scroll-item')}
+      className={buildClassName(styles.root, 'scroll-item', className)}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
       {isDeleted && (
         <span>
-          <Icon className={styles.expiredIcon} name="story-expired" />
-          {lang('ExpiredStory')}
+          <Icon className={styles.mainIcon} name="story-expired" />
+          {oldLang('ExpiredStory')}
+        </span>
+      )}
+      {isUnsupportedStory && (
+        <span>
+          <Icon className={styles.mainIcon} name="warning" />
+          {lang('StoryUnsupported')}
         </span>
       )}
       {isPinned && <Icon className={buildClassName(styles.overlayIcon, styles.pinnedIcon)} name="pin-badge" />}
@@ -162,22 +171,22 @@ function MediaStory({
         >
           {isArchive && (
             <MenuItem icon="archive" onClick={handleUnarchiveClick}>
-              {lang('StoryList.SaveToProfile')}
+              {oldLang('StoryList.SaveToProfile')}
             </MenuItem>
           )}
           {!isArchive && (
             <MenuItem icon="archive" onClick={handleArchiveClick}>
-              {lang('Story.Context.RemoveFromProfile')}
+              {oldLang('Story.Context.RemoveFromProfile')}
             </MenuItem>
           )}
           {!isArchive && !isPinned && canPin && (
             <MenuItem icon="pin" onClick={handleTogglePinned}>
-              {lang('StoryList.ItemAction.Pin')}
+              {oldLang('StoryList.ItemAction.Pin')}
             </MenuItem>
           )}
           {!isArchive && isPinned && (
             <MenuItem icon="unpin" onClick={handleTogglePinned}>
-              {lang('StoryList.ItemAction.Unpin')}
+              {oldLang('StoryList.ItemAction.Unpin')}
             </MenuItem>
           )}
         </Menu>

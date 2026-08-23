@@ -1,5 +1,6 @@
 import type {
   ApiChat,
+  ApiMessage,
   ApiNotifyPeerType,
   ApiPeer,
   ApiPeerNotifySettings,
@@ -37,6 +38,33 @@ export function getShouldShowMessagePreview(
 ) {
   const settings = getChatNotifySettings(chat, notifyDefaults, notifyException);
   return Boolean(settings?.shouldShowPreviews);
+}
+
+export function getShouldIgnoreNotificationMute(
+  message: Partial<ApiMessage>,
+  shouldNotifyAboutPinnedMessages: boolean,
+) {
+  if (!message.isMentioned) return false;
+
+  const isPinMessage = message.content?.action?.type === 'pinMessage';
+  if (isPinMessage) {
+    return shouldNotifyAboutPinnedMessages && !message.isSilent;
+  }
+
+  return true;
+}
+
+export function mergeNotifySettings(
+  baseSettings?: ApiPeerNotifySettings,
+  overrideSettings?: ApiPeerNotifySettings,
+): ApiPeerNotifySettings | undefined {
+  if (!baseSettings) return overrideSettings;
+  if (!overrideSettings) return baseSettings;
+
+  return {
+    ...baseSettings,
+    ...omitUndefined(overrideSettings),
+  };
 }
 
 export function getChatNotifySettings(

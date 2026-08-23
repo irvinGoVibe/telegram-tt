@@ -2,7 +2,7 @@ import { memo } from '../../lib/teact/teact';
 import { withGlobal } from '../../global';
 
 import type {
-  ApiFormattedText, ApiMessage, ApiPoll, ApiTypeStory,
+  ApiFormattedText, ApiMessage, ApiMessagePoll, ApiTypeStory,
   ApiWebPage,
 } from '../../api/types';
 import type { ObserveFn } from '../../hooks/useIntersectionObserver';
@@ -16,12 +16,12 @@ import {
 import {
   getMessageSummaryDescription,
   getMessageSummaryEmoji,
-  getMessageSummaryText,
   TRUNCATED_SUMMARY_LENGTH,
 } from '../../global/helpers/messageSummary';
 import { selectPeerStory, selectPollFromMessage, selectWebPageFromMessage } from '../../global/selectors';
 import trimText from '../../util/trimText';
 import renderText from './helpers/renderText';
+import { renderTextWithEntities } from './helpers/renderTextWithEntities';
 
 import useLang from '../../hooks/useLang';
 
@@ -30,7 +30,7 @@ import MessageText from './MessageText';
 
 type OwnProps = {
   message: ApiMessage;
-  translatedText?: ApiFormattedText;
+  forcedText?: ApiFormattedText;
   noEmoji?: boolean;
   highlight?: string;
   truncateLength?: number;
@@ -42,14 +42,14 @@ type OwnProps = {
 };
 
 type StateProps = {
-  poll?: ApiPoll;
+  poll?: ApiMessagePoll;
   story?: ApiTypeStory;
   webPage?: ApiWebPage;
 };
 
 function MessageSummary({
   message,
-  translatedText,
+  forcedText,
   noEmoji,
   highlight,
   truncateLength = TRUNCATED_SUMMARY_LENGTH,
@@ -68,10 +68,52 @@ function MessageSummary({
   const isAction = isActionMessage(message);
 
   const statefulContent = groupStatefulContent({ poll, story, webPage });
+  const emoji = !noEmoji && getMessageSummaryEmoji(message);
 
   if (!extractedText && !hasPoll && !isAction) {
-    const summaryText = translatedText?.text
-      || getMessageSummaryText(lang, message, statefulContent, noEmoji, truncateLength);
+    if (forcedText?.text) {
+      const trimmedText = trimText(forcedText.text, truncateLength);
+
+      return (
+        <span>
+          {highlight ? (
+            renderText(trimmedText, ['emoji', 'highlight'], { highlight })
+          ) : (
+            renderText(trimmedText)
+          )}
+        </span>
+      );
+    }
+
+    const description = getMessageSummaryDescription(lang, message, statefulContent);
+
+    if (typeof description !== 'string') {
+      const { todo } = message.content;
+      const formattedSummaryText = todo?.todo.title;
+      const renderedDescription = formattedSummaryText
+        ? renderFormattedSummaryText({
+          formattedText: formattedSummaryText,
+          highlight,
+          truncateLength,
+          emojiSize,
+          observeIntersectionForLoading,
+          observeIntersectionForPlaying,
+          withTranslucentThumbs,
+        })
+        : description;
+
+      return (
+        <span>
+          {[
+            emoji ? renderText(`${emoji} `) : undefined,
+            renderedDescription,
+          ].flat().filter(Boolean)}
+        </span>
+      );
+    }
+
+    const emojiWithSpace = emoji ? `${emoji} ` : '';
+    const summaryText = `${emojiWithSpace}${description}`;
     const trimmedText = trimText(summaryText, truncateLength);
 
     return (
@@ -93,7 +135,7 @@ function MessageSummary({
     return (
       <MessageText
         messageOrStory={message}
-        translatedText={translatedText}
+        forcedText={forcedText}
         highlight={highlight}
         asPreview
         observeIntersectionForLoading={observeIntersectionForLoading}
@@ -105,8 +147,6 @@ function MessageSummary({
       />
     );
   }
-
-  const emoji = !noEmoji && getMessageSummaryEmoji(message);
 
   return (
     <>
@@ -132,3 +172,32 @@ export default memo(withGlobal<OwnProps>(
     };
   },
 )(MessageSummary));
+
+function renderFormattedSummaryText({
+  formattedText,
+  highlight,
+  truncateLength,
+  emojiSize,
+  observeIntersectionForLoading,
+  observeIntersectionForPlaying,
+  withTranslucentThumbs,
+}: {
+  formattedText: ApiFormattedText;
+  highlight?: string;
+  truncateLength?: number;
+  emojiSize?: number;
+  observeIntersectionForLoading?: ObserveFn;
+  observeIntersectionForPlaying?: ObserveFn;
+  withTranslucentThumbs?: boolean;
+}) {
+  return renderTextWithEntities({
+    text: trimText(formattedText.text, truncateLength),
+    entities: formattedText.entities,
+    highlight,
+    emojiSize,
+    asPreview: true,
+    observeIntersectionForLoading,
+    observeIntersectionForPlaying,
+    withTranslucentThumbs,
+  });
+}

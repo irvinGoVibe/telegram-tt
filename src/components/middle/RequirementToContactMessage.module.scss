@@ -1,3 +1,5 @@
+@use "../../styles/mixins";
+
 .root {
   display: flex;
   align-items: center;
@@ -5,6 +7,8 @@
 
   width: 100%;
   height: 100%;
+  padding-top: var(--message-list-top-inset);
+  padding-bottom: var(--message-list-bottom-inset);
 
   color: var(--color-white);
 
@@ -17,13 +21,12 @@
     color: var(--color-white);
     text-transform: none;
 
-    background: var(--pattern-color);
+    @include mixins.action-message-bg($isModule: true);
 
     transition: filter 150ms ease-in-out;
 
     &:not(.disabled):not(:disabled):hover {
-      background-color: var(--pattern-color);
-      filter: brightness(1.05);
+      opacity: 0.85;
     }
   }
 }
@@ -37,7 +40,7 @@
   padding: 1.0625rem 0;
   border-radius: 1.5rem;
 
-  background: var(--pattern-color);
+  @include mixins.action-message-bg($isModule: true);
 
   &[dir="rtl"] {
     text-align: right;
@@ -86,9 +89,4 @@
   display: inline-flex;
   align-items: center;
   font-weight: var(--font-weight-medium);
-}
-
-.starIcon {
-  margin-inline-start: 0 !important;
-  margin-inline-end: 0.0625rem !important;
 }

@@ -1,12 +1,10 @@
-import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   memo, useRef,
 } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
 import type {
-  ApiChat, ApiMessage, ApiSticker, ApiTypingStatus,
+  ApiChat, ApiSticker, ApiTypingStatus,
 } from '../../api/types';
 import type { GlobalState } from '../../global/types';
 import type { Signal } from '../../util/signals';
@@ -22,7 +20,6 @@ import {
 } from '../../global/helpers';
 import {
   selectChat,
-  selectChatMessage,
   selectCustomEmoji,
   selectIsChatWithSelf,
   selectIsInSelectMode,
@@ -31,9 +28,10 @@ import {
   selectPinnedIds,
   selectScheduledIds,
   selectTabState,
-  selectThreadInfo,
-  selectThreadParam,
 } from '../../global/selectors';
+import {
+  selectThreadLocalStateParam, selectThreadMessagesCount,
+} from '../../global/selectors/threads';
 import { IS_TAURI } from '../../util/browser/globalEnvironment';
 import { IS_MAC_OS } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
@@ -41,9 +39,9 @@ import { isUserId } from '../../util/entities/ids';
 
 import useAppLayout from '../../hooks/useAppLayout';
 import useConnectionStatus from '../../hooks/useConnectionStatus';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useLongPress from '../../hooks/useLongPress';
-import useOldLang from '../../hooks/useOldLang';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 import useWindowSize from '../../hooks/window/useWindowSize';
 
@@ -53,8 +51,6 @@ import UnreadCounter from '../common/UnreadCounter';
 import Button from '../ui/Button';
 import Transition from '../ui/Transition';
 import HeaderActions from './HeaderActions';
-import AudioPlayer from './panes/AudioPlayer';
-import HeaderPinnedMessage from './panes/HeaderPinnedMessage';
 
 import './MiddleHeader.scss';
 
@@ -76,11 +72,10 @@ type OwnProps = {
 type StateProps = {
   chat?: ApiChat;
   isSavedDialog?: boolean;
-  typingStatus?: ApiTypingStatus;
+  typingStatusByPeerId?: Record<string, ApiTypingStatus>;
   isSelectModeActive?: boolean;
   isLeftColumnShown?: boolean;
   isRightColumnShown?: boolean;
-  audioMessage?: ApiMessage;
   messagesCount?: number;
   isChatWithSelf?: boolean;
   shouldSkipHistoryAnimations?: boolean;
@@ -92,15 +87,14 @@ type StateProps = {
   emojiStatusSlug?: string;
 };
 
-const MiddleHeader: FC<OwnProps & StateProps> = ({
+const MiddleHeader = ({
   chatId,
   threadId,
   messageListType,
   isMobile,
-  typingStatus,
+  typingStatusByPeerId,
   isSelectModeActive,
   isLeftColumnShown,
-  audioMessage,
   chat,
   messagesCount,
   isComments,
@@ -116,7 +110,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   emojiStatusSlug,
   isSavedDialog,
   onFocusPinnedMessage,
-}) => {
+}: OwnProps & StateProps) => {
   const {
     openThreadWithInfo,
     openChat,
@@ -129,9 +123,10 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
     openUniqueGiftBySlug,
   } = getActions();
 
-  const lang = useOldLang();
-  const isBackButtonActive = useRef(true);
-  const { isDesktop, isTablet } = useAppLayout();
+  const lang = useLang();
+
+  const isBackButtonActiveRef = useRef(true);
+  const { isTablet } = useAppLayout();
 
   const { width: windowWidth } = useWindowSize();
 
@@ -165,7 +160,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
 
   const setBackButtonActive = useLastCallback(() => {
     setTimeout(() => {
-      isBackButtonActive.current = true;
+      isBackButtonActiveRef.current = true;
     }, BACK_BUTTON_INACTIVE_TIME);
   });
 
@@ -188,10 +183,10 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   });
 
   const handleBackClick = useLastCallback((e: React.MouseEvent<HTMLElement, MouseEvent>) => {
-    if (!isBackButtonActive.current) return;
+    if (!isBackButtonActiveRef.current) return;
 
     // Workaround for missing UI when quickly clicking the Back button
-    isBackButtonActive.current = false;
+    isBackButtonActiveRef.current = false;
     if (isMobile) {
       const messageInput = document.querySelector<HTMLDivElement>(EDITABLE_INPUT_CSS_SELECTOR);
       messageInput?.blur();
@@ -221,15 +216,46 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   });
 
   const prevTransitionKey = usePreviousDeprecated(currentTransitionKey);
+
   const cleanupExceptionKey = (
     prevTransitionKey !== undefined && prevTransitionKey < currentTransitionKey ? prevTransitionKey : undefined
   );
 
-  const isAudioPlayerActive = Boolean(audioMessage);
-  const isAudioPlayerRendering = isDesktop && isAudioPlayerActive;
-  const isPinnedMessagesFullWidth = isAudioPlayerActive || !isDesktop;
+  const { connectionStatusText } = useConnectionStatus(
+    lang, connectionState, isSyncing || isFetchingDifference, true,
+  );
 
-  const { connectionStatusText } = useConnectionStatus(lang, connectionState, isSyncing || isFetchingDifference, true);
+  function renderInfoTitle() {
+    if (messagesCount === undefined) {
+      return lang('Loading');
+    }
+
+    if (messageListType === 'thread') {
+      if (!messagesCount) {
+        return lang(isComments ? 'CommentsTitle' : 'RepliesTitle');
+      }
+
+      return lang(
+        isComments ? 'Comments' : 'Replies',
+        { count: messagesCount },
+        { pluralValue: messagesCount },
+      );
+    }
+
+    if (messageListType === 'pinned') {
+      return lang('PinnedMessagesCount', { count: messagesCount }, { pluralValue: messagesCount });
+    }
+
+    if (messageListType === 'scheduled') {
+      if (isChatWithSelf) {
+        return lang('Reminders');
+      }
+
+      return lang('Messages', { count: messagesCount }, { pluralValue: messagesCount });
+    }
+
+    return undefined;
+  }
 
   function renderInfo() {
     if (messageListType === 'thread') {
@@ -240,26 +266,18 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
 
     return (
       <>
-        {renderBackButton()}
-        <h3>
-          {messagesCount !== undefined ? (
-            messageListType === 'thread' ? (
-              (messagesCount
-                ? lang(isComments ? 'Comments' : 'Replies', messagesCount, 'i')
-                : lang(isComments ? 'CommentsTitle' : 'RepliesTitle')))
-              : messageListType === 'pinned' ? (lang('PinnedMessagesCount', messagesCount, 'i'))
-                : messageListType === 'scheduled' ? (
-                  isChatWithSelf ? lang('Reminders') : lang('messages', messagesCount, 'i')
-                ) : undefined
-          ) : lang('Loading')}
-        </h3>
+        {renderBackButton(currentTransitionKey === 0)}
+        <h3>{renderInfoTitle()}</h3>
       </>
     );
   }
 
   function renderChatInfo() {
-    // TODO Implement count
-    const savedMessagesStatus = isSavedDialog ? lang('SavedMessages') : undefined;
+    const savedMessagesStatus = isSavedDialog
+      ? (messagesCount !== undefined
+        ? lang('Messages', { count: messagesCount }, { pluralValue: messagesCount })
+        : lang('SavedMessages'))
+      : undefined;
 
     const realChatId = isSavedDialog ? String(threadId) : chatId;
 
@@ -279,11 +297,12 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
             <PrivateChatInfo
               key={displayChatId}
               userId={displayChatId}
-              typingStatus={typingStatus}
+              threadId={!isSavedDialog ? threadId : undefined}
+              typingStatusByPeerId={typingStatusByPeerId}
               status={connectionStatusText || savedMessagesStatus}
               withDots={Boolean(connectionStatusText)}
-              withFullInfo
-              withMediaViewer
+              withFullInfo={threadId === MAIN_THREAD_ID}
+              withMediaViewer={threadId === MAIN_THREAD_ID}
               withStory={!isChatWithSelf}
               withUpdatingStatus
               isSavedDialog={isSavedDialog}
@@ -297,7 +316,7 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
               key={displayChatId}
               chatId={displayChatId}
               threadId={!isSavedDialog ? threadId : undefined}
-              typingStatus={typingStatus}
+              typingStatusByPeerId={typingStatusByPeerId}
               withMonoforumStatus={chat?.isMonoforum}
               status={connectionStatusText || savedMessagesStatus}
               withDots={Boolean(connectionStatusText)}
@@ -335,7 +354,11 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
   }
 
   return (
-    <div className="MiddleHeader" ref={componentRef} data-tauri-drag-region={IS_TAURI && IS_MAC_OS ? true : undefined}>
+    <div
+      className="MiddleHeader"
+      ref={componentRef}
+      data-tauri-drag-region={IS_TAURI && IS_MAC_OS ? true : undefined}
+    >
       <Transition
         name={shouldSkipHistoryAnimations ? 'none' : 'slideFade'}
         activeKey={currentTransitionKey}
@@ -344,28 +367,12 @@ const MiddleHeader: FC<OwnProps & StateProps> = ({
       >
         {renderInfo()}
       </Transition>
-      {!isPinnedMessagesFullWidth && (
-        <HeaderPinnedMessage
-          key={chatId}
-          chatId={chatId}
-          threadId={threadId}
-          messageListType={messageListType}
-          onFocusPinnedMessage={onFocusPinnedMessage}
-          getLoadingPinnedId={getLoadingPinnedId}
-          getCurrentPinnedIndex={getCurrentPinnedIndex}
-        />
-      )}
-
       <div className="header-tools">
-        {isAudioPlayerRendering && (
-          <AudioPlayer />
-        )}
         <HeaderActions
           chatId={chatId}
           threadId={threadId}
           messageListType={messageListType}
           isMobile={isMobile}
-          canExpandActions={!isAudioPlayerRendering}
         />
       </div>
     </div>
@@ -377,15 +384,12 @@ export default memo(withGlobal<OwnProps>(
     chatId, threadId, messageListType, isMobile,
   }): Complete<StateProps> => {
     const {
-      isLeftColumnShown, shouldSkipHistoryAnimations, audioPlayer, messageLists,
+      isLeftColumnShown, shouldSkipHistoryAnimations, messageLists,
     } = selectTabState(global);
     const chat = selectChat(global, chatId);
     const peer = selectPeer(global, chatId);
 
-    const { chatId: audioChatId, messageId: audioMessageId } = audioPlayer;
-    const audioMessage = audioChatId && audioMessageId
-      ? selectChatMessage(global, audioChatId, audioMessageId)
-      : undefined;
+    const isSavedDialog = getIsSavedDialog(chatId, threadId, global.currentUserId);
 
     let messagesCount: number | undefined;
     if (messageListType === 'pinned') {
@@ -395,24 +399,20 @@ export default memo(withGlobal<OwnProps>(
       const scheduledIds = selectScheduledIds(global, chatId, threadId);
       messagesCount = scheduledIds?.length;
     } else if (messageListType === 'thread' && threadId !== MAIN_THREAD_ID) {
-      const threadInfo = selectThreadInfo(global, chatId, threadId);
-      messagesCount = threadInfo?.messagesCount || 0;
+      messagesCount = selectThreadMessagesCount(global, chatId, threadId);
     }
 
-    const typingStatus = selectThreadParam(global, chatId, threadId, 'typingStatus');
+    const typingStatusByPeerId = selectThreadLocalStateParam(global, chatId, threadId, 'typingStatusByPeerId');
 
     const emojiStatus = peer?.emojiStatus;
     const emojiStatusSticker = emojiStatus && selectCustomEmoji(global, emojiStatus.documentId);
     const emojiStatusSlug = emojiStatus?.type === 'collectible' ? emojiStatus.slug : undefined;
 
-    const isSavedDialog = getIsSavedDialog(chatId, threadId, global.currentUserId);
-
     return {
-      typingStatus,
+      typingStatusByPeerId,
       isLeftColumnShown,
       isRightColumnShown: selectIsRightColumnShown(global, isMobile),
       isSelectModeActive: selectIsInSelectMode(global),
-      audioMessage,
       chat,
       messagesCount,
       isChatWithSelf: selectIsChatWithSelf(global, chatId),

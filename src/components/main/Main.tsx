@@ -2,18 +2,19 @@ import '../../global/actions/all';
 
 import {
   beginHeavyAnimation,
-  memo, useEffect, useLayoutEffect,
+  memo, onFullyIdle, useEffect, useLayoutEffect,
   useRef, useState,
 } from '../../lib/teact/teact';
-import { addExtraClass } from '../../lib/teact/teact-dom';
+import { addExtraClass, setExtraStyles } from '../../lib/teact/teact-dom';
 import { getActions, getGlobal, withGlobal } from '../../global';
 
-import type { ApiChatFolder, ApiLimitTypeWithModal, ApiUser } from '../../api/types';
+import type { ApiChatFolder, ApiLimitTypeWithModal, ApiStarGiftAuctionState, ApiUser } from '../../api/types';
 import type { TabState } from '../../global/types';
 
-import { BASE_EMOJI_KEYWORD_LANG, DEBUG, INACTIVE_MARKER } from '../../config';
+import { BASE_EMOJI_KEYWORD_LANG, DEBUG, FOLDERS_POSITION_LEFT, INACTIVE_MARKER } from '../../config';
 import { requestNextMutation } from '../../lib/fasterdom/fasterdom';
 import {
+  selectAreFoldersPresent,
   selectCanAnimateInterface,
   selectChatFolder,
   selectChatMessage,
@@ -24,21 +25,23 @@ import {
   selectIsMediaViewerOpen,
   selectIsReactionPickerOpen,
   selectIsRightColumnShown,
-  selectIsServiceChatReady,
   selectIsStoryViewerOpen,
   selectPerformanceSettingsValue,
+  selectTabSelectedGiftAuction,
   selectTabState,
   selectUser,
 } from '../../global/selectors';
 import { selectSharedSettings } from '../../global/selectors/sharedState';
 import { IS_TAURI } from '../../util/browser/globalEnvironment';
-import { IS_ANDROID, IS_WAVE_TRANSFORM_SUPPORTED } from '../../util/browser/windowEnvironment';
+import { IS_ANDROID, IS_MAC_OS, IS_WAVE_TRANSFORM_SUPPORTED } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 import { waitForTransitionEnd } from '../../util/cssAnimationEndListeners';
 import { processDeepLink } from '../../util/deeplink';
 import { Bundles, loadBundle } from '../../util/moduleLoader';
 import { parseInitialLocationHash, parseLocationHash } from '../../util/routing';
 import updateIcon from '../../util/updateIcon';
+import { REM } from '../common/helpers/mediaDimensions';
+import { updateTopReserveWithScrollCompensation } from '../middle/helpers/messageListReserves';
 
 import useInterval from '../../hooks/schedulers/useInterval';
 import useTimeout from '../../hooks/schedulers/useTimeout';
@@ -53,6 +56,7 @@ import useSyncEffect from '../../hooks/useSyncEffect';
 import useBackgroundMode from '../../hooks/window/useBackgroundMode';
 import useBeforeUnload from '../../hooks/window/useBeforeUnload';
 import { useFullscreenStatus } from '../../hooks/window/useFullscreen';
+import { PANE_GAP_REM, type PaneState } from '../middle/hooks/useHeaderPane';
 
 import ActiveCallHeader from '../calls/ActiveCallHeader.async';
 import GroupCall from '../calls/group/GroupCall.async';
@@ -62,6 +66,7 @@ import CustomEmojiSetsModal from '../common/CustomEmojiSetsModal.async';
 import DeleteMessageModal from '../common/DeleteMessageModal.async';
 import StickerSetModal from '../common/StickerSetModal.async';
 import UnreadCount from '../common/UnreadCounter';
+import Wallpaper from '../common/Wallpaper';
 import LeftColumn from '../left/LeftColumn';
 import MediaViewer from '../mediaViewer/MediaViewer.async';
 import ReactionPicker from '../middle/message/reactions/ReactionPicker.async';
@@ -77,24 +82,24 @@ import ThreadWorkspace from '../thread/ThreadWorkspace';
 import AttachBotRecipientPicker from './AttachBotRecipientPicker.async';
 import BotTrustModal from './BotTrustModal.async';
 import DeleteFolderDialog from './DeleteFolderDialog.async';
-import Dialogs from './Dialogs.async';
+import Dialogs from './Dialogs';
 import DownloadManager from './DownloadManager';
 import DraftRecipientPicker from './DraftRecipientPicker.async';
+import FoldersSidebar from './FoldersSidebar';
 import ForwardRecipientPicker from './ForwardRecipientPicker.async';
 import GameModal from './GameModal';
 import HistoryCalendar from './HistoryCalendar.async';
 import NewContactModal from './NewContactModal.async';
-import Notifications from './Notifications.async';
 import PremiumLimitReachedModal from './premium/common/PremiumLimitReachedModal.async';
 import GiveawayModal from './premium/GiveawayModal.async';
 import PremiumMainModal from './premium/PremiumMainModal.async';
 import StarsGiftingPickerModal from './premium/StarsGiftingPickerModal.async';
-import SafeLinkModal from './SafeLinkModal.async';
 import ConfettiContainer from './visualEffects/ConfettiContainer';
 import SnapEffectContainer from './visualEffects/SnapEffectContainer';
 import WaveContainer from './visualEffects/WaveContainer';
 
 import './Main.scss';
+import backgroundStyles from '../../styles/_patternBackground.module.scss';
 
 export interface OwnProps {
   isMobile?: boolean;
@@ -109,15 +114,11 @@ type StateProps = {
   isMediaViewerOpen: boolean;
   isStoryViewerOpen: boolean;
   isForwardModalOpen: boolean;
-  hasNotifications: boolean;
-  hasDialogs: boolean;
-  safeLinkModalUrl?: string;
   isHistoryCalendarOpen: boolean;
   shouldSkipHistoryAnimations?: boolean;
   openedStickerSetShortName?: string;
   openedCustomEmojiSetIds?: string[];
   activeGroupCallId?: string;
-  isServiceChatReady?: boolean;
   wasTimeFormatSetManually?: boolean;
   isPhoneCallActive?: boolean;
   addedSetIds?: string[];
@@ -131,6 +132,7 @@ type StateProps = {
   botTrustRequest?: TabState['botTrustRequest'];
   botTrustRequestBot?: ApiUser;
   requestedAttachBotInChat?: TabState['requestedAttachBotInChat'];
+  requestedBotStartGroup?: TabState['requestedBotStartGroup'];
   requestedDraft?: TabState['requestedDraft'];
   limitReached?: ApiLimitTypeWithModal;
   deleteFolderDialog?: ApiChatFolder;
@@ -146,10 +148,14 @@ type StateProps = {
   isSynced?: boolean;
   isAccountFrozen?: boolean;
   isAppConfigLoaded?: boolean;
+  isFoldersSidebarShown: boolean;
+  diceEmojies?: string[];
+  selectedGiftAuction?: ApiStarGiftAuctionState;
 };
 
 const APP_OUTDATED_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
 const CALL_BUNDLE_LOADING_DELAY_MS = 5000; // 5 sec
+const EDITOR_BUNDLE_LOADING_DELAY_MS = 10000; // 10 sec
 
 let DEBUG_isLogged = false;
 
@@ -161,16 +167,12 @@ const Main = ({
   isMediaViewerOpen,
   isStoryViewerOpen,
   isForwardModalOpen,
-  hasNotifications,
-  hasDialogs,
   activeGroupCallId,
-  safeLinkModalUrl,
   isHistoryCalendarOpen,
   shouldSkipHistoryAnimations,
   limitReached,
   openedStickerSetShortName,
   openedCustomEmojiSetIds,
-  isServiceChatReady,
   withInterfaceAnimations,
   wasTimeFormatSetManually,
   addedSetIds,
@@ -184,6 +186,7 @@ const Main = ({
   botTrustRequest,
   botTrustRequestBot,
   requestedAttachBotInChat,
+  requestedBotStartGroup,
   requestedDraft,
   isPremiumModalOpen,
   isGiveawayModalOpen,
@@ -200,6 +203,9 @@ const Main = ({
   currentUserId,
   isAccountFrozen,
   isAppConfigLoaded,
+  isFoldersSidebarShown,
+  diceEmojies,
+  selectedGiftAuction,
 }: OwnProps & StateProps) => {
   const {
     initMain,
@@ -210,14 +216,16 @@ const Main = ({
     loadNotificationExceptions,
     updateIsOnline,
     onTabFocusChange,
-    loadTopInlineBots,
+    loadTopPeers,
     loadEmojiKeywords,
     loadCountryList,
     loadAvailableReactions,
     loadStickerSets,
+    loadDiceStickers,
     loadPremiumGifts,
     loadTonGifts,
     loadStarGifts,
+    loadMyUniqueGifts,
     loadDefaultTopicIcons,
     loadAddedStickers,
     loadFavoriteStickers,
@@ -225,7 +233,6 @@ const Main = ({
     ensureTimeFormat,
     closeStickerSetModal,
     closeCustomEmojiSets,
-    checkVersionNotification,
     loadConfig,
     loadAppConfig,
     loadAttachBots,
@@ -248,10 +255,10 @@ const Main = ({
     loadPeerColors,
     loadSavedReactionTags,
     loadTimezones,
+    loadAiComposeTones,
     loadQuickReplies,
     loadStarStatus,
     loadAvailableEffects,
-    loadTopBotApps,
     loadPaidReactionPrivacy,
     loadPasswordInfo,
     loadBotFreezeAppeal,
@@ -259,6 +266,9 @@ const Main = ({
     loadAllStories,
     loadAllHiddenStories,
     loadContentSettings,
+    loadGiftAuction,
+    loadPromoData,
+    loadActiveGiftAuctions,
   } = getActions();
 
   if (DEBUG && !DEBUG_isLogged) {
@@ -274,6 +284,12 @@ const Main = ({
     void loadBundle(Bundles.Calls);
   }, CALL_BUNDLE_LOADING_DELAY_MS);
 
+  useTimeout(() => {
+    onFullyIdle(() => {
+      void loadBundle(Bundles.Editor);
+    });
+  }, isSynced ? EDITOR_BUNDLE_LOADING_DELAY_MS : undefined);
+
   const containerRef = useRef<HTMLDivElement>();
   const leftColumnRef = useRef<HTMLDivElement>();
 
@@ -287,6 +303,12 @@ const Main = ({
       toggleLeftColumn();
     }
   }, [isDesktop, isLeftColumnOpen, isMiddleColumnOpen, isMobile, toggleLeftColumn]);
+
+  useEffect(() => {
+    if (IS_TAURI && IS_MAC_OS) {
+      window.tauri?.markTitleBarOverlay(true, isMobile);
+    }
+  }, [isMobile]);
 
   useInterval(checkAppVersion, isMasterTab ? APP_OUTDATED_TIMEOUT_MS : undefined, true);
 
@@ -311,19 +333,21 @@ const Main = ({
       loadAllChats({ listType: 'saved' });
       loadAllStories();
       loadAllHiddenStories();
+      loadPromoData();
       loadContentSettings();
       loadRecentReactions();
       loadDefaultTagReactions();
       loadAttachBots();
       loadNotificationSettings();
       loadNotificationExceptions();
-      loadTopInlineBots();
+      loadTopPeers({ category: 'botsInline' });
       loadTopReactions();
       loadStarStatus();
       loadEmojiKeywords({ language: BASE_EMOJI_KEYWORD_LANG });
       loadFeaturedEmojiStickers();
       loadSavedReactionTags();
-      loadTopBotApps();
+      loadTopPeers({ category: 'botsApp' });
+      loadTopPeers({ category: 'botsGuestChat' });
       loadPaidReactionPrivacy();
       loadDefaultTopicIcons();
       loadAnimatedEmojis();
@@ -333,11 +357,14 @@ const Main = ({
       loadPremiumGifts();
       loadTonGifts();
       loadStarGifts();
+      loadMyUniqueGifts();
       loadAvailableEffects();
       loadBirthdayNumbersStickers();
       loadRestrictedEmojiStickers();
       loadQuickReplies();
       loadTimezones();
+      loadAiComposeTones();
+      loadActiveGiftAuctions();
     }
   }, [isMasterTab, isSynced, isAppConfigLoaded, isAccountFrozen]);
 
@@ -358,7 +385,7 @@ const Main = ({
 
       loadCountryList({ langCode: lang.code });
     }
-  }, [lang, isMasterTab]);
+  }, [lang.code, isMasterTab]);
 
   // Re-fetch cached saved emoji for `localDb`
   useEffect(() => {
@@ -385,15 +412,14 @@ const Main = ({
   }, [addedSetIds, addedCustomEmojiIds, isMasterTab, isSynced, isAppConfigLoaded, isAccountFrozen]);
 
   useEffect(() => {
+    if (isMasterTab && isSynced && isAppConfigLoaded && !isAccountFrozen && diceEmojies) {
+      loadDiceStickers();
+    }
+  }, [isMasterTab, isSynced, isAppConfigLoaded, isAccountFrozen, diceEmojies]);
+
+  useEffect(() => {
     loadBotFreezeAppeal();
   }, [isAppConfigLoaded]);
-
-  // Check version when service chat is ready
-  useEffect(() => {
-    if (isServiceChatReady && isMasterTab) {
-      checkVersionNotification();
-    }
-  }, [isServiceChatReady, isMasterTab]);
 
   // Ensure time format
   useEffect(() => {
@@ -409,7 +435,7 @@ const Main = ({
 
     const parsedInitialLocationHash = parseInitialLocationHash();
     if (parsedInitialLocationHash?.tgaddr) {
-      processDeepLink(decodeURIComponent(parsedInitialLocationHash.tgaddr));
+      processDeepLink(decodeURIComponent(parsedInitialLocationHash.tgaddr), { type: 'inner' });
     }
   }, [isSynced]);
 
@@ -417,7 +443,7 @@ const Main = ({
     try {
       const url = event.payload || '';
       const decodedUrl = decodeURIComponent(url);
-      processDeepLink(decodedUrl);
+      processDeepLink(decodedUrl, { type: 'inner' });
     } catch (e) {
       if (DEBUG) {
         // eslint-disable-next-line no-console
@@ -436,6 +462,15 @@ const Main = ({
       type: parsedLocationHash.type,
     });
   }, [currentUserId]);
+
+  // Refresh gift auction subscription
+  const auctionTimeout = selectedGiftAuction?.state.type === 'active' ? selectedGiftAuction?.timeout : undefined;
+  const auctionGiftId = selectedGiftAuction?.gift.id;
+  useInterval(() => {
+    if (auctionGiftId) {
+      loadGiftAuction({ giftId: auctionGiftId });
+    }
+  }, auctionTimeout ? auctionTimeout * 1000 : undefined);
 
   // Restore Transition slide class after async rendering
   useLayoutEffect(() => {
@@ -480,6 +515,7 @@ const Main = ({
   useShowTransition({
     ref: containerRef,
     isOpen: isRightColumnOpen,
+    noMountTransition: true,
     noCloseTransition: shouldSkipHistoryAnimations,
     prefix: 'right-column-',
   });
@@ -511,12 +547,17 @@ const Main = ({
     });
   }, [isMiddleColumnOpen, isRightColumnOpen, noRightColumnAnimation, forceUpdate]);
 
+  const bgClassName = buildClassName(
+    !noRightColumnAnimation && backgroundStyles.withTransition,
+  );
+
   const className = buildClassName(
     willAnimateLeftColumnRef.current && 'left-column-animating',
     willAnimateRightColumnRef.current && 'right-column-animating',
     isNarrowMessageList && 'narrow-message-list',
     shouldSkipHistoryAnimations && 'history-animation-disabled',
     isFullscreen && 'is-fullscreen',
+    isFoldersSidebarShown && 'folders-sidebar-visible',
   );
 
   const handleBlur = useLastCallback(() => {
@@ -533,6 +574,28 @@ const Main = ({
     updateIcon(false);
   });
 
+  const playerReserveRef = useRef(0);
+  const handlePlayerPaneStateChange = useLastCallback(({ height }: PaneState) => {
+    const main = containerRef.current;
+    const middleColumn = document.getElementById('MiddleColumn');
+    if (!main || !middleColumn) return;
+    const occupiedHeight = height ? height + PANE_GAP_REM * REM : 0;
+    const heightDelta = occupiedHeight - playerReserveRef.current;
+    if (!heightDelta) return;
+    playerReserveRef.current = occupiedHeight;
+    const parkedShift = occupiedHeight ? '0px' : 'var(--middle-panel-inline-padding)';
+    updateTopReserveWithScrollCompensation(middleColumn, heightDelta, () => {
+      setExtraStyles(main, {
+        '--middle-header-player-height': `${occupiedHeight}px`,
+        '--middle-header-player-parked': parkedShift,
+      });
+      setExtraStyles(middleColumn, {
+        '--middle-header-player-height': `${occupiedHeight}px`,
+        '--middle-header-player-parked': parkedShift,
+      });
+    }, [main]);
+  });
+
   const handleStickerSetModalClose = useLastCallback(() => {
     closeStickerSetModal();
   });
@@ -547,20 +610,31 @@ const Main = ({
   usePreventPinchZoomGesture(isMediaViewerOpen || isStoryViewerOpen);
 
   return (
-    <div ref={containerRef} id="Main" className={className}>
-      <LeftColumn ref={leftColumnRef} />
-      <MiddleColumn leftColumnRef={leftColumnRef} isMobile={isMobile} />
+    <Wallpaper
+      containerRef={containerRef}
+      id="Main"
+      className={className}
+      bgClassName={bgClassName}
+    >
+      {IS_TAURI && IS_MAC_OS && (
+        <div className="tauri-drag-region" data-tauri-drag-region />
+      )}
+      <FoldersSidebar isMobile={isMobile} isActive={isFoldersSidebarShown} />
+      <LeftColumn ref={leftColumnRef} isFoldersSidebarShown={isFoldersSidebarShown} />
+      <MiddleColumn
+        leftColumnRef={leftColumnRef}
+        isMobile={isMobile}
+        onPlayerPaneStateChange={handlePlayerPaneStateChange}
+      />
       <RightColumn isMobile={isMobile} />
       <ThreadWorkspace />
       <MediaViewer isOpen={isMediaViewerOpen} />
       <StoryViewer isOpen={isStoryViewerOpen} />
       <ForwardRecipientPicker isOpen={isForwardModalOpen} />
       <DraftRecipientPicker requestedDraft={requestedDraft} />
-      <Notifications isOpen={hasNotifications} />
-      <Dialogs isOpen={hasDialogs} />
+      <Dialogs />
       <AudioPlayer noUi />
       <ModalContainer />
-      <SafeLinkModal url={safeLinkModalUrl} />
       <HistoryCalendar isOpen={isHistoryCalendarOpen} />
       <StickerSetModal
         isOpen={Boolean(openedStickerSetShortName)}
@@ -591,7 +665,10 @@ const Main = ({
         type={botTrustRequest?.type}
         shouldRequestWriteAccess={botTrustRequest?.shouldRequestWriteAccess}
       />
-      <AttachBotRecipientPicker requestedAttachBotInChat={requestedAttachBotInChat} />
+      <AttachBotRecipientPicker
+        requestedAttachBotInChat={requestedAttachBotInChat}
+        requestedBotStartGroup={requestedBotStartGroup}
+      />
       <MessageListHistoryHandler />
       <PremiumMainModal isOpen={isPremiumModalOpen} />
       <GiveawayModal isOpen={isGiveawayModalOpen} />
@@ -602,7 +679,7 @@ const Main = ({
       <DeleteFolderDialog folder={deleteFolderDialog} />
       <ReactionPicker isOpen={isReactionPickerOpen} />
       <DeleteMessageModal isOpen={isDeleteMessageModalOpen} />
-    </div>
+    </Wallpaper>
   );
 };
 
@@ -615,16 +692,14 @@ export default memo(withGlobal<OwnProps>(
     const {
       botTrustRequest,
       requestedAttachBotInChat,
+      requestedBotStartGroup,
       requestedDraft,
-      safeLinkModalUrl,
       openedStickerSetShortName,
       openedCustomEmojiSetIds,
       shouldSkipHistoryAnimations,
       openedGame,
       isLeftColumnShown,
       historyCalendarSelectedAt,
-      notifications,
-      dialogs,
       newContact,
       ratingPhoneCall,
       premiumModal,
@@ -637,7 +712,9 @@ export default memo(withGlobal<OwnProps>(
       deleteFolderDialogModal,
     } = selectTabState(global);
 
-    const { wasTimeFormatSetManually } = selectSharedSettings(global);
+    const selectedGiftAuction = selectTabSelectedGiftAuction(global);
+
+    const { wasTimeFormatSetManually, foldersPosition } = selectSharedSettings(global);
 
     const gameMessage = openedGame && selectChatMessage(global, openedGame.chatId, openedGame.messageId);
     const gameTitle = gameMessage?.content.game?.title;
@@ -657,14 +734,10 @@ export default memo(withGlobal<OwnProps>(
       isStoryViewerOpen: selectIsStoryViewerOpen(global),
       isForwardModalOpen: selectIsForwardModalOpen(global),
       isReactionPickerOpen: selectIsReactionPickerOpen(global),
-      hasNotifications: Boolean(notifications.length),
-      hasDialogs: Boolean(dialogs.length),
-      safeLinkModalUrl,
       isHistoryCalendarOpen: Boolean(historyCalendarSelectedAt),
       shouldSkipHistoryAnimations,
       openedStickerSetShortName,
       openedCustomEmojiSetIds,
-      isServiceChatReady: selectIsServiceChatReady(global),
       activeGroupCallId: isMasterTab ? global.groupCalls.activeGroupCallId : undefined,
       withInterfaceAnimations: selectCanAnimateInterface(global),
       wasTimeFormatSetManually,
@@ -679,6 +752,7 @@ export default memo(withGlobal<OwnProps>(
       botTrustRequest,
       botTrustRequestBot: botTrustRequest && selectUser(global, botTrustRequest.botId),
       requestedAttachBotInChat,
+      requestedBotStartGroup,
       isCurrentUserPremium: selectIsCurrentUserPremium(global),
       isPremiumModalOpen: premiumModal?.isOpen,
       isGiveawayModalOpen: giveawayModal?.isOpen,
@@ -694,6 +768,9 @@ export default memo(withGlobal<OwnProps>(
       isSynced: global.isSynced,
       isAccountFrozen,
       isAppConfigLoaded: global.isAppConfigLoaded,
+      isFoldersSidebarShown: foldersPosition === FOLDERS_POSITION_LEFT && !isMobile && selectAreFoldersPresent(global),
+      diceEmojies: global.appConfig?.diceEmojies,
+      selectedGiftAuction,
     };
   },
 )(Main));

@@ -10,9 +10,11 @@ import buildClassName from '../../util/buildClassName';
 import { copyTextToClipboard } from '../../util/clipboard';
 import { isBetween } from '../../util/math';
 
+import useLang from '../../hooks/useLang';
 import useOldLang from '../../hooks/useOldLang';
 import usePreviousDeprecated from '../../hooks/usePreviousDeprecated';
 
+import Island, { IslandDescription, IslandTitle } from '../gili/layout/Island';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import Draggable from '../ui/Draggable';
 import ListItem from '../ui/ListItem';
@@ -45,7 +47,8 @@ const ManageUsernames: FC<OwnProps> = ({
     sortUsernames,
     sortChatUsernames,
   } = getActions();
-  const lang = useOldLang();
+  const oldLang = useOldLang();
+  const lang = useLang();
   const [usernameForConfirm, setUsernameForConfirm] = useState<ApiUsername | undefined>();
 
   const usernameList = useMemo(() => usernames.map(({ username }) => username), [usernames]);
@@ -71,9 +74,9 @@ const ManageUsernames: FC<OwnProps> = ({
   const handleCopyUsername = useCallback((value: string) => {
     copyTextToClipboard(`@${value}`);
     showNotification({
-      message: lang('UsernameCopied'),
+      message: oldLang('UsernameCopied'),
     });
-  }, [lang, showNotification]);
+  }, [oldLang, showNotification]);
 
   const handleUsernameClick = useCallback((data: ApiUsername) => {
     if (data.isEditable) {
@@ -145,10 +148,10 @@ const ManageUsernames: FC<OwnProps> = ({
 
   return (
     <>
-      <div className={styles.container}>
-        <h4 className={styles.header} dir={lang.isRtl ? 'rtl' : undefined}>
-          {lang('lng_usernames_subtitle')}
-        </h4>
+      <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>
+        {oldLang('lng_usernames_subtitle')}
+      </IslandTitle>
+      <Island className={styles.container}>
         <div className={styles.sortableContainer} style={`height: ${(usernames.length) * USERNAME_HEIGHT_PX}px`}>
           {usernames.map((usernameData, i) => {
             const isDragged = state.draggedIndex === i;
@@ -165,7 +168,7 @@ const ManageUsernames: FC<OwnProps> = ({
                 onDrag={handleDrag}
                 onDragEnd={handleDragEnd}
                 style={`top: ${isDragged ? draggedTop : top}px;`}
-                knobStyle={`${lang.isRtl ? 'left' : 'right'}: 3rem;`}
+                knobStyle="inset-inline-end: 3rem;"
                 isDisabled={!usernameData.isActive}
               >
                 <ListItem
@@ -180,7 +183,7 @@ const ManageUsernames: FC<OwnProps> = ({
                       handler: () => {
                         handleCopyUsername(usernameData.username);
                       },
-                      title: lang('Copy'),
+                      title: oldLang('Copy'),
                       icon: 'copy',
                     },
                   ]}
@@ -193,22 +196,22 @@ const ManageUsernames: FC<OwnProps> = ({
                     @
                     {usernameData.username}
                   </span>
-                  <span className="subtitle">{lang(subtitle)}</span>
+                  <span className="subtitle">{oldLang(subtitle)}</span>
                 </ListItem>
               </Draggable>
             );
           })}
         </div>
-        <p className={styles.description} dir={lang.isRtl ? 'rtl' : undefined}>
-          {lang('lng_usernames_description')}
-        </p>
-      </div>
+      </Island>
+      <IslandDescription dir={lang.isRtl ? 'rtl' : undefined}>
+        {oldLang('lng_usernames_description')}
+      </IslandDescription>
       <ConfirmDialog
         isOpen={Boolean(usernameForConfirm)}
         onClose={closeConfirmUsernameDialog}
-        title={lang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertTitle' : 'Username.ActivateAlertTitle')}
-        text={lang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertText' : 'Username.ActivateAlertText')}
-        confirmLabel={lang(usernameForConfirm?.isActive
+        title={oldLang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertTitle' : 'Username.ActivateAlertTitle')}
+        text={oldLang(usernameForConfirm?.isActive ? 'Username.DeactivateAlertText' : 'Username.ActivateAlertText')}
+        confirmLabel={oldLang(usernameForConfirm?.isActive
           ? 'Username.DeactivateAlertHide'
           : 'Username.ActivateAlertShow')}
         confirmHandler={handleUsernameToggle}

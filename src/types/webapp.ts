@@ -1,7 +1,5 @@
 import type { ApiInputMessageReplyInfo } from '../api/types';
 
-export type WebAppModalStateType = 'fullScreen' | 'maximized' | 'minimized';
-
 export type WebApp = {
   url: string;
   requestUrl?: string;
@@ -10,6 +8,9 @@ export type WebApp = {
   buttonText: string;
   peerId?: string;
   queryId?: string;
+  isSameOrigin?: true;
+  isJoinChat?: boolean;
+  isJoinChatBroadcast?: boolean;
   slug?: string;
   replyInfo?: ApiInputMessageReplyInfo;
   canSendMessages?: boolean;
@@ -50,6 +51,8 @@ export type WebAppButtonOptions = {
   color: string;
   text_color: string;
   is_progress_visible: boolean;
+  icon_custom_emoji_id?: string;
+  has_shine_effect?: boolean;
   position?: 'left' | 'right' | 'top' | 'bottom';
 };
 
@@ -237,14 +240,14 @@ interface WebAppOutboundEventMap {
   location_checked:
     | { available: false }
     | {
-      available: boolean;
+      available: true;
       access_requested: boolean;
       access_granted?: boolean;
     };
   location_requested:
-    | { available: boolean }
+    | { available: false }
     | {
-      available: boolean;
+      available: true;
       latitude: number;
       longitude: number;
       altitude: number | null;
@@ -328,11 +331,11 @@ interface WebAppOutboundEventMap {
 }
 
 export type WebAppInboundEvent =
-{ [K in keyof WebAppInboundEventMap]:
-  WebAppEvent<K, WebAppInboundEventMap[K]>
-}[keyof WebAppInboundEventMap];
+  { [K in keyof WebAppInboundEventMap]:
+    WebAppEvent<K, WebAppInboundEventMap[K]>
+  }[keyof WebAppInboundEventMap];
 
 export type WebAppOutboundEvent =
-{ [K in keyof WebAppOutboundEventMap]:
-  WebAppEvent<K, WebAppOutboundEventMap[K]>
-}[keyof WebAppOutboundEventMap];
+  { [K in keyof WebAppOutboundEventMap]:
+    WebAppEvent<K, WebAppOutboundEventMap[K]>
+  }[keyof WebAppOutboundEventMap];

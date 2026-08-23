@@ -1,19 +1,27 @@
 import type { ApiSticker, ApiStickerSet, ApiStickerSetInfo } from '../../api/types';
-import type { GlobalState, TabArgs } from '../types';
+import type { GlobalState } from '../types';
 
 import { RESTRICTED_EMOJI_SET_ID, TON_CURRENCY_CODE } from '../../config';
-import { getCurrentTabId } from '../../util/establishMultitabRole';
+import { hasMixedEmojiSkinTones, removeEmojiSkinTone } from '../../util/emoji/skinTone';
 import { convertCurrencyFromBaseUnit } from '../../util/formatCurrency';
-import { selectTabState } from './tabs';
 import { selectIsCurrentUserPremium } from './users';
 
+// Duration in days
+const MONTH = 30;
+const QUARTER_YEAR = MONTH * 3;
+const HALF_YEAR = MONTH * 6;
+const YEAR = MONTH * 12;
+const TWO_YEARS = MONTH * 24;
+
+const DURATION_DELTA = 5;
+
 // https://github.com/DrKLO/Telegram/blob/c319639e9a4dff2f22da6762dcebd12d49f5afa1/TMessagesProj/src/main/java/org/telegram/ui/Components/Premium/boosts/cells/msg/GiveawayMessageCell.java#L59
-const MONTH_EMOTICON: Record<number, string> = {
-  1: `${1}\u{FE0F}\u20E3`,
-  3: `${2}\u{FE0F}\u20E3`,
-  6: `${3}\u{FE0F}\u20E3`,
-  12: `${4}\u{FE0F}\u20E3`,
-  24: `${5}\u{FE0F}\u20E3`,
+const DURATION_EMOTICON: Record<number, string> = {
+  [MONTH]: `${1}\u{FE0F}\u20E3`, // 1 month
+  [QUARTER_YEAR]: `${2}\u{FE0F}\u20E3`, // 3 months
+  [HALF_YEAR]: `${3}\u{FE0F}\u20E3`, // 6 months
+  [YEAR]: `${4}\u{FE0F}\u20E3`, // 12 months
+  [TWO_YEARS]: `${5}\u{FE0F}\u20E3`, // 24 months
 };
 
 const STAR_EMOTICON: Record<number, string> = {
@@ -31,20 +39,6 @@ const TON_EMOTICON: Record<number, string> = {
 export function selectIsStickerFavorite<T extends GlobalState>(global: T, sticker: ApiSticker) {
   const { stickers } = global.stickers.favorite;
   return stickers && stickers.some(({ id }) => id === sticker.id);
-}
-
-export function selectCurrentStickerSearch<T extends GlobalState>(
-  global: T,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-) {
-  return selectTabState(global, tabId).stickerSearch;
-}
-
-export function selectCurrentGifSearch<T extends GlobalState>(
-  global: T,
-  ...[tabId = getCurrentTabId()]: TabArgs<T>
-) {
-  return selectTabState(global, tabId).gifSearch;
 }
 
 export function selectStickerSet<T extends GlobalState>(global: T, id: string | ApiStickerSetInfo) {
@@ -129,15 +123,21 @@ function cleanEmoji(emoji: string) {
   return emoji.replace('\ufe0f', '');
 }
 
+function cleanAnimatedEmoji(emoji: string) {
+  return cleanEmoji(hasMixedEmojiSkinTones(emoji) ? emoji : removeEmojiSkinTone(emoji));
+}
+
 export function selectAnimatedEmoji<T extends GlobalState>(global: T, emoji: string) {
   const { animatedEmojis } = global;
   if (!animatedEmojis || !animatedEmojis.stickers) {
     return undefined;
   }
 
-  const cleanedEmoji = cleanEmoji(emoji);
+  const cleanedEmoji = cleanAnimatedEmoji(emoji);
 
-  return animatedEmojis.stickers.find((sticker) => sticker.emoji === emoji || sticker.emoji === cleanedEmoji);
+  return animatedEmojis.stickers.find((sticker) => (
+    sticker.emoji && cleanAnimatedEmoji(sticker.emoji) === cleanedEmoji
+  ));
 }
 
 export function selectRestrictedEmoji<T extends GlobalState>(global: T, emoji: string) {
@@ -161,13 +161,15 @@ export function selectAnimatedEmojiEffect<T extends GlobalState>(global: T, emoj
     return undefined;
   }
 
-  const cleanedEmoji = cleanEmoji(emoji);
+  const cleanedEmoji = cleanAnimatedEmoji(emoji);
 
-  return animatedEmojiEffects.stickers.find((sticker) => sticker.emoji === emoji || sticker.emoji === cleanedEmoji);
+  return animatedEmojiEffects.stickers.find((sticker) => (
+    sticker.emoji && cleanAnimatedEmoji(sticker.emoji) === cleanedEmoji
+  ));
 }
 
 export function selectAnimatedEmojiSound<T extends GlobalState>(global: T, emoji: string) {
-  return global?.appConfig.emojiSounds[cleanEmoji(emoji)];
+  return global?.appConfig.emojiSounds[cleanAnimatedEmoji(emoji)];
 }
 
 export function selectIsAlwaysHighPriorityEmoji<T extends GlobalState>(
@@ -178,10 +180,29 @@ export function selectIsAlwaysHighPriorityEmoji<T extends GlobalState>(
     || stickerSet.id === RESTRICTED_EMOJI_SET_ID;
 }
 
-export function selectGiftStickerForDuration<T extends GlobalState>(global: T, duration = 1) {
+function findDurationEmoji(days: number): string {
+  if (days <= MONTH) {
+    return DURATION_EMOTICON[MONTH];
+  }
+  if (days <= QUARTER_YEAR) {
+    return DURATION_EMOTICON[QUARTER_YEAR];
+  }
+  if (days <= HALF_YEAR + DURATION_DELTA) {
+    return DURATION_EMOTICON[HALF_YEAR];
+  }
+  if (days <= YEAR + DURATION_DELTA) {
+    return DURATION_EMOTICON[YEAR];
+  }
+
+  return DURATION_EMOTICON[TWO_YEARS];
+}
+
+export function selectGiftStickerForDuration<T extends GlobalState>(global: T, days = 30) {
   const stickers = global.premiumGifts?.stickers;
   if (!stickers) return undefined;
-  const emoji = MONTH_EMOTICON[duration];
+
+  const emoji = findDurationEmoji(days);
+
   return stickers.find((sticker) => sticker.emoji === emoji) || stickers[0];
 }
 
@@ -221,4 +242,29 @@ export function selectGiftStickerForTon<T extends GlobalState>(global: T, amount
 
 export function selectCustomEmoji<T extends GlobalState>(global: T, documentId: string) {
   return global.customEmojis.byId[documentId];
+}
+
+export function selectIdleDiceSticker<T extends GlobalState>(global: T, diceEmoji: string) {
+  const { diceSetIdByEmoji } = global.stickers;
+  if (!diceSetIdByEmoji) return undefined;
+  const diceSetId = diceSetIdByEmoji[diceEmoji];
+  if (!diceSetId) return undefined;
+
+  const diceSet = global.stickers.setsById[diceSetId];
+  if (!diceSet) return undefined;
+
+  return diceSet.stickers?.find((sticker) => sticker.emoji === '#\u20E3');
+}
+
+export function selectDiceSticker<T extends GlobalState>(global: T, diceEmoji: string, value: number) {
+  const { diceSetIdByEmoji } = global.stickers;
+  if (!diceSetIdByEmoji) return undefined;
+  const diceSetId = diceSetIdByEmoji[diceEmoji];
+  if (!diceSetId) return undefined;
+
+  const diceSet = global.stickers.setsById[diceSetId];
+  if (!diceSet) return undefined;
+
+  const numberEmoji = `${value}\u20E3`;
+  return diceSet.stickers?.find((sticker) => sticker.emoji === numberEmoji);
 }

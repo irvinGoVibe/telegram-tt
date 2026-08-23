@@ -1,3 +1,5 @@
+@use "../../styles/mixins";
+
 .NoMessages {
   display: flex;
   align-items: center;
@@ -5,6 +7,8 @@
 
   width: 100%;
   height: 100%;
+  padding-top: var(--message-list-top-inset);
+  padding-bottom: var(--message-list-bottom-inset);
 
   .no-messages-icon {
     margin: 0 auto 1rem;
@@ -29,7 +33,7 @@
 
     color: #fff;
 
-    background: var(--pattern-color);
+    @include mixins.action-message-bg;
 
     &[dir="rtl"] {
       text-align: right;

@@ -18,7 +18,6 @@ import useHistoryBack from '../../../../hooks/useHistoryBack';
 import useLastCallback from '../../../../hooks/useLastCallback';
 import useOldLang from '../../../../hooks/useOldLang';
 
-import Icon from '../../../common/icons/Icon';
 import PeerPicker from '../../../common/pickers/PeerPicker';
 import FloatingActionButton from '../../../ui/FloatingActionButton';
 import Loading from '../../../ui/Loading';
@@ -138,7 +137,7 @@ const SettingsFoldersChatFilters: FC<OwnProps & StateProps> = ({
   }
 
   return (
-    <div className="Picker settings-folders-chat-list">
+    <div className="Picker settings-folders-chat-list settings-picker-islands">
       <PeerPicker
         categories={shouldHideChatTypes ? undefined : chatTypes}
         itemIds={displayedIds}
@@ -151,6 +150,7 @@ const SettingsFoldersChatFilters: FC<OwnProps & StateProps> = ({
         isSearchable
         withDefaultPadding
         withPeerTypes
+        withIslands
         allowMultiple
         itemInputType="checkbox"
         onSelectedIdsChange={handleSelectedIdsChange}
@@ -162,9 +162,8 @@ const SettingsFoldersChatFilters: FC<OwnProps & StateProps> = ({
         isShown={isTouched}
         onClick={onSaveFilter}
         ariaLabel={lang('Save')}
-      >
-        <Icon name="check" />
-      </FloatingActionButton>
+        iconName="check"
+      />
     </div>
   );
 };

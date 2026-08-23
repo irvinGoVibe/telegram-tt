@@ -15,14 +15,13 @@ import {
 } from '../../../global/selectors';
 import { formatStarsAsIcon } from '../../../util/localization/format';
 
+import useFrozenProps from '../../../hooks/useFrozenProps';
 import useLang from '../../../hooks/useLang';
-// import useTimeout from '../../../hooks/schedulers/useTimeout';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useHeaderPane, { type PaneState } from '../hooks/useHeaderPane';
 
 import Button from '../../ui/Button';
 
-// import CustomEmoji from '../../common/CustomEmoji';
 import styles from './PaidMessageChargePane.module.scss';
 
 type OwnProps = {
@@ -45,27 +44,35 @@ const PaidMessageChargePane: FC<OwnProps & StateProps> = ({
   const lang = useLang();
 
   const {
+    peerId: renderingPeerId,
+    chargedPaidMessageStars: renderingChargedStars,
+    chat: renderingChat,
+  } = useFrozenProps({ peerId, chargedPaidMessageStars, chat }, !isOpen);
+
+  const {
     openChatRefundModal,
   } = getActions();
 
   const { ref, shouldRender } = useHeaderPane({
     isOpen,
+    measureKey: peerId,
+    withResizeObserver: true,
     onStateChange: onPaneStateChange,
   });
 
   const handleRefund = useLastCallback(() => {
-    openChatRefundModal({ userId: peerId });
+    openChatRefundModal({ userId: renderingPeerId });
   });
 
-  if (!shouldRender || !chargedPaidMessageStars) return undefined;
+  if (!shouldRender || !renderingChargedStars) return undefined;
 
-  const peerName = chat ? getPeerTitle(lang, chat) : undefined;
+  const peerName = renderingChat ? getPeerTitle(lang, renderingChat) : undefined;
 
   const message = lang('PaneMessagePaidMessageCharge', {
     peer: peerName,
     amount: formatStarsAsIcon(lang,
-      chargedPaidMessageStars,
-      { asFont: true, className: styles.messageStarIcon, containerClassName: styles.messageStars }),
+      renderingChargedStars,
+      { asFont: true }),
   }, {
     withMarkdown: true,
     withNodes: true,
@@ -73,9 +80,9 @@ const PaidMessageChargePane: FC<OwnProps & StateProps> = ({
 
   return (
     <div ref={ref} className={styles.root}>
-      <div className={styles.message}>
+      <span className={styles.message}>
         {message}
-      </div>
+      </span>
       <Button
         isText
         noForcedUpperCase

@@ -8,6 +8,7 @@ import {
   getMediaFileSize,
   getMediaFormat,
   getMediaHash,
+  getMediaSearchType,
   getMediaThumbUri,
   getPhotoFullDimensions,
   getProfilePhotoMediaHash,
@@ -45,6 +46,8 @@ export const useMediaProps = ({
   const isGif = media?.mediaType === 'video' && media.isGif;
   const isFromSharedMedia = origin === MediaViewerOrigin.SharedMedia;
   const isFromSearch = origin === MediaViewerOrigin.SearchResult;
+
+  const contentType = media && getMediaSearchType(media);
 
   const getMediaOrAvatarHash = useMemo(() => (isFull?: boolean) => {
     if (!media) return undefined;
@@ -101,8 +104,6 @@ export const useMediaProps = ({
 
   const mediaSize = media && getMediaFileSize(media);
 
-  const isLocal = Boolean(localBlobUrl);
-
   const dimensions = useMemo(() => {
     if (isAvatar) {
       return isVideoAvatar ? VIDEO_AVATAR_FULL_DIMENSIONS : AVATAR_FULL_DIMENSIONS;
@@ -133,9 +134,8 @@ export const useMediaProps = ({
     bestImageData,
     bestData,
     dimensions,
-    isFromSharedMedia,
+    contentType,
     isVideoAvatar,
-    isLocal,
     loadProgress,
     mediaSize,
   };

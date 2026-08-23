@@ -1,5 +1,4 @@
-import type BigInt from 'big-integer';
-
+import { buffersEqual, concat } from '../../../util/encoding/buffer';
 import { BinaryReader } from '../extensions';
 
 import {
@@ -11,15 +10,15 @@ import {
 } from '../Helpers';
 
 export class AuthKey {
-  _key?: Buffer;
+  _key?: Uint8Array<ArrayBuffer>;
 
-  _hash?: Buffer;
+  _hash?: Uint8Array<ArrayBuffer>;
 
-  private auxHash?: BigInt.BigInteger;
+  private auxHash?: bigint;
 
-  keyId?: BigInt.BigInteger;
+  keyId?: bigint;
 
-  constructor(value?: Buffer, hash?: Buffer) {
+  constructor(value?: Uint8Array<ArrayBuffer>, hash?: Uint8Array<ArrayBuffer>) {
     if (!hash || !value) {
       return;
     }
@@ -31,7 +30,7 @@ export class AuthKey {
     this.keyId = reader.readLong(false);
   }
 
-  async setKey(value?: Buffer | AuthKey) {
+  async setKey(value?: Uint8Array<ArrayBuffer> | AuthKey) {
     if (!value) {
       this._key = undefined;
       this.auxHash = undefined;
@@ -55,7 +54,7 @@ export class AuthKey {
   }
 
   async waitForKey() {
-    while (!this.keyId) {
+    while (this.keyId === undefined) {
       await sleep(20);
     }
   }
@@ -70,23 +69,19 @@ export class AuthKey {
      * Calculates the new nonce hash based on the current class fields' values
      * @param newNonce
      * @param number
-     * @returns {BigInt.BigInteger}
+     * @returns {bigint}
      */
   async calcNewNonceHash(
-    newNonce: BigInt.BigInteger,
+    newNonce: bigint,
     number: number,
-  ): Promise<BigInt.BigInteger> {
-    if (!this.auxHash) {
+  ): Promise<bigint> {
+    if (this.auxHash === undefined) {
       throw new Error('Auth key not set');
     }
 
     const nonce = toSignedLittleBuffer(newNonce, 32);
-    const n = Buffer.alloc(1);
-    n.writeUInt8(number, 0);
-    const data = Buffer.concat([
-      nonce,
-      Buffer.concat([n, readBufferFromBigInt(this.auxHash, 8, true)]),
-    ]);
+    const n = new Uint8Array([number]);
+    const data = concat(nonce, n, readBufferFromBigInt(this.auxHash, 8, true));
 
     // Calculates the message key from the given data
     const shaData = (await sha1(data)).slice(4, 20);
@@ -94,11 +89,12 @@ export class AuthKey {
   }
 
   equals(other: AuthKey) {
+    const otherKey = other.getKey();
     return (
       other instanceof this.constructor
       && this._key
-      && Buffer.isBuffer(other.getKey())
-      && other.getKey()?.equals(this._key)
+      && otherKey instanceof Uint8Array
+      && buffersEqual(otherKey, this._key)
     );
   }
 }

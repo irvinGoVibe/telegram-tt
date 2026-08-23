@@ -1,6 +1,7 @@
 @use "../../../styles/mixins";
 
 .root {
+  --profile-info-bg: var(--color-background-secondary);
   --rating-outline-color: #000000;
   --rating-text-color: #000000;
 
@@ -10,9 +11,14 @@
   display: grid;
   place-items: center;
 
-  aspect-ratio: 1 / 1;
+  height: var(--right-column-content-width);
 
   color: var(--color-white);
+
+  background-color: var(--profile-info-bg);
+
+  /* stylelint-disable-next-line plugin/no-low-performance-animation-properties */
+  transition: height 0.25s, padding-block 0.25s;
 
   @include mixins.with-vt-type('profileAvatar');
 
@@ -30,6 +36,10 @@
   padding-block: 1.5rem 0;
   color: var(--color-text);
 
+  .info {
+    background-image: linear-gradient(0deg, var(--profile-info-bg) 50%, transparent);
+  }
+
   .userRatingNegativeWrapper,
   .userRatingWrapper {
     color: var(--color-white);
@@ -41,6 +51,10 @@
 
   .getStatus, .userStatus {
     opacity: 1;
+  }
+
+  :global(.title .custom-emoji) {
+    color: var(--color-primary);
   }
 
   :global(.VerifiedIcon),
@@ -116,20 +130,6 @@
 
   @include mixins.with-vt-type('profileAvatar');
 
-  &::before {
-    content: '';
-
-    position: absolute;
-    z-index: 1;
-    top: 0;
-    right: 0;
-    left: 0;
-
-    height: 2rem;
-
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0) 100%);
-  }
-
   > :global(.Transition) {
     width: 100%;
     height: 100%;
@@ -147,6 +147,21 @@
   width: 100%;
   height: 0.125rem;
   padding: 0 0.375rem;
+
+  &::before {
+    content: '';
+
+    position: absolute;
+    top: -0.5rem;
+    right: 0;
+    left: 0;
+
+    height: 2rem;
+
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0) 100%);
+  }
+
+  @include mixins.with-vt-type('profileAvatar');
 }
 
 .photoDash {
@@ -282,7 +297,6 @@
 }
 
 .userRatingWrapper {
-  width: 1rem;
   font-size: 1.5rem;
 }
 
@@ -290,7 +304,7 @@
   pointer-events: none;
   paint-order: stroke fill;
 
-  -webkit-text-stroke: 2px var(--rating-outline-color);
+  -webkit-text-stroke: 3px var(--rating-outline-color);
 }
 
 .ratingNegativeIcon {
@@ -307,7 +321,7 @@
   transform: translate(-50%, -50%);
 
   font-size: 0.625rem;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   line-height: 1;
   color: var(--rating-text-color);
 }
@@ -386,20 +400,19 @@
 
 .radialPatternBackground {
   pointer-events: none;
-
-  // Hacky way to keep background stable during resizes
   position: absolute;
-  top: 8rem;
-
+  inset: 0;
   aspect-ratio: 1 / 1;
-  width: 140%;
-  margin-top: -70%;
 }
 
 .standaloneAvatar {
   grid-area: 1 / -1;
 
   @include mixins.with-vt-type('profileAvatar');
+
+  :global(.story-circle) {
+    @include mixins.with-vt-type('profileAvatar');
+  }
 }
 
 .activeProfilePhoto {
@@ -407,7 +420,7 @@
 }
 
 .minimized {
-  aspect-ratio: unset;
+  height: 18rem;
   padding-block: 4.25rem 1rem;
 
   .status, .title, .info {
@@ -418,7 +431,11 @@
     position: relative;
 
     justify-content: unset;
+    justify-self: stretch;
 
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     min-height: unset;
     margin-top: 1rem;
 
@@ -428,6 +445,8 @@
 
 .title {
   @include mixins.with-vt-type('profileAvatar');
+
+  max-width: 100%;
 }
 
 .pinnedGifts {
@@ -436,92 +455,76 @@
 }
 
 @include mixins.on-active-vt('profileAvatar') {
-  &::view-transition-group(.info),
-  &::view-transition-group(.title),
-  &::view-transition-group(.status) {
+  &::view-transition-group(.photoDashes) {
     z-index: 1;
   }
-}
 
-@include mixins.on-active-vt('profileAvatar') {
+  &::view-transition-group(.avatarStoryCircle) {
+    z-index: -1;
+  }
+
+  &::view-transition-group(.profileInfo) {
+    z-index: -2;
+    overflow: clip;
+  }
+
   &::view-transition-old(.profileInfo),
   &::view-transition-new(.profileInfo) {
+    object-fit: none;
+    object-position: top;
     animation-name: none;
   }
 }
 
-// Delay before showing buttons & overlay
 @include mixins.on-active-vt('profileExpand') {
-  &::view-transition-new(.photoWrapper),
-  &::view-transition-new(.info) {
-    animation-delay: 0.25s;
+  &::view-transition-old(.profileInfo) {
+    opacity: 0;
   }
-}
 
-// Hide buttons & overlay immediately
-@include mixins.on-active-vt('profileCollapse') {
-  &::view-transition-old(.photoWrapper),
-  &::view-transition-old(.info) {
-    animation-duration: 0.1s;
-  }
-}
-
-@include mixins.on-active-vt('profileExpand') {
   &::view-transition-old(.avatar) {
     z-index: -1;
+    animation-name: none;
   }
 
   &::view-transition-new(.avatar) {
     :local {
       animation-name: profileExpandAvatar;
-      animation-duration: inherit;
-      animation-timing-function: inherit;
-      animation-fill-mode: forwards;
     }
 
     @keyframes profileExpandAvatar {
-      from {
+      0% {
+        opacity: 0;
+      }
+
+      50%, 100% {
         opacity: 1;
-        clip-path: inset(0 0 0 0 round 50%);
-      }
-
-      25% {
-        clip-path: inset(0 0 0 0 round 50%);
-      }
-
-      to {
-        clip-path: inset(0 0 0 0 round 0%);
       }
     }
   }
 }
 
 @include mixins.on-active-vt('profileCollapse') {
+  &::view-transition-new(.profileInfo) {
+    opacity: 0;
+  }
+
   &::view-transition-new(.avatar) {
     z-index: -1;
+    animation-name: none;
   }
 
   &::view-transition-old(.avatar) {
     :local {
       animation-name: profileCollapseAvatar;
-      animation-duration: inherit;
-      animation-timing-function: inherit;
-      animation-fill-mode: forwards;
     }
 
     @keyframes profileCollapseAvatar {
-      from {
-        clip-path: inset(0 0 0 0 round 0%);
-      }
-
-      25% {
+      0% {
         opacity: 1;
-        clip-path: inset(0 0 0 0 round 50%);
       }
 
-      to {
+      50%, 100% {
         opacity: 0;
-        clip-path: inset(0 0 0 0 round 50%);
       }
     }
   }

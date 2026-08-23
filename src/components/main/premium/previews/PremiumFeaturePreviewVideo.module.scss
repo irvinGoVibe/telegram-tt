@@ -6,11 +6,6 @@
   justify-content: center;
 
   aspect-ratio: 1;
-
-  @supports not (aspect-ratio: 1) {
-    height: 0;
-    padding-bottom: 100%;
-  }
 }
 
 .wrapper {
@@ -37,14 +32,10 @@
   width: 70%;
 
   opacity: calc(1 - var(--abs-scroll-progress-converted) * 0.4);
-
-  @supports not (aspect-ratio: 1) {
-    transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -0.005, 0, -342.2, 0, 1);
-  }
 }
 
 .down {
-  --y-static: 3%;
+  --y-static: 2%;
   --y-dynamic: 10%;
 }
 
@@ -71,10 +62,21 @@
   border-radius: 0 0 10% 10%;
 }
 
-@supports (aspect-ratio: 1) {
-  .down .video {
-    top: 0;
-    bottom: initial;
-    border-radius: 10% 10% 0 0;
-  }
+.down .video {
+  top: 0;
+  bottom: initial;
+  border-radius: 10% 10% 0 0;
+}
+
+.placeholder {
+  --placeholder-background: #555555;
+
+  position: absolute;
+  z-index: 0;
+
+  width: 97%;
+  height: 97%;
+  border-radius: 10%;
+
+  background-color: var(--placeholder-background);
 }

@@ -6,7 +6,7 @@ import type { ApiMessageStoryData, ApiTypeStory } from '../../../api/types';
 import { getStoryMediaHash } from '../../../global/helpers';
 import { IS_CANVAS_FILTER_SUPPORTED } from '../../../util/browser/windowEnvironment';
 import buildClassName from '../../../util/buildClassName';
-import { formatMediaDuration } from '../../../util/dates/dateFormat';
+import { formatMediaDuration } from '../../../util/dates/oldDateFormat';
 
 import useAppLayout from '../../../hooks/useAppLayout';
 import useCanvasBlur from '../../../hooks/useCanvasBlur';
@@ -18,6 +18,7 @@ import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDepreca
 
 import Icon from '../../common/icons/Icon';
 import MediaAreaOverlay from '../../story/mediaArea/MediaAreaOverlay';
+import MediaBadge from './MediaBadge';
 
 import styles from './BaseStory.module.scss';
 
@@ -105,9 +106,9 @@ function BaseStory({
         </span>
       )}
       {Boolean(video?.duration) && (
-        <div className="message-media-duration">
+        <MediaBadge className="message-media-duration">
           {formatMediaDuration(video.duration)}
-        </div>
+        </MediaBadge>
       )}
       {isProtected && <span className="protector" />}
     </div>

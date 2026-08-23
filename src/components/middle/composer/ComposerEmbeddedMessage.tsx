@@ -1,44 +1,44 @@
-import type { FC } from '../../../lib/teact/teact';
-import type React from '../../../lib/teact/teact';
 import {
   memo, useEffect, useMemo, useRef,
 } from '../../../lib/teact/teact';
 import { getActions, getGlobal, withGlobal } from '../../../global';
 
 import type {
-  ApiChat, ApiInputMessageReplyInfo, ApiInputSuggestedPostInfo, ApiMessage, ApiPeer,
+  ApiChat, ApiInputDraftReplyInfo, ApiInputSuggestedPostInfo, ApiMessage, ApiPeer,
 } from '../../../api/types';
-import type { MessageListType, ThreadId } from '../../../types/index';
+import type { MessageListType, ThemeKey, ThreadId } from '../../../types/index';
 
-import { isChatChannel, stripCustomEmoji } from '../../../global/helpers';
+import { canEditMediaInEditor, isChatChannel, stripCustomEmoji } from '../../../global/helpers';
 import {
   selectCanAnimateInterface,
   selectChat,
   selectChatMessage,
-  selectDraft,
-  selectEditingId,
   selectEditingMessage,
-  selectEditingScheduledId,
+  selectEphemeralMessage,
   selectForwardedSender,
   selectIsChatWithSelf,
   selectIsCurrentUserPremium,
   selectSender,
   selectTabState,
+  selectTheme,
 } from '../../../global/selectors';
 import { selectIsMediaNsfw } from '../../../global/selectors/media';
+import { selectDraft, selectEditingId, selectEditingScheduledId } from '../../../global/selectors/threads';
 import buildClassName from '../../../util/buildClassName';
 import captureEscKeyListener from '../../../util/captureEscKeyListener';
 import { unique } from '../../../util/iteratees';
-import { getPeerColorClass } from '../../common/helpers/peerColor';
 
+import useAppLayout from '../../../hooks/useAppLayout';
 import useContextMenuHandlers from '../../../hooks/useContextMenuHandlers';
 import useCurrentOrPrev from '../../../hooks/useCurrentOrPrev';
+import useFrozenProps from '../../../hooks/useFrozenProps';
 import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOldLang from '../../../hooks/useOldLang';
+import usePeerColor from '../../../hooks/usePeerColor';
 import useShowTransitionDeprecated from '../../../hooks/useShowTransitionDeprecated';
 
-import { ClosableEmbeddedMessage } from '../../common/embedded/EmbeddedMessage';
+import EmbeddedMessage from '../../common/embedded/EmbeddedMessage';
 import Icon from '../../common/icons/Icon';
 import Button from '../../ui/Button';
 import Menu from '../../ui/Menu';
@@ -48,7 +48,7 @@ import MenuSeparator from '../../ui/MenuSeparator';
 import './ComposerEmbeddedMessage.scss';
 
 type StateProps = {
-  replyInfo?: ApiInputMessageReplyInfo;
+  replyInfo?: ApiInputDraftReplyInfo;
   suggestedPostInfo?: ApiInputSuggestedPostInfo;
   editingId?: number;
   message?: ApiMessage;
@@ -69,44 +69,38 @@ type StateProps = {
   forwardMessageIds?: number[];
   fromChatId?: string;
   isMediaNsfw?: boolean;
+  theme: ThemeKey;
 };
 
 type OwnProps = {
   shouldForceShowEditing?: boolean;
+  isHidden?: boolean;
   chatId: string;
   threadId: ThreadId;
   messageListType: MessageListType;
-  onClear?: () => void;
+  onClear?: NoneToVoidFunction;
+  onIsOpenChange?: (isOpen: boolean) => void;
 };
 
 const CLOSE_DURATION = 350;
 
-const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
-  replyInfo,
-  suggestedPostInfo,
-  editingId,
-  message,
-  sender,
-  shouldAnimate,
-  forwardedMessagesCount,
-  noAuthors,
-  noCaptions,
-  forwardsHaveCaptions,
-  shouldForceShowEditing,
-  isCurrentUserPremium,
-  isContextMenuDisabled,
-  isReplyToDiscussion,
-  isInChangingRecipientMode,
-  shouldPreventComposerAnimation,
-  senderChat,
-  chatId,
-  currentUserId,
-  isSenderChannel,
-  forwardMessageIds,
-  fromChatId,
-  isMediaNsfw,
-  onClear,
-}) => {
+const ComposerEmbeddedMessage = (props: OwnProps & StateProps) => {
+  const {
+    shouldAnimate,
+    isReplyToDiscussion,
+    isInChangingRecipientMode,
+    forwardMessageIds,
+    fromChatId,
+    replyInfo,
+    editingId,
+    suggestedPostInfo,
+    shouldForceShowEditing,
+    isHidden,
+    message,
+    forwardedMessagesCount,
+    onIsOpenChange,
+  } = props;
+
   const {
     resetDraftReplyInfo,
     resetDraftSuggestedPostInfo,
@@ -120,25 +114,24 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
     exitForwardMode,
     setShouldPreventComposerAnimation,
     openSuggestMessageModal,
+    requestMessageMediaEditor,
   } = getActions();
   const ref = useRef<HTMLDivElement>();
   const oldLang = useOldLang();
   const lang = useLang();
+  const { isMobile } = useAppLayout();
 
   const isReplyToTopicStart = message?.content.action?.type === 'topicCreate';
-  const isShowingReply = replyInfo && !shouldForceShowEditing;
-  const isReplyWithQuote = Boolean(replyInfo?.quoteText);
   const isShowingSuggestedPost = Boolean(suggestedPostInfo) && !shouldForceShowEditing;
-
   const isForwarding = Boolean(forwardedMessagesCount);
 
   const selectSenderFromForwardedMessage = useLastCallback((forwardedMessage: ApiMessage) => {
     const global = getGlobal();
-    sender = selectForwardedSender(global, forwardedMessage);
-    if (!sender) {
-      sender = selectSender(global, forwardedMessage);
+    let localSender = selectForwardedSender(global, forwardedMessage);
+    if (!localSender) {
+      localSender = selectSender(global, forwardedMessage);
     }
-    return sender;
+    return localSender;
   });
 
   const forwardSenders = useMemo(() => {
@@ -152,15 +145,22 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
   const isShown = (() => {
     if (isInChangingRecipientMode) return false;
     if (message && (replyInfo || editingId)) return true;
+    if (replyInfo?.type === 'ephemeral') return true;
     if (forwardSenders && isForwarding) return true;
     if (isShowingSuggestedPost) return true;
     return false;
   })();
+  const isOpen = isShown && !isReplyToTopicStart && !isReplyToDiscussion && !isHidden;
+
+  useEffect(() => {
+    onIsOpenChange?.(isOpen);
+    return () => onIsOpenChange?.(false);
+  }, [isOpen, onIsOpenChange]);
 
   const {
-    shouldRender, transitionClassNames,
+    shouldRender, transitionClassNames, isClosing,
   } = useShowTransitionDeprecated(
-    isShown && !isReplyToTopicStart && !isReplyToDiscussion,
+    isOpen,
     undefined,
     !shouldAnimate,
     undefined,
@@ -168,6 +168,38 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
     CLOSE_DURATION,
     !shouldAnimate,
   );
+
+  const {
+    chatId,
+    currentUserId,
+    theme,
+    onClear,
+    isCurrentUserPremium,
+    isContextMenuDisabled,
+    shouldPreventComposerAnimation,
+    sender,
+    senderChat,
+    isMediaNsfw,
+    noAuthors,
+    noCaptions,
+    forwardsHaveCaptions,
+    forwardedMessagesCount: frozenForwardedMessagesCount,
+    message: frozenMessage,
+    shouldForceShowEditing: frozenShouldForceShowEditing,
+    suggestedPostInfo: frozenSuggestedPostInfo,
+    replyInfo: frozenReplyInfo,
+    editingId: frozenEditingId,
+    isSenderChannel,
+  } = useFrozenProps(props, isClosing);
+
+  const isForwardingRendering = Boolean(frozenForwardedMessagesCount);
+  const isShowingReplyRendering = Boolean(frozenReplyInfo) && !frozenShouldForceShowEditing;
+  const frozenReplyQuoteText = frozenReplyInfo?.type === 'message' ? frozenReplyInfo.quoteText : undefined;
+  const isReplyWithQuoteRendering = Boolean(frozenReplyQuoteText);
+  const isShowingSuggestedPostRendering = Boolean(frozenSuggestedPostInfo) && !frozenShouldForceShowEditing;
+
+  const canMediaBeEdited = frozenMessage && canEditMediaInEditor(frozenMessage) && !isMobile;
+
   useEffect(() => {
     if (shouldPreventComposerAnimation) {
       setShouldPreventComposerAnimation({ shouldPreventComposerAnimation: false });
@@ -175,20 +207,22 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
   });
 
   const clearEmbedded = useLastCallback(() => {
-    if (editingId) {
+    if (frozenEditingId) {
       setEditingId({ messageId: undefined });
-    } else if (forwardedMessagesCount) {
+    } else if (frozenForwardedMessagesCount) {
       exitForwardMode();
-    } else if (isShowingSuggestedPost) {
+    } else if (isShowingSuggestedPostRendering) {
       resetDraftSuggestedPostInfo();
       resetDraftReplyInfo();
-    } else if (replyInfo && !shouldForceShowEditing) {
+    } else if (frozenReplyInfo && !frozenShouldForceShowEditing) {
       resetDraftReplyInfo();
     }
     onClear?.();
   });
 
-  useEffect(() => (isShown ? captureEscKeyListener(clearEmbedded) : undefined), [isShown, clearEmbedded]);
+  useEffect(() => (isShown && !isHidden ? captureEscKeyListener(clearEmbedded) : undefined), [
+    isShown, isHidden, clearEmbedded,
+  ]);
 
   const {
     isContextMenuOpen, contextMenuAnchor, handleContextMenu,
@@ -196,14 +230,22 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
   } = useContextMenuHandlers(ref);
 
   const focusMessageFromDraft = () => {
-    focusMessage({ chatId: message!.chatId, messageId: message!.id, noForumTopicPanel: true });
+    focusMessage({ chatId: frozenMessage!.chatId, messageId: frozenMessage!.id, noForumTopicPanel: true });
   };
   const handleMessageClick = useLastCallback((e: React.MouseEvent): void => {
-    if (suggestedPostInfo) {
+    if (frozenSuggestedPostInfo) {
       openSuggestMessageModal({ chatId });
       return;
     }
     handleContextMenu(e);
+  });
+
+  const handlePictogramClick = useLastCallback((e: React.MouseEvent): void => {
+    e.stopPropagation();
+    if ((frozenEditingId || frozenReplyInfo?.type === 'message') && canMediaBeEdited) {
+      requestMessageMediaEditor({ chatId: frozenMessage.chatId, messageId: frozenMessage.id });
+      return;
+    }
   });
 
   const handleClearClick = useLastCallback((e: React.MouseEvent<HTMLButtonElement, MouseEvent>): void => {
@@ -230,6 +272,13 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
   });
   const handleDoNotReplyClick = useLastCallback(buildAutoCloseMenuItemHandler(clearEmbedded));
 
+  const handleIconKeyDown = useLastCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleContextMenu(e as unknown as React.MouseEvent);
+    }
+  });
+
   const getTriggerElement = useLastCallback(() => ref.current);
   const getRootElement = useLastCallback(() => ref.current!);
   const getMenuElement = useLastCallback(() => ref.current!.querySelector('.forward-context-menu .bubble'));
@@ -242,45 +291,49 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
   }, [handleContextMenuClose, handleContextMenuHide, shouldRender]);
 
   const className = buildClassName('ComposerEmbeddedMessage', transitionClassNames);
-  const renderingSender = useCurrentOrPrev(sender, true);
-  const innerClassName = buildClassName(
-    'ComposerEmbeddedMessage_inner',
-    getPeerColorClass(renderingSender),
-  );
+
+  const { className: peerColorClass, style: peerColorStyle } = usePeerColor({
+    peer: sender,
+    theme,
+  });
+  const innerClassName = buildClassName('ComposerEmbeddedMessage_inner', peerColorClass);
 
   const leftIcon = useMemo(() => {
-    if (editingId) {
+    if (frozenEditingId) {
       return 'edit';
     }
-    if (isShowingSuggestedPost) {
+    if (isShowingSuggestedPostRendering) {
       return 'cash-circle';
     }
-    if (isForwarding) {
+    if (isForwardingRendering) {
       return 'forward';
     }
-    if (isShowingReply) {
+    if (isShowingReplyRendering) {
       return 'reply';
     }
 
     return undefined;
-  }, [editingId, isForwarding, isShowingReply, isShowingSuggestedPost]);
+  }, [frozenEditingId, isForwardingRendering, isShowingReplyRendering, isShowingSuggestedPostRendering]);
 
-  const customText = forwardedMessagesCount && forwardedMessagesCount > 1
-    ? oldLang('ForwardedMessageCount', forwardedMessagesCount)
-    : undefined;
+  const customText = !frozenMessage && frozenReplyInfo?.type === 'ephemeral'
+    ? lang('EphemeralReplyUnavailable')
+    : frozenForwardedMessagesCount && frozenForwardedMessagesCount > 1
+      ? oldLang('ForwardedMessageCount', frozenForwardedMessagesCount)
+      : undefined;
 
   const strippedMessage = useMemo(() => {
-    if (!message || !isForwarding || !message.content.text || !noAuthors || isCurrentUserPremium) return message;
+    if (!frozenMessage || !isForwardingRendering || !frozenMessage.content.text
+      || !noAuthors || isCurrentUserPremium) return frozenMessage;
 
-    const strippedText = stripCustomEmoji(message.content.text);
+    const strippedText = stripCustomEmoji(frozenMessage.content.text);
     return {
-      ...message,
+      ...frozenMessage,
       content: {
-        ...message.content,
+        ...frozenMessage.content,
         text: strippedText,
       },
     };
-  }, [isCurrentUserPremium, isForwarding, message, noAuthors]);
+  }, [isCurrentUserPremium, isForwardingRendering, frozenMessage, noAuthors]);
 
   const renderingLeftIcon = useCurrentOrPrev(leftIcon, true);
 
@@ -288,22 +341,29 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
     return undefined;
   }
 
-  const canReplyInSenderChat = sender && !isSenderChannel && chatId !== sender.id && sender.id !== currentUserId;
+  const canReplyInSenderChat = sender && !isSenderChannel
+    && chatId !== sender.id && sender.id !== currentUserId;
 
   return (
     <div className={className} ref={ref} onContextMenu={handleContextMenu}>
-      <div className={innerClassName}>
-        <div className="embedded-left-icon" onClick={handleContextMenu}>
+      <div className={innerClassName} style={peerColorStyle}>
+        <div
+          className="embedded-left-icon"
+          role="button"
+          tabIndex={0}
+          onClick={handleContextMenu}
+          onKeyDown={handleIconKeyDown}
+        >
           {renderingLeftIcon && <Icon name={renderingLeftIcon} />}
-          {Boolean(replyInfo?.quoteText) && (
+          {Boolean(frozenReplyQuoteText) && (
             <Icon name="quote" className="quote-reply" />
           )}
         </div>
-        <ClosableEmbeddedMessage
+        <EmbeddedMessage
           isOpen={isShown}
           className="inside-input"
-          replyInfo={replyInfo}
-          suggestedPostInfo={suggestedPostInfo}
+          replyInfo={frozenReplyInfo}
+          suggestedPostInfo={frozenSuggestedPostInfo}
           isMediaNsfw={isMediaNsfw}
           isInComposer
           message={strippedMessage}
@@ -311,9 +371,11 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
           composerForwardSenders={forwardSenders}
           customText={customText}
           noCaptions={noCaptions}
-          title={(editingId && !isShowingReply) ? oldLang('EditMessage')
+          title={(frozenEditingId && !isShowingReplyRendering) ? oldLang('EditMessage')
             : noAuthors ? oldLang('HiddenSendersNameDescription') : undefined}
           onClick={handleMessageClick}
+          onPictogramClick={canMediaBeEdited ? handlePictogramClick : undefined}
+          pictogramActionIcon={canMediaBeEdited ? 'edit' : undefined}
           senderChat={senderChat}
         />
         <Button
@@ -323,10 +385,9 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
           color="translucent"
           ariaLabel={oldLang('Cancel')}
           onClick={handleClearClick}
-        >
-          <Icon name="close" />
-        </Button>
-        {(isShowingReply || isForwarding) && !isContextMenuDisabled && (
+          iconName="close"
+        />
+        {(isShowingReplyRendering || isForwardingRendering) && !isContextMenuDisabled && (
           <Menu
             isOpen={isContextMenuOpen}
             anchor={contextMenuAnchor}
@@ -337,7 +398,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
             onClose={handleContextMenuClose}
             onCloseAnimationEnd={handleContextMenuHide}
           >
-            {isForwarding && (
+            {isForwardingRendering && (
               <>
                 <MenuItem
                   icon={!noAuthors ? 'message-succeeded' : undefined}
@@ -347,7 +408,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                     noAuthors: false,
                   })}
                 >
-                  {oldLang(forwardedMessagesCount > 1 ? 'ShowSenderNames' : 'ShowSendersName')}
+                  {oldLang(frozenForwardedMessagesCount > 1 ? 'ShowSenderNames' : 'ShowSendersName')}
                 </MenuItem>
                 <MenuItem
                   icon={noAuthors ? 'message-succeeded' : undefined}
@@ -357,7 +418,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                     noAuthors: true,
                   })}
                 >
-                  {oldLang(forwardedMessagesCount > 1 ? 'HideSenderNames' : 'HideSendersName')}
+                  {oldLang(frozenForwardedMessagesCount > 1 ? 'HideSenderNames' : 'HideSendersName')}
                 </MenuItem>
                 {forwardsHaveCaptions && (
                   <>
@@ -370,7 +431,8 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                         noCaptions: false,
                       })}
                     >
-                      {oldLang(forwardedMessagesCount > 1 ? 'Conversation.ForwardOptions.ShowCaption' : 'ShowCaption')}
+                      {oldLang(frozenForwardedMessagesCount > 1
+                        ? 'Conversation.ForwardOptions.ShowCaption' : 'ShowCaption')}
                     </MenuItem>
                     <MenuItem
                       icon={noCaptions ? 'message-succeeded' : undefined}
@@ -380,7 +442,8 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                         noCaptions: true,
                       })}
                     >
-                      {oldLang(forwardedMessagesCount > 1 ? 'Conversation.ForwardOptions.HideCaption' : 'HideCaption')}
+                      {oldLang(frozenForwardedMessagesCount > 1
+                        ? 'Conversation.ForwardOptions.HideCaption' : 'HideCaption')}
                     </MenuItem>
                   </>
                 )}
@@ -390,7 +453,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                 </MenuItem>
               </>
             )}
-            {isShowingReply && (
+            {isShowingReplyRendering && (
               <>
                 <MenuItem
                   icon="show-message"
@@ -398,7 +461,7 @@ const ComposerEmbeddedMessage: FC<OwnProps & StateProps> = ({
                 >
                   {oldLang('Message.Context.Goto')}
                 </MenuItem>
-                {isReplyWithQuote && (
+                {isReplyWithQuoteRendering && (
                   <MenuItem
                     icon="remove-quote"
                     onClick={handleRemoveQuoteClick}
@@ -448,7 +511,7 @@ export default memo(withGlobal<OwnProps>(
     const draft = selectDraft(global, chatId, threadId);
     const replyInfo = draft?.replyInfo;
     const suggestedPostInfo = draft?.suggestedPostInfo;
-    const replyToPeerId = replyInfo?.replyToPeerId;
+    const replyToPeerId = replyInfo?.type === 'message' ? replyInfo.replyToPeerId : undefined;
     const senderChat = replyToPeerId ? selectChat(global, replyToPeerId) : undefined;
 
     let message: ApiMessage | undefined;
@@ -457,7 +520,9 @@ export default memo(withGlobal<OwnProps>(
     } else if (isForwarding && forwardMessageIds!.length === 1) {
       message = forwardedMessages?.[0];
     } else if (replyInfo && !shouldForceShowEditing) {
-      message = selectChatMessage(global, replyInfo.replyToPeerId || chatId, replyInfo.replyToMsgId);
+      message = replyInfo.type === 'ephemeral'
+        ? selectEphemeralMessage(global, chatId, replyInfo.replyToMsgId)
+        : selectChatMessage(global, replyInfo.replyToPeerId || chatId, replyInfo.replyToMsgId);
     }
 
     let sender: ApiPeer | undefined;
@@ -483,7 +548,8 @@ export default memo(withGlobal<OwnProps>(
         sender = selectForwardedSender(global, message);
       }
 
-      if (!sender && (!forwardInfo?.hiddenUserName || Boolean(replyInfo.quoteText))) {
+      const quoteText = replyInfo.type === 'message' ? replyInfo.quoteText : undefined;
+      if (!sender && (!forwardInfo?.hiddenUserName || Boolean(quoteText))) {
         sender = selectSender(global, message);
       }
     }
@@ -495,10 +561,11 @@ export default memo(withGlobal<OwnProps>(
       forward?.content.text && Object.keys(forward.content).length > 1
     ));
 
-    const isContextMenuDisabled = isForwarding && forwardMessageIds!.length === 1
-      && Boolean(message?.content.storyData);
+    const isContextMenuDisabled = replyInfo?.type === 'ephemeral'
+      || (isForwarding && forwardMessageIds!.length === 1 && Boolean(message?.content.storyData));
 
-    const isReplyToDiscussion = replyInfo?.replyToMsgId === threadId && !replyInfo.replyToPeerId;
+    const isReplyToDiscussion = replyInfo?.type !== 'ephemeral'
+      && replyInfo?.replyToMsgId === threadId && !replyToPeerId;
 
     const isMediaNsfw = message && selectIsMediaNsfw(global, message);
 
@@ -524,6 +591,7 @@ export default memo(withGlobal<OwnProps>(
       forwardMessageIds,
       fromChatId,
       isMediaNsfw,
+      theme: selectTheme(global),
     };
   },
 )(ComposerEmbeddedMessage));

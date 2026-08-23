@@ -1,14 +1,11 @@
-import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
-
 import type { IconName } from '../../types/icons';
 
 import { IS_TEST } from '../../config';
 import buildClassName from '../../util/buildClassName';
 
 import useAppLayout from '../../hooks/useAppLayout';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
-import useOldLang from '../../hooks/useOldLang';
 
 import Icon from '../common/icons/Icon';
 
@@ -18,9 +15,6 @@ export type MenuItemProps = {
   customIcon?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
-  onClick?: (e: React.SyntheticEvent<HTMLDivElement | HTMLAnchorElement>, arg?: number) => void;
-  clickArg?: number;
-  onContextMenu?: (e: React.UIEvent) => void;
   href?: string;
   rel?: string;
   target?: string;
@@ -30,6 +24,10 @@ export type MenuItemProps = {
   ariaLabel?: string;
   withWrap?: boolean;
   withPreventDefaultOnMouseDown?: boolean;
+  hasIconPremiumBadge?: boolean;
+  clickArg?: number;
+  onClick?: (e: React.SyntheticEvent<HTMLDivElement | HTMLAnchorElement>, arg?: number) => void;
+  onContextMenu?: (e: React.UIEvent) => void;
 } & ({
   icon: 'A' | 'K';
   isCharIcon: true;
@@ -38,14 +36,13 @@ export type MenuItemProps = {
   isCharIcon?: false;
 });
 
-const MenuItem: FC<MenuItemProps> = (props) => {
+const MenuItem = (props: MenuItemProps) => {
   const {
     icon,
     isCharIcon,
     customIcon,
     className,
     children,
-    onClick,
     href,
     target,
     download,
@@ -54,12 +51,14 @@ const MenuItem: FC<MenuItemProps> = (props) => {
     ariaLabel,
     withWrap,
     rel = 'noopener noreferrer',
-    onContextMenu,
-    clickArg,
     withPreventDefaultOnMouseDown,
+    hasIconPremiumBadge,
+    clickArg,
+    onClick,
+    onContextMenu,
   } = props;
 
-  const lang = useOldLang();
+  const lang = useLang();
   const { isTouchScreen } = useAppLayout();
   const handleClick = useLastCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (disabled || !onClick) {
@@ -94,12 +93,17 @@ const MenuItem: FC<MenuItemProps> = (props) => {
     destructive && 'destructive',
     !isTouchScreen && 'compact',
     withWrap && 'wrap',
+    !icon && !customIcon && 'text-only',
   );
 
   const content = (
     <>
       {!customIcon && icon && (
-        <Icon name={isCharIcon ? 'char' : icon} character={isCharIcon ? icon : undefined} />
+        <Icon
+          name={isCharIcon ? 'char' : icon}
+          character={isCharIcon ? icon : undefined}
+          hasPremiumBadge={hasIconPremiumBadge}
+        />
       )}
       {customIcon}
       {children}
@@ -129,7 +133,7 @@ const MenuItem: FC<MenuItemProps> = (props) => {
   return (
     <div
       role="menuitem"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       className={fullClassName}
       onClick={handleClick}
       onKeyDown={handleKeyDown}

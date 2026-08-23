@@ -3,7 +3,10 @@ import type { Entity } from '../../../lib/gramjs/types';
 import { strippedPhotoToJpg } from '../../../lib/gramjs/Utils';
 
 import type {
-  ApiBotVerification,
+  ApiAiComposeTone,
+  ApiAiComposeToneDefault,
+  ApiAiComposeToneExample,
+  ApiComposedMessageWithAI,
   ApiFormattedText,
   ApiMessageEntity,
   ApiMessageEntityDefault,
@@ -287,6 +290,46 @@ export function buildApiMessageEntity(entity: GramJs.TypeMessageEntity): ApiMess
     };
   }
 
+  if (entity instanceof GramJs.MessageEntityFormattedDate) {
+    return {
+      type: ApiMessageEntityTypes.FormattedDate,
+      offset,
+      length,
+      date: entity.date,
+      relative: entity.relative,
+      shortTime: entity.shortTime,
+      longTime: entity.longTime,
+      shortDate: entity.shortDate,
+      longDate: entity.longDate,
+      dayOfWeek: entity.dayOfWeek,
+    };
+  }
+
+  if (entity instanceof GramJs.MessageEntityDiffInsert) {
+    return {
+      type: ApiMessageEntityTypes.DiffInsert,
+      offset,
+      length,
+    };
+  }
+
+  if (entity instanceof GramJs.MessageEntityDiffReplace) {
+    return {
+      type: ApiMessageEntityTypes.DiffReplace,
+      offset,
+      length,
+      oldText: entity.oldText,
+    };
+  }
+
+  if (entity instanceof GramJs.MessageEntityDiffDelete) {
+    return {
+      type: ApiMessageEntityTypes.DiffDelete,
+      offset,
+      length,
+    };
+  }
+
   return {
     type: type as `${ApiMessageEntityDefault['type']}`,
     offset,
@@ -294,18 +337,46 @@ export function buildApiMessageEntity(entity: GramJs.TypeMessageEntity): ApiMess
   };
 }
 
-export function buildAvatarPhotoId(photo: GramJs.TypeUserProfilePhoto | GramJs.TypeChatPhoto) {
-  if ('photoId' in photo) {
-    return photo.photoId.toString();
-  }
-
-  return undefined;
+export function buildApiAiComposeToneExample(
+  example: GramJs.AiComposeToneExample,
+): ApiAiComposeToneExample {
+  return {
+    from: buildApiFormattedText(example.from),
+    to: buildApiFormattedText(example.to),
+  };
 }
 
-export function buildApiBotVerification(botVerification: GramJs.BotVerification): ApiBotVerification {
+export function buildApiAiComposeTone(
+  tone: GramJs.TypeAiComposeTone,
+): ApiAiComposeTone | ApiAiComposeToneDefault {
+  if (tone instanceof GramJs.AiComposeToneDefault) {
+    return {
+      tone: tone.tone,
+      emojiId: tone.emojiId.toString(),
+      title: tone.title,
+    };
+  }
+
   return {
-    botId: buildApiPeerId(botVerification.botId, 'user'),
-    iconId: botVerification.icon.toString(),
-    description: botVerification.description,
+    id: tone.id.toString(),
+    accessHash: tone.accessHash.toString(),
+    slug: tone.slug,
+    title: tone.title,
+    isCreator: tone.creator || undefined,
+    emojiId: tone.emojiId?.toString(),
+    prompt: tone.prompt,
+    installsCount: tone.installsCount,
+    authorId: tone.authorId?.toString(),
+    exampleEnglish: tone.exampleEnglish
+      ? buildApiAiComposeToneExample(tone.exampleEnglish) : undefined,
+  };
+}
+
+export function buildApiComposedMessageWithAI(
+  result: GramJs.messages.ComposedMessageWithAI,
+): ApiComposedMessageWithAI {
+  return {
+    resultText: buildApiFormattedText(result.resultText),
+    diffText: result.diffText ? buildApiFormattedText(result.diffText) : undefined,
   };
 }

@@ -1,5 +1,3 @@
-import type { FC } from '../../lib/teact/teact';
-import type React from '../../lib/teact/teact';
 import {
   memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
@@ -16,8 +14,10 @@ import useBuffering from '../../hooks/useBuffering';
 import useCanvasBlur from '../../hooks/useCanvasBlur';
 import useContextMenuHandlers from '../../hooks/useContextMenuHandlers';
 import { useIsIntersecting } from '../../hooks/useIntersectionObserver';
+import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useMedia from '../../hooks/useMedia';
+import useMediaTransition from '../../hooks/useMediaTransition';
 import useOldLang from '../../hooks/useOldLang';
 
 import Button from '../ui/Button';
@@ -25,32 +25,36 @@ import Menu from '../ui/Menu';
 import MenuItem from '../ui/MenuItem';
 import OptimizedVideo from '../ui/OptimizedVideo';
 import Spinner from '../ui/Spinner';
-import Icon from './icons/Icon';
 
-import './GifButton.scss';
+import styles from './GifButton.module.scss';
 
 type OwnProps = {
   gif: ApiVideo;
   observeIntersection: ObserveFn;
   isDisabled?: boolean;
+  noSpinner?: boolean;
   className?: string;
+  isSavedMessages?: boolean;
   onClick?: (gif: ApiVideo, isSilent?: boolean, shouldSchedule?: boolean) => void;
   onUnsaveClick?: (gif: ApiVideo) => void;
-  isSavedMessages?: boolean;
+  onAddCaption?: (gif: ApiVideo) => void;
 };
 
-const GifButton: FC<OwnProps> = ({
+const GifButton = ({
   gif,
   isDisabled,
+  noSpinner,
   className,
   observeIntersection,
+  isSavedMessages,
   onClick,
   onUnsaveClick,
-  isSavedMessages,
-}) => {
+  onAddCaption,
+}: OwnProps) => {
   const ref = useRef<HTMLDivElement>();
 
-  const lang = useOldLang();
+  const oldLang = useOldLang();
+  const lang = useLang();
 
   const isIntersecting = useIsIntersecting(ref, observeIntersection);
   const loadAndPlay = isIntersecting && !isDisabled;
@@ -65,8 +69,10 @@ const GifButton: FC<OwnProps> = ({
 
   const shouldRenderVideo = Boolean(loadAndPlay && videoData);
   const { isBuffered, bufferingHandlers } = useBuffering(true);
-  const shouldRenderSpinner = loadAndPlay && !isBuffered;
+  const shouldRenderSpinner = !noSpinner && loadAndPlay && !isBuffered;
   const isVideoReady = loadAndPlay && isBuffered;
+
+  const { ref: videoRef } = useMediaTransition<HTMLVideoElement>({ hasMediaData: isVideoReady });
 
   const {
     isContextMenuOpen, contextMenuAnchor,
@@ -76,7 +82,8 @@ const GifButton: FC<OwnProps> = ({
 
   const getTriggerElement = useLastCallback(() => ref.current);
   const getRootElement = useLastCallback(() => ref.current!.closest('.custom-scroll, .no-scrollbar'));
-  const getMenuElement = useLastCallback(() => ref.current!.querySelector('.gif-context-menu .bubble'));
+  const getMenuElement = useLastCallback(() => ref.current!.querySelector(`.${styles.contextMenu} .bubble`));
+  const getLayout = useLastCallback(() => ({ shouldAvoidNegativePosition: true }));
 
   const handleClick = useLastCallback(() => {
     if (isContextMenuOpen || !onClick) return;
@@ -110,6 +117,13 @@ const GifButton: FC<OwnProps> = ({
     }, undefined, true);
   });
 
+  const handleAddCaption = useLastCallback(() => {
+    onAddCaption?.({
+      ...gif,
+      blobUrl: videoData,
+    });
+  });
+
   const handleMouseDown = useLastCallback((e: React.MouseEvent<HTMLElement>) => {
     preventMessageInputBlurWithBubbling(e);
     handleBeforeContextMenu(e);
@@ -121,46 +135,49 @@ const GifButton: FC<OwnProps> = ({
 
   const fullClassName = buildClassName(
     'GifButton',
-    gif.width && gif.height && gif.width < gif.height ? 'vertical' : 'horizontal',
-    onClick && 'interactive',
+    styles.root,
+    onClick && styles.interactive,
     className,
   );
+  const aspectRatioStyle = gif.width && gif.height ? `--gif-aspect-ratio: ${gif.width} / ${gif.height}` : undefined;
 
   return (
     <div
       ref={ref}
       className={fullClassName}
+      style={aspectRatioStyle}
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
       {!IS_TOUCH_ENV && onUnsaveClick && (
         <Button
-          className="gif-unsave-button"
+          className={styles.unsaveButton}
           color="dark"
           pill
+          iconName="close"
+          iconClassName={styles.unsaveButtonIcon}
           noFastClick
           onClick={handleUnsaveClick}
-        >
-          <Icon name="close" className="gif-unsave-button-icon" />
-        </Button>
+        />
       )}
       {withThumb && (
         <canvas
           ref={thumbRef}
-          className="thumbnail"
+          className={styles.thumbnail}
         />
       )}
-      {previewBlobUrl && !isVideoReady && (
+      {previewBlobUrl && (
         <img
           src={previewBlobUrl}
           alt=""
-          className="preview"
+          className={styles.preview}
           draggable={false}
         />
       )}
       {shouldRenderVideo && (
         <OptimizedVideo
+          ref={videoRef}
           canPlay
           src={videoData}
           autoPlay
@@ -169,12 +186,13 @@ const GifButton: FC<OwnProps> = ({
           disablePictureInPicture
           playsInline
           preload="none"
+          className={styles.video}
 
           {...bufferingHandlers}
         />
       )}
       {shouldRenderSpinner && (
-        <Spinner color={previewBlobUrl || withThumb ? 'white' : 'black'} />
+        <Spinner className={styles.spinner} color={previewBlobUrl || withThumb ? 'white' : 'black'} />
       )}
       {onClick && contextMenuAnchor !== undefined && (
         <Menu
@@ -183,17 +201,21 @@ const GifButton: FC<OwnProps> = ({
           getTriggerElement={getTriggerElement}
           getRootElement={getRootElement}
           getMenuElement={getMenuElement}
-          className="gif-context-menu"
+          getLayout={getLayout}
+          className={styles.contextMenu}
           autoClose
           onClose={handleContextMenuClose}
           onCloseAnimationEnd={handleContextMenuHide}
         >
-          {!isSavedMessages && <MenuItem onClick={handleSendQuiet} icon="mute">{lang('SendWithoutSound')}</MenuItem>}
+          {!isSavedMessages && <MenuItem onClick={handleSendQuiet} icon="mute">{oldLang('SendWithoutSound')}</MenuItem>}
           <MenuItem onClick={handleSendScheduled} icon="calendar">
-            {lang(isSavedMessages ? 'SetReminder' : 'ScheduleMessage')}
+            {oldLang(isSavedMessages ? 'SetReminder' : 'ScheduleMessage')}
           </MenuItem>
+          {onAddCaption && (
+            <MenuItem icon="add-caption" onClick={handleAddCaption}>{lang('MenuAddCaption')}</MenuItem>
+          )}
           {onUnsaveClick && (
-            <MenuItem destructive icon="delete" onClick={handleContextDelete}>{lang('Delete')}</MenuItem>
+            <MenuItem destructive icon="delete" onClick={handleContextDelete}>{oldLang('Delete')}</MenuItem>
           )}
         </Menu>
       )}

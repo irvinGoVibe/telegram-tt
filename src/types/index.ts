@@ -16,6 +16,7 @@ import type {
   ApiFakeType,
   ApiFormattedText,
   ApiInputReplyInfo,
+  ApiInputRichMessage,
   ApiInputSuggestedPostInfo,
   ApiLabeledPrice,
   ApiMediaFormat,
@@ -23,6 +24,8 @@ import type {
   ApiMessageEntity,
   ApiNewMediaTodo,
   ApiNewPoll,
+  ApiPageBlockPhoto,
+  ApiPageBlockVideo,
   ApiPeer,
   ApiPhoto,
   ApiReaction,
@@ -96,22 +99,43 @@ export interface IAlbum {
   commentsMessage?: ApiMessage;
 }
 
+export interface IDocumentGroup {
+  documentGroupId: string;
+  messages: ApiMessage[];
+  firstMessageId: number;
+  commentsMessage?: ApiMessage;
+}
+
 export type ThreadId = string | number;
+
+export type ForwardTarget = {
+  chatId: string;
+  topicId?: number;
+};
 
 export type ThemeKey = 'light' | 'dark';
 export type AnimationLevel = 0 | 1 | 2;
+export type FoldersPosition = 'top' | 'left';
 export type PerformanceTypeKey = (
   'pageTransitions' | 'messageSendingAnimations' | 'mediaViewerAnimations'
-  | 'messageComposerAnimations' | 'contextMenuAnimations' | 'contextMenuBlur' | 'rightColumnAnimations'
-  | 'animatedEmoji' | 'loopAnimatedStickers' | 'reactionEffects' | 'stickerEffects' | 'autoplayGifs' | 'autoplayVideos'
-  | 'storyRibbonAnimations' | 'snapEffect'
+  | 'messageComposerAnimations' | 'contextMenuAnimations' | 'contextMenuBlur' | 'messageBlur'
+  | 'rightColumnAnimations' | 'animatedEmoji' | 'loopAnimatedStickers' | 'reactionEffects' | 'stickerEffects'
+  | 'autoplayGifs' | 'autoplayVideos' | 'storyRibbonAnimations' | 'snapEffect' | 'textStreaming'
 );
 export type PerformanceType = Record<PerformanceTypeKey, boolean>;
 
 export interface IThemeSettings {
   background?: string;
   backgroundColor?: string;
+  secondBackgroundColor?: string;
+  thirdBackgroundColor?: string;
+  fourthBackgroundColor?: string;
+  backgroundRotation?: number;
   patternColor?: string;
+  patternIntensity?: number;
+  // User-chosen 0–100 scale applied on top of the wallpaper's own intensity; `undefined` means the default
+  patternIntensityFactor?: number;
+  isPattern?: boolean;
   isBlurred?: boolean;
 }
 
@@ -126,6 +150,7 @@ export interface AccountSettings {
   hasWebNotifications: boolean;
   hasPushNotifications: boolean;
   hasContactJoinedNotifications?: boolean;
+  shouldNotifyAboutPinnedMessages: boolean;
   notificationSoundVolume: number;
   canAutoLoadPhotoFromContacts: boolean;
   canAutoLoadPhotoInPrivateChats: boolean;
@@ -143,11 +168,13 @@ export interface AccountSettings {
   shouldSuggestStickers: boolean;
   shouldSuggestCustomEmoji: boolean;
   shouldUpdateStickerSetOrder: boolean;
+  lastRecordMessageMode?: 'voice' | 'video';
   hasPassword?: boolean;
   isSensitiveEnabled?: boolean;
   canChangeSensitive?: boolean;
   shouldArchiveAndMuteNewNonContact?: boolean;
   shouldNewNonContactPeersRequirePremium?: boolean;
+  defaultHistoryTtl?: number;
   nonContactPeersPaidStars?: number;
   shouldDisplayGiftsButton?: boolean;
   disallowedGifts?: ApiDisallowedGiftsSettings;
@@ -156,12 +183,15 @@ export interface AccountSettings {
   canTranslateChats: boolean;
   translationLanguage?: string;
   doNotTranslate: string[];
+  translationTone?: TranslationTone;
   shouldPaidMessageAutoApprove: boolean;
 }
 
 export type IAnchorPosition = {
   x: number;
   y: number;
+  width?: number;
+  height?: number;
 };
 
 export interface ShippingOption {
@@ -182,6 +212,7 @@ export enum SettingsScreens {
   GeneralChatBackground,
   GeneralChatBackgroundColor,
   Privacy,
+  AutoDeleteMessages,
   PrivacyPhoneNumber,
   PrivacyAddByPhone,
   PrivacyLastSeen,
@@ -261,6 +292,7 @@ export enum SettingsScreens {
   CustomEmoji,
   DoNotTranslate,
   FoldersShare,
+  Passkeys,
 }
 
 export type StickerSetOrReactionsSetOrRecent = Pick<ApiStickerSet, (
@@ -299,8 +331,6 @@ export enum RightColumnContent {
   BoostStatistics,
   MessageStatistics,
   StoryStatistics,
-  StickerSearch,
-  GifSearch,
   PollResults,
   AddingMembers,
   CreateTopic,
@@ -311,9 +341,20 @@ export enum RightColumnContent {
 }
 
 export type MediaViewerMedia = ApiPhoto | ApiVideo | ApiDocument;
+export type MediaViewerPageBlock = ApiPageBlockPhoto | ApiPageBlockVideo;
+export type MediaViewerPageMedia = {
+  blocks: MediaViewerPageBlock[];
+  sourceIds: string[];
+  pageUrl?: string;
+  chatId?: string;
+  messageId?: number;
+  threadId?: ThreadId;
+  isProtected?: boolean;
+};
 
 export enum MediaViewerOrigin {
   Inline,
+  Ephemeral,
   ScheduledInline,
   SharedMedia,
   ProfileAvatar,
@@ -327,6 +368,9 @@ export enum MediaViewerOrigin {
   StarsTransaction,
   PreviewMedia,
   SponsoredMessage,
+  PollPreview,
+  RichPageBlock,
+  IVPageBlock,
 }
 
 export enum StoryViewerOrigin {
@@ -367,6 +411,7 @@ export enum ManagementProgress {
 export interface ManagementState {
   isActive: boolean;
   nextScreen?: ManagementScreens;
+  selectedChatMemberId?: string;
   checkedUsername?: string;
   isUsernameAvailable?: boolean;
   error?: string;
@@ -395,18 +440,21 @@ export type ProfileTabType =
   | 'links'
   | 'audio'
   | 'voice'
+  | 'gif'
+  | 'playlist'
   | 'stories'
   | 'storiesArchive'
   | 'similarChannels'
   | 'similarBots'
   | 'dialogs'
   | 'gifts';
-export type SharedMediaType = 'media' | 'documents' | 'links' | 'audio' | 'voice';
+export type SharedMediaType = 'media' | 'documents' | 'links' | 'audio' | 'voice' | 'gif';
 export type MiddleSearchType = 'chat' | 'myChats' | 'channels';
 export type MiddleSearchParams = {
   requestedQuery?: string;
   savedTag?: ApiReaction;
   isHashtag?: boolean;
+  fromPeerId?: string;
   fetchingQuery?: string;
   type: MiddleSearchType;
   results?: MiddleSearchResults;
@@ -588,40 +636,80 @@ export type StarGiftInfo = {
   shouldUpgrade?: boolean;
 };
 
+export type TypingDraft = {
+  senderId: string;
+  id: string;
+  date: number;
+  text: ApiFormattedText;
+};
+
 export interface TabThread {
   scrollOffset?: number;
   replyStack?: number[];
   viewportIds?: number[];
 }
 
-export interface Thread {
+export interface ThreadReadState {
+  unreadCount?: number;
+  unreadMentionsCount?: number;
+  unreadReactionsCount?: number;
+  unreadPollVotesCount?: number;
+  unreadReactions?: number[];
+  unreadMentions?: number[];
+  unreadPollVotes?: number[];
+  hasUnreadMark?: boolean;
+
+  lastReadOutboxMessageId?: number;
+  lastReadInboxMessageId?: number;
+}
+
+export interface ThreadLocalState {
   lastScrollOffset?: number;
   lastViewportIds?: number[];
   listedIds?: number[];
   outlyingLists?: number[][];
   pinnedIds?: number[];
   scheduledIds?: number[];
+  firstMessageId?: number;
+
   editingId?: number;
   editingScheduledId?: number;
-  editingDraft?: ApiFormattedText;
-  editingScheduledDraft?: ApiFormattedText;
+  editingDraft?: EditingDraft;
+  editingScheduledDraft?: EditingDraft;
+
   draft?: ApiDraft;
+
   noWebPage?: boolean;
-  threadInfo?: ApiThreadInfo;
-  firstMessageId?: number;
-  typingStatus?: ApiTypingStatus;
+
+  typingStatusByPeerId?: Record<string, ApiTypingStatus>;
+
+  typingDraftIdByRandomId?: Record<string, number>;
+}
+
+export type EditingDraft = (ApiFormattedText & {
+  richMessage?: never;
+}) | {
+  text?: never;
+  entities?: never;
+  richMessage: ApiInputRichMessage;
+};
+
+export interface Thread {
+  localState: ThreadLocalState;
+  threadInfo: ApiThreadInfo;
+  readState: ThreadReadState;
 }
 
 export interface ServiceNotification {
   id: number;
   message: ApiMessage;
-  version?: string;
   isUnread?: boolean;
   isDeleted?: boolean;
 }
 
 export interface TopicsInfo {
   totalCount: number;
+  isCache?: true;
   topicsById: Record<ThreadId, ApiTopic>;
   listedTopicIds?: number[];
   orderedPinnedTopicIds?: number[];
@@ -630,6 +718,18 @@ export interface TopicsInfo {
 export type TranslatedMessage = {
   isPending?: boolean;
   text?: ApiFormattedText;
+  summary?: TextSummary;
+};
+
+export const TRANSLATION_TONES = ['neutral', 'formal', 'casual'] as const;
+export type TranslationTone = typeof TRANSLATION_TONES[number];
+
+export type TextSummary = {
+  isPending?: false;
+  text: ApiFormattedText;
+} | {
+  isPending: true;
+  text?: undefined;
 };
 
 export type ChatTranslatedMessages = {
@@ -639,6 +739,7 @@ export type ChatTranslatedMessages = {
 export type ChatRequestedTranslations = {
   toLanguage?: string;
   manualMessages?: Record<number, string>;
+  tone?: TranslationTone;
 };
 
 export type SimilarBotsInfo = {
@@ -650,11 +751,11 @@ export type ConfettiParams = OptionalCombine<{
   style?: ConfettiStyle;
   withStars?: boolean;
 }, {
-    top?: number;
-    left?: number;
-    width?: number;
-    height?: number;
-  }>;
+  top?: number;
+  left?: number;
+  width?: number;
+  height?: number;
+}>;
 
 export interface Size {
   width: number;
@@ -670,7 +771,7 @@ export type WebPageMediaSize = 'large' | 'small';
 
 export type AttachmentCompression = 'compress' | 'original';
 
-export type StarGiftCategory = number | 'all' | 'limited' | 'stock' | 'resale';
+export type StarGiftCategory = 'all' | 'myUnique' | 'collectible';
 
 export type CallSound = (
   'join' | 'allowTalk' | 'leave' | 'connecting' | 'incoming' | 'end' | 'connect' | 'busy' | 'ringing'
@@ -695,6 +796,7 @@ export type ResaleGiftsFilterOptions = {
   modelAttributes?: StarGiftAttributeIdModel[];
   patternAttributes?: ApiStarGiftAttributeIdPattern[];
   backdropAttributes?: ApiStarGiftAttributeIdBackdrop[];
+  starsOnly?: boolean;
 };
 
 export type SendMessageParams = {
@@ -703,6 +805,7 @@ export type SendMessageParams = {
   lastMessageId?: number;
   text?: string;
   entities?: ApiMessageEntity[];
+  richMessage?: ApiInputRichMessage;
   replyInfo?: ApiInputReplyInfo;
   suggestedPostInfo?: ApiInputSuggestedPostInfo;
   attachment?: ApiAttachment;
@@ -711,9 +814,11 @@ export type SendMessageParams = {
   gif?: ApiVideo;
   poll?: ApiNewPoll;
   todo?: ApiNewMediaTodo;
+  dice?: string;
   contact?: ApiContact;
   isSilent?: boolean;
   scheduledAt?: number;
+  scheduleRepeatPeriod?: number;
   groupedId?: string;
   noWebPage?: boolean;
   sendAs?: ApiPeer;
@@ -731,7 +836,6 @@ export type SendMessageParams = {
   messagePriceInStars?: number;
   localMessage?: ApiMessage;
   forwardedLocalMessagesSlice?: ForwardedLocalMessagesSlice;
-  isForwarding?: boolean;
   forwardParams?: ForwardMessagesParams;
   isStoryReply?: boolean;
   suggestedMedia?: MediaContent;
@@ -749,13 +853,16 @@ export type ForwardMessagesParams = {
   messages: ApiMessage[];
   isSilent?: boolean;
   scheduledAt?: number;
+  scheduleRepeatPeriod?: number;
   sendAs?: ApiPeer;
   withMyScore?: boolean;
   noAuthors?: boolean;
   noCaptions?: boolean;
+  privateForwardName?: string;
   isCurrentUserPremium?: boolean;
   wasDrafted?: boolean;
   lastMessageId?: number;
   forwardedLocalMessagesSlice?: ForwardedLocalMessagesSlice;
   messagePriceInStars?: number;
+  effectId?: string;
 };

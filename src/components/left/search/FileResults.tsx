@@ -10,7 +10,7 @@ import { LoadMoreDirection } from '../../../types';
 
 import { SLIDE_TRANSITION_DURATION } from '../../../config';
 import { getIsDownloading, getMessageDocument } from '../../../global/helpers';
-import { formatMonthAndYear, toYearMonth } from '../../../util/dates/dateFormat';
+import { formatMonthAndYear, toYearMonth } from '../../../util/dates/oldDateFormat';
 import { parseSearchResultKey } from '../../../util/keys/searchResultKey';
 import { MEMO_EMPTY_ARRAY } from '../../../util/memo';
 import { throttle } from '../../../util/schedulers';
@@ -23,6 +23,7 @@ import useAsyncRendering from '../../right/hooks/useAsyncRendering';
 
 import Document from '../../common/Document';
 import NothingFound from '../../common/NothingFound';
+import Island from '../../gili/layout/Island';
 import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
 import Transition from '../../ui/Transition.tsx';
@@ -112,7 +113,7 @@ const FileResults: FC<OwnProps & StateProps> = ({
               document={getMessageDocument(message)!}
               message={message}
               datetime={message.date}
-              smaller
+              fileSize="small"
               sender={getSenderName(lang, message, chatsById, usersById)}
               className="scroll-item"
               isDownloading={getIsDownloading(activeDownloads, message.content.document!)}
@@ -150,7 +151,11 @@ const FileResults: FC<OwnProps & StateProps> = ({
             description={lang('ChatList.Search.NoResultsDescription')}
           />
         )}
-        {canRenderContents && foundIds && foundIds.length > 0 && renderList()}
+        {canRenderContents && foundIds && foundIds.length > 0 && (
+          <Island className="search-island">
+            {renderList()}
+          </Island>
+        )}
       </InfiniteScroll>
     </Transition>
   );
