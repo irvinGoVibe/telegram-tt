@@ -114,6 +114,7 @@ export type ForwardTarget = {
 };
 
 export type ThemeKey = 'light' | 'dark';
+export type InterfaceStyle = 'classic' | 'islands';
 export type AnimationLevel = 0 | 1 | 2;
 export type FoldersPosition = 'top' | 'left';
 export type PerformanceTypeKey = (

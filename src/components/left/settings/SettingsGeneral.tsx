@@ -4,7 +4,7 @@ import {
 import { getActions, withGlobal } from '../../../global';
 
 import type { SharedSettings } from '../../../global/types';
-import type { ThemeKey, TimeFormat } from '../../../types';
+import type { InterfaceStyle, ThemeKey, TimeFormat } from '../../../types';
 import type { IRadioOption } from '../../ui/RadioGroup';
 import { SettingsScreens } from '../../../types';
 
@@ -37,6 +37,7 @@ type StateProps =
     'shouldReplaceTextShortcuts' |
     'timeFormat' |
     'theme' |
+    'interfaceStyle' |
     'shouldUseSystemTheme'
   )>;
 
@@ -47,6 +48,7 @@ const SettingsGeneral = ({
   shouldReplaceTextShortcuts,
   timeFormat,
   theme,
+  interfaceStyle,
   shouldUseSystemTheme,
   onReset,
 }: OwnProps & StateProps) => {
@@ -78,6 +80,14 @@ const SettingsGeneral = ({
     value: 'auto',
   }];
 
+  const interfaceStyleOptions: IRadioOption[] = [{
+    label: lang('SettingsInterfaceClassic'),
+    value: 'classic',
+  }, {
+    label: lang('SettingsInterfaceIslands'),
+    value: 'islands',
+  }];
+
   const keyboardSendOptions = !isMobileDevice ? [
     { value: 'enter', label: lang('SettingsSendEnter'), subLabel: lang('SettingsSendEnterDescription') },
     {
@@ -103,6 +113,10 @@ const SettingsGeneral = ({
 
     setSharedSettingOption({ theme: newTheme });
     setSharedSettingOption({ shouldUseSystemTheme: value === 'auto' });
+  }, []);
+
+  const handleInterfaceStyleChange = useCallback((value: string) => {
+    setSharedSettingOption({ interfaceStyle: value as InterfaceStyle });
   }, []);
 
   const handleTimeFormatChange = useCallback((newTimeFormat: string) => {
@@ -153,6 +167,16 @@ const SettingsGeneral = ({
         />
       </Island>
 
+      <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>{lang('SettingsInterfaceStyle')}</IslandTitle>
+      <Island>
+        <RadioGroup
+          name="interface-style"
+          options={interfaceStyleOptions}
+          selected={interfaceStyle}
+          onChange={handleInterfaceStyleChange}
+        />
+      </Island>
+
       <IslandTitle dir={lang.isRtl ? 'rtl' : undefined}>{lang('SettingsTimeFormat')}</IslandTitle>
       <Island>
         <RadioGroup
@@ -188,6 +212,7 @@ export default memo(withGlobal<OwnProps>(
   (global): Complete<StateProps> => {
     const {
       theme,
+      interfaceStyle,
       shouldUseSystemTheme,
       messageSendKeyCombo,
       shouldReplaceTextShortcuts,
@@ -201,6 +226,7 @@ export default memo(withGlobal<OwnProps>(
       messageTextSize,
       timeFormat,
       theme,
+      interfaceStyle,
       shouldUseSystemTheme,
     };
   },

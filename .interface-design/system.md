@@ -30,3 +30,13 @@
 - Keep the existing Telegram-derived palette, typography, spacing, and border treatment.
 - Show chat context as compact orientation, not as another heavy settings card.
 - Use text hierarchy and spacing before introducing additional containers or navigation.
+
+## Interface styles
+
+- The product supports two interface styles: `islands` and `classic`. This choice changes layout presentation, not the color theme.
+- Components, state, behavior, localization, and business logic are shared between both styles. Implement functional changes once; do not duplicate Teact component trees or actions per style.
+- `islands` is the default presentation. Put shared styling in the component's base SCSS and keep only genuine classic differences under `html.interface-style-classic`.
+- The classic style uses contiguous desktop columns, full-width rectangular chat headers and header panes, and the legacy message composer pattern with a separate input bubble and circular action button.
+- Classic-only layout rules apply from `min-width: 601px`. Mobile presentation stays shared unless a task explicitly requests a mobile distinction.
+- Persist the selected style in shared settings and apply it through the root HTML class. Do not couple interface style to light or dark theme selection.
+- After changing shared UI or layout CSS, verify both styles. For chat geometry, check the normal view and the view with the right column open; do not report visual completion from lint alone.

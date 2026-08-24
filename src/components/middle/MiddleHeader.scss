@@ -351,3 +351,34 @@
     opacity: 1;
   }
 }
+
+html.interface-style-classic {
+  @media (min-width: 601px) {
+    .MiddleHeader {
+      width: 100%;
+      max-width: none;
+      margin: var(--middle-header-player-height, 0px) 0 0;
+      padding-right: max(0.8125rem, env(safe-area-inset-right));
+      padding-left: max(1.4375rem, env(safe-area-inset-left));
+      border-bottom: 0.0625rem solid var(--color-borders);
+      border-radius: 0;
+
+      box-shadow: none;
+
+      .back-button {
+        margin-left: -0.5rem;
+      }
+
+      .header-tools {
+        border-radius: 0;
+      }
+    }
+  }
+}
+
+@media (min-width: 1276px) {
+  html.interface-style-classic #Main.right-column-open .MiddleHeader {
+    transform: none;
+    width: calc(100% - var(--right-column-width));
+  }
+}

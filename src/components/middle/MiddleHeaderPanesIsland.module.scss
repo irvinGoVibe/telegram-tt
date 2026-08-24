@@ -59,3 +59,22 @@
     width: calc(100% - var(--middle-panel-inline-padding) * 2 - var(--safe-insets));
   }
 }
+
+:global(html.interface-style-classic) .root {
+  @media (min-width: 601px) {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    border-bottom: 0.0625rem solid var(--color-borders);
+    border-radius: 0;
+
+    box-shadow: none;
+  }
+}
+
+@media (min-width: 1276px) {
+  :global(html.interface-style-classic #Main.right-column-open) .root {
+    transform: none;
+    width: calc(100% - var(--right-column-width));
+  }
+}

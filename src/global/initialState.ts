@@ -79,12 +79,13 @@ export const INITIAL_PERFORMANCE_STATE_MIN: PerformanceType = {
   textStreaming: false,
 };
 
-export const SHARED_STATE_CACHE_VERSION = 1;
+export const SHARED_STATE_CACHE_VERSION = 2;
 
 export const INITIAL_SHARED_STATE: SharedState = {
   cacheVersion: SHARED_STATE_CACHE_VERSION,
   settings: {
     theme: 'light',
+    interfaceStyle: 'islands',
     themes: {
       light: {
         isBlurred: true,

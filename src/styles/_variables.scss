@@ -373,4 +373,22 @@
       --symbol-menu-height: 17.6875rem;
     }
   }
+
+  html.interface-style-classic {
+    @media (min-width: 601px) {
+      --border-radius-island: 0;
+      --border-radius-pane: 0;
+      --composer-bottom-gap: 1.25rem;
+      --composer-control-radius: 50%;
+      --composer-main-button-height: 3rem;
+      --composer-main-button-width: 3rem;
+      --composer-pill-padding: 0;
+      --composer-row-gap: 0;
+      --middle-header-gap: 0rem;
+      --middle-header-height: 3.5rem;
+      --middle-panel-inline-padding: 0rem;
+      --shadow-island: none;
+      --shadow-pane: none;
+    }
+  }
 }

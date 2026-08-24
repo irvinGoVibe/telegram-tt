@@ -202,3 +202,21 @@
     position: fixed;
   }
 }
+
+html.interface-style-classic {
+  @media (min-width: 601px) {
+    #RightColumn {
+      top: 0;
+      right: 0;
+      bottom: 0;
+
+      width: var(--right-column-width);
+      padding-right: env(safe-area-inset-right);
+      border-inline-start: 0.0625rem solid var(--color-borders);
+      border-radius: 0;
+
+      background: var(--color-background);
+      box-shadow: none;
+    }
+  }
+}

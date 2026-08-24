@@ -1099,6 +1099,73 @@
   }
 }
 
+html.interface-style-classic {
+  @media (min-width: 601px) {
+    .Composer.is-chat-composer {
+      --composer-control-radius: 50%;
+      --composer-main-button-height: 3rem;
+      --composer-main-button-width: 3rem;
+      --composer-pill-padding: 0rem;
+      --composer-row-gap: 0rem;
+
+      padding: 0;
+      border-radius: 0;
+      background: none;
+      box-shadow: none;
+
+      .composer-wrapper {
+        max-width: calc(100% - var(--composer-main-button-width) - 0.5rem);
+        border-radius: var(--border-radius-messages);
+        border-bottom-right-radius: 0;
+
+        background: var(--color-background);
+        box-shadow: 0 0.0625rem 0.125rem var(--color-default-shadow);
+
+        &::after {
+          content: '';
+
+          position: absolute;
+          right: -0.5rem;
+          bottom: 0;
+
+          width: 0;
+          height: 0;
+          border-right: 0.5rem solid transparent;
+          border-bottom: 0.75rem solid var(--color-background);
+        }
+      }
+
+      .message-input-wrapper {
+        gap: 0;
+      }
+
+      > .Button.main-button {
+        margin-left: 0.5rem;
+        border-radius: 50%;
+
+        color: var(--color-composer-button);
+
+        background: var(--color-background);
+        box-shadow: 0 0.0625rem 0.125rem var(--color-default-shadow);
+
+        .icon {
+          color: var(--color-composer-button);
+        }
+
+        &.edit,
+        &.forward,
+        &.schedule,
+        &.send,
+        &.sendOneTime {
+          .icon {
+            color: var(--color-primary);
+          }
+        }
+      }
+    }
+  }
+}
+
 #message-input-text {
   --composer-input-line-height: 1.3125;
 

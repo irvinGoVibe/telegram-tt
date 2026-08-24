@@ -487,6 +487,9 @@
 "ChatBackground" = "Chat Wallpaper";
 "ChatBackgroundColorThemes" = "Colors, Gradients & Patterns";
 "Theme" = "Theme";
+"SettingsInterfaceStyle" = "Interface style";
+"SettingsInterfaceClassic" = "Classic";
+"SettingsInterfaceIslands" = "Islands";
 "AccDescrStickers" = "Stickers";
 "DoubleTapSetting" = "Quick Reaction";
 "SuggestStickers" = "Sticker suggestions by emoji";

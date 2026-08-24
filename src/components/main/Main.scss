@@ -302,3 +302,79 @@
     }
   }
 }
+
+html.interface-style-classic {
+  @media (min-width: 601px) {
+    .has-call-header {
+      #FoldersSidebar,
+      #LeftColumn {
+        height: calc(100% - var(--call-header-height));
+        margin-top: var(--call-header-height);
+      }
+    }
+
+    #LeftColumn {
+      top: 0;
+      left: 0;
+      transform: translate3d(-100%, 0, 0);
+
+      height: 100%;
+      margin: 0;
+      border-radius: 0;
+
+      box-shadow: none;
+    }
+
+    #Main.left-column-open #LeftColumn {
+      transform: translate3d(0, 0, 0);
+    }
+
+    #MiddleColumn {
+      border-inline-start: 0.0625rem solid var(--color-borders);
+    }
+
+    #Main.left-column-open #MiddleColumn {
+      transform: translate3d(26.5rem, 0, 0);
+    }
+
+    #Main.folders-sidebar-visible {
+      #LeftColumn {
+        left: var(--folders-sidebar-width) !important;
+        margin-left: 0;
+      }
+
+      &.left-column-open #MiddleColumn {
+        transform: translate3d(calc(26.5rem + var(--folders-sidebar-width)), 0, 0);
+      }
+    }
+  }
+
+  @media (min-width: 926px) {
+    #LeftColumn {
+      transform: none;
+    }
+
+    #Main.left-column-open #MiddleColumn,
+    #Main.folders-sidebar-visible.left-column-open #MiddleColumn {
+      transform: none;
+    }
+
+    #Main.folders-sidebar-visible #LeftColumn {
+      position: relative;
+      left: 0 !important;
+    }
+  }
+
+  @media (min-width: 601px) and (max-width: 925px) {
+    #Main.folders-sidebar-visible {
+      #FoldersSidebar {
+        transform: translate3d(-100%, 0, 0);
+        height: 100%;
+      }
+
+      &.left-column-open #FoldersSidebar {
+        transform: translate3d(0, 0, 0);
+      }
+    }
+  }
+}

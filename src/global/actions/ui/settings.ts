@@ -4,6 +4,7 @@ import type { ActionReturnType, GlobalState } from '../../types';
 import { type LangCode, LeftColumnContent, SettingsScreens } from '../../../types';
 
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
+import applyInterfaceStyle from '../../../util/applyInterfaceStyle';
 import { IS_IOS } from '../../../util/browser/windowEnvironment';
 import { disableDebugConsole, initDebugConsole } from '../../../util/debugConsole';
 import { getCurrentTabId } from '../../../util/establishMultitabRole';
@@ -54,6 +55,12 @@ addCallback((global: GlobalState) => {
   if (sharedSettings.theme !== oldSharedSettings.theme) {
     const withAnimation = document.hasFocus() ? selectCanAnimateInterface(global) : false;
     switchTheme(sharedSettings.theme, withAnimation);
+  }
+
+  if (sharedSettings.interfaceStyle !== oldSharedSettings.interfaceStyle) {
+    requestMutation(() => {
+      applyInterfaceStyle(sharedSettings.interfaceStyle);
+    });
   }
 
   if (sharedSettings.language !== oldSharedSettings.language) {

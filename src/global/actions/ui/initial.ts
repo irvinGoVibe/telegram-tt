@@ -5,6 +5,7 @@ import type { LangCode } from '../../../types';
 import type { ActionReturnType, GlobalState } from '../../types';
 
 import { requestMutation } from '../../../lib/fasterdom/fasterdom';
+import applyInterfaceStyle from '../../../util/applyInterfaceStyle';
 import { IS_ELECTRON, IS_MULTIACCOUNT_SUPPORTED, IS_TAURI } from '../../../util/browser/globalEnvironment';
 import {
   IS_ANDROID, IS_IOS, IS_LINUX,
@@ -142,7 +143,7 @@ addCallback((global: GlobalState) => {
   }, tabState.id);
 
   const {
-    messageTextSize, language, shouldUseSystemTheme, timeFormat,
+    interfaceStyle, messageTextSize, language, shouldUseSystemTheme, timeFormat,
   } = selectSharedSettings(global);
 
   const globalTheme = selectTheme(global);
@@ -163,6 +164,7 @@ addCallback((global: GlobalState) => {
     document.documentElement.setAttribute('data-message-text-size', messageTextSize.toString());
     document.body.classList.add('initial');
     document.body.classList.add(IS_TOUCH_ENV ? 'is-touch-env' : 'is-pointer-env');
+    applyInterfaceStyle(interfaceStyle);
     applyPerformanceSettings(performanceType);
 
     if (IS_IOS) {

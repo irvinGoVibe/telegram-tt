@@ -252,6 +252,7 @@ function migrateSharedCache(
       cacheVersion: SHARED_STATE_CACHE_VERSION,
       settings: {
         ...settings,
+        interfaceStyle: settings.interfaceStyle ?? initialState.settings.interfaceStyle,
         themes: cachedSettings?.themes
           || (fallbackThemes ? cloneThemeSettings(fallbackThemes) : initialState.settings.themes),
       },
@@ -425,6 +426,7 @@ function unsafeMigrateCache(cached: GlobalState, initialState: GlobalState) {
       instantViewFontSizeAdjust: INSTANT_VIEW_FONT_SIZE_ADJUST_DEFAULT,
       performance: untypedCached.settings.performance,
       theme: untypedCached.settings.byKey.theme,
+      interfaceStyle: initialState.sharedState.settings.interfaceStyle,
       themes: untypedCached.settings.themes
         ? cloneThemeSettings(untypedCached.settings.themes)
         : initialState.sharedState.settings.themes,

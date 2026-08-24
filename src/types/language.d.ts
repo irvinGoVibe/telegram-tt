@@ -424,6 +424,9 @@ export interface LangPair {
   'ChatBackground': undefined;
   'ChatBackgroundColorThemes': undefined;
   'Theme': undefined;
+  'SettingsInterfaceStyle': undefined;
+  'SettingsInterfaceClassic': undefined;
+  'SettingsInterfaceIslands': undefined;
   'AccDescrStickers': undefined;
   'DoubleTapSetting': undefined;
   'SuggestStickers': undefined;
