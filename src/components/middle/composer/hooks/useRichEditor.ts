@@ -16,6 +16,7 @@ import {
   hasEditorCollapsedSelection,
   insertEditorContent,
   insertEditorMarkdown,
+  replaceEditorMarkdown,
   replaceEditorRange,
 } from '../helpers/richEditorComposer';
 
@@ -144,6 +145,7 @@ export default function useRichEditor() {
     redo: () => {
       editorRef.current?.chain().focus().redo().run();
     },
+    replaceMarkdown: (markdown) => replaceEditorMarkdown(editorRef.current, markdown),
     replaceValue: (nextValue) => {
       valueRef.current = nextValue;
       setCurrentValue(nextValue);

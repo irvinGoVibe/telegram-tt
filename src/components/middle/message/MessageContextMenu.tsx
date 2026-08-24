@@ -91,6 +91,7 @@ type OwnProps = {
   canEdit?: boolean;
   canAppendTodoList?: boolean;
   canCreateTask?: boolean;
+  canAiAnswer?: boolean;
   canForward?: boolean;
   canFaveSticker?: boolean;
   canUnfaveSticker?: boolean;
@@ -127,6 +128,7 @@ type OwnProps = {
   onAppendTodoList?: NoneToVoidFunction;
   onCreateTask?: NoneToVoidFunction;
   onSendToAiChat?: NoneToVoidFunction;
+  onAiAnswer?: NoneToVoidFunction;
   onPin?: NoneToVoidFunction;
   onUnpin?: NoneToVoidFunction;
   onForward?: NoneToVoidFunction;
@@ -195,6 +197,7 @@ const MessageContextMenu = ({
   canEdit,
   canAppendTodoList,
   canCreateTask,
+  canAiAnswer,
   noReplies,
   canPin,
   canUnpin,
@@ -236,6 +239,7 @@ const MessageContextMenu = ({
   onAppendTodoList,
   onCreateTask,
   onSendToAiChat,
+  onAiAnswer,
   onPin,
   onUnpin,
   onForward,
@@ -476,14 +480,17 @@ const MessageContextMenu = ({
             {oldLang(canQuote ? 'lng_context_quote_and_reply' : 'Reply')}
           </MenuItem>
         )}
-        {canCreateTask && (
-          <MenuItem icon="check" onClick={onCreateTask}>
-            {lang('ThreadCreateTask')}
-          </MenuItem>
-        )}
+        <MenuItem icon="check" disabled>
+          {lang('ThreadCreateTask')}
+        </MenuItem>
         {canCreateTask && (
           <MenuItem icon="bot-command" onClick={onSendToAiChat}>
             {lang('ThreadSendToAIChat')}
+          </MenuItem>
+        )}
+        {canCreateTask && (
+          <MenuItem icon="stars-filled" disabled={!canAiAnswer} onClick={onAiAnswer}>
+            {lang('ThreadAIAnswer')}
           </MenuItem>
         )}
         {!noReplies && Boolean(repliesThreadInfo?.messagesCount) && (

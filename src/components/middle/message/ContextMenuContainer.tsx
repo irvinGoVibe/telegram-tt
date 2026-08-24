@@ -82,6 +82,7 @@ import buildClassName from '../../../util/buildClassName';
 import { copyTextToClipboard } from '../../../util/clipboard';
 import { isUserId } from '../../../util/entities/ids';
 import { getTranslationCacheKey, parseTranslationCacheKey } from '../../../util/keys/translationKey';
+import { generateThreadAiAnswer } from '../../../thread/api';
 import { openThreadWorkspace } from '../../../thread/events';
 import { getSelectionAsFormattedText } from './helpers/getSelectionAsFormattedText';
 import { isSelectionRangeInsideMessage } from './helpers/isSelectionRangeInsideMessage';
@@ -303,6 +304,7 @@ const ContextMenuContainer = ({
     toggleMusicInProfile,
     toggleThreadAssistant,
     setThreadAssistantDraft,
+    openChatWithDraft,
   } = getActions();
 
   const oldLang = useOldLang();
@@ -542,6 +544,48 @@ const ContextMenuContainer = ({
     });
     toggleThreadAssistant({ force: true });
     closeMenu();
+  });
+
+  const handleAiAnswer = useLastCallback(async () => {
+    const text = message.content.text?.text?.trim();
+    if (!text) return;
+
+    const global = getGlobal();
+    const senderUser = message.senderId ? selectUser(global, message.senderId) : undefined;
+    const senderChat = message.senderId ? selectChat(global, message.senderId) : undefined;
+    const senderName = senderUser
+      ? (getUserFullName(senderUser) || lang('ThreadAITelegramParticipant'))
+      : (senderChat?.title || chat?.title || lang('ThreadAITelegramParticipant'));
+    closeMenu();
+    showNotification({ message: lang('ThreadAIAnswerGenerating') });
+
+    try {
+      const result = await generateThreadAiAnswer({
+        message: {
+          id: message.id,
+          from: senderName,
+          date: new Date(message.date * 1000).toISOString(),
+          text,
+        },
+      });
+      openChatWithDraft({
+        chatId: message.chatId,
+        threadId,
+        text: { text: result.answer },
+      });
+      updateDraftReplyInfo({
+        replyToMsgId: message.id,
+        monoforumPeerId: savedDialogId,
+        replyToPeerId: undefined,
+      });
+      showNotification({ message: lang('ThreadAIAnswerReady') });
+    } catch (error) {
+      showNotification({
+        message: lang('ThreadAIAnswerError', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
+    }
   });
 
   const handleOpenThread = useLastCallback(() => {
@@ -839,6 +883,7 @@ const ContextMenuContainer = ({
         canEdit={canEdit}
         canAppendTodoList={canAppendTodoList}
         canCreateTask={canCreateTask}
+        canAiAnswer={canCreateTask && Boolean(message.content.text?.text?.trim())}
         canForward={canForward}
         canFaveSticker={canFaveSticker}
         canUnfaveSticker={canUnfaveSticker}
@@ -876,6 +921,7 @@ const ContextMenuContainer = ({
         onAppendTodoList={handleAppendTodoList}
         onCreateTask={handleCreateTask}
         onSendToAiChat={handleSendToAiChat}
+        onAiAnswer={handleAiAnswer}
         onPin={handlePin}
         onUnpin={handleUnpin}
         onForward={handleForward}

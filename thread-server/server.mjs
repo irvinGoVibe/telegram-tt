@@ -29,10 +29,28 @@ const MAX_CONTEXT_CHARS = 155_000;
 const TASK_DRAFT_MAX_MESSAGES = 10_000;
 const CODEX_TIMEOUT_MS = 180_000;
 const R2_TIMEOUT_MS = 180_000;
-const MAX_ASSISTANT_IMAGES = 4;
-const MAX_ASSISTANT_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_ASSISTANT_IMAGES_TOTAL_BYTES = 12 * 1024 * 1024;
-const ASSISTANT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const MAX_ASSISTANT_ATTACHMENTS = 4;
+const MAX_ASSISTANT_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_ASSISTANT_ATTACHMENTS_TOTAL_BYTES = 12 * 1024 * 1024;
+const ASSISTANT_ATTACHMENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/json",
+  "application/msword",
+  "application/pdf",
+  "application/rtf",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/csv",
+  "text/markdown",
+  "text/plain",
+  "text/rtf",
+]);
 const R2_COPILOT_API_URL = (cleanEnv(process.env.R2_COPILOT_API_URL) || "https://api-chat.r2copilot.ai").replace(/\/+$/, "");
 const R2_USER_AGENT = "telegram-thread/1.0";
 
@@ -587,12 +605,14 @@ function truncateUtf8(value, maxBytes) {
 let r2ModelsCache = { expiresAt: 0, value: null };
 
 function aiSettingsPayload() {
+  const defaultModel = cleanEnv(process.env.R2_COPILOT_DEFAULT_MODEL);
   return {
     provider: "r2",
     providerName: "R2 Copilot",
     apiUrl: R2_COPILOT_API_URL,
     apiKeyConfigured: Boolean(cleanEnv(process.env.R2_COPILOT_API_KEY)),
-    defaultModel: cleanEnv(process.env.R2_COPILOT_DEFAULT_MODEL),
+    defaultModel,
+    answerModel: cleanEnv(process.env.R2_COPILOT_ANSWER_MODEL) || defaultModel,
   };
 }
 
@@ -623,32 +643,33 @@ async function fetchR2(pathname, { method = "GET", body, signal, authorized = fa
   return payload;
 }
 
-export function normalizedAssistantImages(rawAttachments) {
+export function normalizedAssistantAttachments(rawAttachments) {
   if (!Array.isArray(rawAttachments)) return [];
-  if (rawAttachments.length > MAX_ASSISTANT_IMAGES) {
-    const error = new Error(`Attach no more than ${MAX_ASSISTANT_IMAGES} images.`);
+  if (rawAttachments.length > MAX_ASSISTANT_ATTACHMENTS) {
+    const error = new Error(`Attach no more than ${MAX_ASSISTANT_ATTACHMENTS} files.`);
     error.statusCode = 400;
     throw error;
   }
   let totalBytes = 0;
   return rawAttachments.map((raw, index) => {
     const mimeType = cleanLine(raw?.mimeType, 120).toLowerCase();
-    const fileName = cleanLine(raw?.name || `image-${index + 1}`, 240).replace(/[^\p{L}\p{N}._-]+/gu, "-") || `image-${index + 1}`;
+    const fileName = cleanLine(raw?.name || `attachment-${index + 1}`, 240)
+      .replace(/[^\p{L}\p{N}._-]+/gu, "-") || `attachment-${index + 1}`;
     const base64 = String(raw?.data || "").replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
-    if (!ASSISTANT_IMAGE_TYPES.has(mimeType) || !base64 || !/^[a-z0-9+/]+={0,2}$/i.test(base64)) {
-      const error = new Error("Only valid JPEG, PNG, WebP, or GIF images can be attached.");
+    if (!ASSISTANT_ATTACHMENT_TYPES.has(mimeType) || !base64 || !/^[a-z0-9+/]+={0,2}$/i.test(base64)) {
+      const error = new Error("This file type is not supported for AI attachments.");
       error.statusCode = 400;
       throw error;
     }
     const buffer = Buffer.from(base64, "base64");
-    if (!buffer.length || buffer.length > MAX_ASSISTANT_IMAGE_BYTES) {
-      const error = new Error("Each image must be 8 MB or smaller.");
+    if (!buffer.length || buffer.length > MAX_ASSISTANT_ATTACHMENT_BYTES) {
+      const error = new Error("Each attachment must be 8 MB or smaller.");
       error.statusCode = 413;
       throw error;
     }
     totalBytes += buffer.length;
-    if (totalBytes > MAX_ASSISTANT_IMAGES_TOTAL_BYTES) {
-      const error = new Error("Attached images must be 12 MB or smaller in total.");
+    if (totalBytes > MAX_ASSISTANT_ATTACHMENTS_TOTAL_BYTES) {
+      const error = new Error("Attachments must be 12 MB or smaller in total.");
       error.statusCode = 413;
       throw error;
     }
@@ -656,12 +677,12 @@ export function normalizedAssistantImages(rawAttachments) {
   });
 }
 
-export async function uploadR2File(image, signal) {
+export async function uploadR2File(attachment, signal) {
   const started = await fetchR2("/api/file/upload/start", {
     method: "POST",
     authorized: true,
     signal,
-    body: { file_name: image.fileName, mime_type: image.mimeType, file_size: image.buffer.length },
+    body: { file_name: attachment.fileName, mime_type: attachment.mimeType, file_size: attachment.buffer.length },
   });
   if (Number(started.result) !== 0 || !started.sas_url || started.operation_id === undefined) {
     const error = new Error(r2ResultError(started.result));
@@ -670,8 +691,8 @@ export async function uploadR2File(image, signal) {
   }
   const uploaded = await fetch(started.sas_url, {
     method: "PUT",
-    headers: { "content-type": image.mimeType, "x-ms-blob-type": "BlockBlob" },
-    body: image.buffer,
+    headers: { "content-type": attachment.mimeType, "x-ms-blob-type": "BlockBlob" },
+    body: attachment.buffer,
     signal,
   });
   if (!uploaded.ok) {
@@ -688,13 +709,13 @@ export async function uploadR2File(image, signal) {
     });
     if (Number(checked.result) === 0 && checked.file_id) return checked.file_id;
     if (Number(checked.result) !== 1) {
-      const error = new Error(`R2 could not process ${image.fileName} (result ${checked.result}).`);
+      const error = new Error(`R2 could not process ${attachment.fileName} (result ${checked.result}).`);
       error.statusCode = 502;
       throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, 750));
   }
-  const error = new Error(`R2 timed out while processing ${image.fileName}.`);
+  const error = new Error(`R2 timed out while processing ${attachment.fileName}.`);
   error.statusCode = 504;
   throw error;
 }
@@ -968,7 +989,7 @@ async function handleProjectAssistant({ request, response, url }) {
   const body = await readJsonBody(request);
   const question = cleanLine(body.question, 8_000);
   const chatId = cleanLine(body.chatId, 80);
-  const images = normalizedAssistantImages(body.attachments);
+  const attachments = normalizedAssistantAttachments(body.attachments);
   if (!question) {
     sendJson(response, 400, { error: "Enter a question about this project chat." });
     return true;
@@ -1019,9 +1040,15 @@ async function handleProjectAssistant({ request, response, url }) {
     request.once("aborted", abortAttachments);
     let r2Attachments = [];
     try {
-      r2Attachments = await Promise.all(images.map(async (image) => {
-        const fileId = await uploadR2File(image, attachmentController.signal);
-        return { type: 2, mime_type: image.mimeType, name: image.fileName, file_id: fileId, file_size: image.buffer.length };
+      r2Attachments = await Promise.all(attachments.map(async (attachment) => {
+        const fileId = await uploadR2File(attachment, attachmentController.signal);
+        return {
+          type: 2,
+          mime_type: attachment.mimeType,
+          name: attachment.fileName,
+          file_id: fileId,
+          file_size: attachment.buffer.length,
+        };
       }));
     } finally {
       clearTimeout(attachmentTimeout);
@@ -1095,6 +1122,9 @@ async function handleAiSettings({ request, response, url }) {
     if (Object.hasOwn(body, "defaultModel")) {
       updates.R2_COPILOT_DEFAULT_MODEL = cleanLine(body.defaultModel, 120);
     }
+    if (Object.hasOwn(body, "answerModel")) {
+      updates.R2_COPILOT_ANSWER_MODEL = cleanLine(body.answerModel, 120);
+    }
     if (!Object.keys(updates).length) {
       sendJson(response, 400, { error: "No AI settings were changed." });
       return true;
@@ -1130,6 +1160,41 @@ async function handleAiSettings({ request, response, url }) {
   return false;
 }
 
+async function handleQuickAiAnswer({ request, response, url }) {
+  if (url.pathname !== "/api/assistant/reply" || request.method !== "POST") return false;
+  if (!cleanEnv(process.env.R2_COPILOT_API_KEY)) {
+    sendJson(response, 503, { error: "Configure the R2 Copilot API key in AI settings." });
+    return true;
+  }
+
+  const body = await readJsonBody(request);
+  const message = normalizeMessage(body.message, 0);
+  if (!message?.text) {
+    sendJson(response, 400, { error: "Select a text message to answer." });
+    return true;
+  }
+
+  const catalog = await getR2Models();
+  const configuredModel = cleanEnv(process.env.R2_COPILOT_ANSWER_MODEL)
+    || cleanEnv(process.env.R2_COPILOT_DEFAULT_MODEL);
+  const model = resolveR2Model(catalog, cleanLine(body.model, 120) || configuredModel);
+  const { outputLimit, inputLimit } = r2RequestLimits(model, 4_000);
+  const prompt = `Write a natural direct reply to the selected Telegram message.
+
+Selected message from ${message.from}:
+${message.text}`;
+  const result = await sendR2Prompt({
+    prompt,
+    model,
+    responseLanguage: "auto",
+    instruction: "Return only the ready-to-send reply text. Match the language and tone of the selected message. Do not add commentary, citations, labels, quotation marks around the whole reply, or Markdown formatting.",
+    outputLimit,
+    inputLimit,
+  }, request);
+  sendJson(response, 200, result);
+  return true;
+}
+
 async function handleStandaloneAssistant({ request, response, url }) {
   if (url.pathname !== "/api/assistant/chat" || request.method !== "POST") return false;
   if (!cleanEnv(process.env.R2_COPILOT_API_KEY)) {
@@ -1146,16 +1211,22 @@ async function handleStandaloneAssistant({ request, response, url }) {
   const catalog = await getR2Models();
   const model = resolveR2Model(catalog, cleanLine(body.model, 120));
   const { outputLimit, inputLimit } = r2RequestLimits(model, 16_000);
-  const images = normalizedAssistantImages(body.attachments);
+  const attachments = normalizedAssistantAttachments(body.attachments);
   const attachmentController = new AbortController();
   const attachmentTimeout = setTimeout(() => attachmentController.abort(), 90_000);
   const abortAttachments = () => attachmentController.abort();
   request.once("aborted", abortAttachments);
   let r2Attachments = [];
   try {
-    r2Attachments = await Promise.all(images.map(async (image) => {
-      const fileId = await uploadR2File(image, attachmentController.signal);
-      return { type: 2, mime_type: image.mimeType, name: image.fileName, file_id: fileId, file_size: image.buffer.length };
+    r2Attachments = await Promise.all(attachments.map(async (attachment) => {
+      const fileId = await uploadR2File(attachment, attachmentController.signal);
+      return {
+        type: 2,
+        mime_type: attachment.mimeType,
+        name: attachment.fileName,
+        file_id: fileId,
+        file_size: attachment.buffer.length,
+      };
     }));
   } finally {
     clearTimeout(attachmentTimeout);
@@ -1249,6 +1320,7 @@ export function createAppServer() {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
 
     if (await handleAiSettings({ request, response, url })) return;
+    if (await handleQuickAiAnswer({ request, response, url })) return;
     if (await handleStandaloneAssistant({ request, response, url })) return;
     if (await handlePlatformApi({ request, response, url, readJsonBody, sendJson })) return;
     if (await handleTaskDraft({ request, response, url })) return;

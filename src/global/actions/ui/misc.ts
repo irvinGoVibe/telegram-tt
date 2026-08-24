@@ -74,7 +74,7 @@ addActionHandler('toggleThreadAssistant', (global, actions, payload): ActionRetu
   const tabState = selectTabState(global, tabId);
   const isThreadAssistantShown = force !== undefined ? force : !tabState.isThreadAssistantShown;
 
-  return updateTabState(global, {
+  global = updateTabState(global, {
     isThreadAssistantShown,
     ...(isThreadAssistantShown && {
       chatInfo: {
@@ -83,6 +83,12 @@ addActionHandler('toggleThreadAssistant', (global, actions, payload): ActionRetu
       },
     }),
   }, tabId);
+
+  if (!isThreadAssistantShown) return global;
+
+  setGlobal(global);
+  actions.scrollMessageListToBottom({ tabId });
+  return undefined;
 });
 
 addActionHandler('setThreadAssistantDraft', (global, actions, payload): ActionReturnType => {

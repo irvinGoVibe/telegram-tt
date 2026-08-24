@@ -424,6 +424,10 @@
       z-index: 2;
     }
 
+    .rich-editor-document-actions {
+      z-index: 2;
+    }
+
     @media (max-width: 600px) {
       --rich-input-footer-offset: calc(0.5rem + var(--composer-bottom-gap-mobile));
 
@@ -522,6 +526,11 @@
       z-index: 2;
       top: 0.25rem;
       right: calc(-1 * (var(--composer-row-gap) + var(--composer-main-button-width) / 2 + 0.875rem));
+    }
+
+    .rich-editor-document-actions {
+      top: 0.25rem;
+      right: calc(2rem - var(--composer-row-gap) - var(--composer-main-button-width) / 2 - 0.875rem);
     }
   }
 
@@ -741,6 +750,33 @@
     transition: transform 200ms ease-in, opacity 200ms ease-in;
 
     &.rich-editor-history-open {
+      pointer-events: auto;
+      transform: translateY(0);
+      opacity: 1;
+      transition-timing-function: ease-out;
+    }
+
+    body.no-message-composer-animations & {
+      transition: none;
+    }
+  }
+
+  .rich-editor-document-actions {
+    pointer-events: none;
+
+    position: absolute;
+    z-index: 1;
+    top: 0.4375rem;
+    right: 2.625rem;
+    transform: translateY(-125%);
+
+    display: flex;
+
+    opacity: 0;
+
+    transition: transform 200ms ease-in, opacity 200ms ease-in;
+
+    &.rich-editor-document-actions-open {
       pointer-events: auto;
       transform: translateY(0);
       opacity: 1;
@@ -1185,6 +1221,11 @@ html.interface-style-classic {
       .rich-editor-button {
         top: 0.4375rem;
         right: 0.625rem;
+      }
+
+      .rich-editor-document-actions {
+        top: 0.4375rem;
+        right: 2.625rem;
       }
     }
   }

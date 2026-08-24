@@ -1,5 +1,5 @@
 import type {
-  ChangeEvent, FormEvent, KeyboardEvent,
+  ChangeEvent, DragEvent, FormEvent, KeyboardEvent,
 } from 'react';
 import { parse } from 'marked';
 import type { FC, TeactNode } from '../../lib/teact/teact';
@@ -45,15 +45,42 @@ import './ThreadAssistantDrawer.scss';
 
 const CHAT_STORAGE_PREFIX = 'telegram-thread.ai-chat';
 const MODEL_STORAGE_KEY = 'telegram-thread.ai-model';
-const MAX_IMAGE_COUNT = 4;
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024;
+const MAX_ATTACHMENT_COUNT = 4;
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 12 * 1024 * 1024;
+const MAX_ATTACHMENT_PREVIEW_WIDTH = 320;
+const MAX_ATTACHMENT_PREVIEW_HEIGHT = 240;
+const ATTACHMENT_PREVIEW_QUALITY = 0.72;
 const MAX_CONTEXT_MESSAGES = 250;
 const MAX_HISTORY_CONTEXT_MESSAGES = 2500;
 const HISTORY_PAGE_SIZE = 100;
 const ARTICLE_MIN_TEXT_LENGTH = 800;
 const CONTEXT_STORAGE_PREFIX = 'telegram-thread.ai-context';
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const ATTACHMENT_MIME_TYPES_BY_EXTENSION = new Map([
+  ['.csv', 'text/csv'],
+  ['.doc', 'application/msword'],
+  ['.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  ['.gif', 'image/gif'],
+  ['.jpeg', 'image/jpeg'],
+  ['.jpg', 'image/jpeg'],
+  ['.json', 'application/json'],
+  ['.md', 'text/markdown'],
+  ['.pdf', 'application/pdf'],
+  ['.png', 'image/png'],
+  ['.ppt', 'application/vnd.ms-powerpoint'],
+  ['.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ['.rtf', 'application/rtf'],
+  ['.txt', 'text/plain'],
+  ['.webp', 'image/webp'],
+  ['.xls', 'application/vnd.ms-excel'],
+  ['.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+]);
+const ALLOWED_ATTACHMENT_TYPES = new Set(ATTACHMENT_MIME_TYPES_BY_EXTENSION.values());
+const IMAGE_ATTACHMENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const ATTACHMENT_ACCEPT = [
+  ...ATTACHMENT_MIME_TYPES_BY_EXTENSION.keys(),
+  ...ALLOWED_ATTACHMENT_TYPES,
+].join(',');
 const RE_BLOCK_MARKDOWN_FORMATTING = /(?:^|\n)\s*(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|.+\|)/m;
 const RE_INLINE_MARKDOWN_FORMATTING = /\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\)/;
 const RE_MESSAGE_CITATION = /\[#(\d+)\](?!\()/g;
@@ -73,12 +100,19 @@ type ContextSelection = {
 type ContextDateField = 'from' | 'to' | 'range';
 type MessageAction = 'copy' | 'download' | 'insert';
 
-type PendingImage = {
+type PendingAttachment = {
   name: string;
   mimeType: string;
   byteSize: number;
   dataUrl: string;
+  previewUrl?: string;
   data: string;
+};
+
+type LocalAssistantAttachment = {
+  name: string;
+  mimeType?: string;
+  previewUrl?: string;
 };
 
 type LocalAssistantMessage = {
@@ -87,7 +121,7 @@ type LocalAssistantMessage = {
   content: string;
   model?: string;
   createdAt: string;
-  attachments?: { name: string }[];
+  attachments?: LocalAssistantAttachment[];
 };
 
 type OwnProps = {
@@ -110,6 +144,7 @@ const EMPTY_SETTINGS: ThreadAiSettings = {
   apiUrl: 'https://api-chat.r2copilot.ai',
   apiKeyConfigured: false,
   defaultModel: '',
+  answerModel: '',
 };
 
 function errorMessage(error: unknown) {
@@ -196,22 +231,58 @@ function readStoredMessages(key: string): LocalAssistantMessage[] {
   }
 }
 
-function readImage(file: File) {
-  return new Promise<PendingImage>((resolve, reject) => {
+function readAttachment(file: File) {
+  return new Promise<PendingAttachment>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error(file.name));
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      const mimeType = resolveAttachmentMimeType(file);
       resolve({
         name: file.name,
-        mimeType: file.type,
+        mimeType,
         byteSize: file.size,
         dataUrl,
+        previewUrl: await createAttachmentPreview(dataUrl, mimeType),
         data: dataUrl.split(',', 2)[1] || '',
       });
     };
     reader.readAsDataURL(file);
   });
+}
+
+function createAttachmentPreview(dataUrl: string, mimeType: string) {
+  if (!IMAGE_ATTACHMENT_TYPES.has(mimeType)) return Promise.resolve(undefined);
+
+  return new Promise<string | undefined>((resolve) => {
+    const image = new Image();
+    image.onerror = () => resolve(undefined);
+    image.onload = () => {
+      const scale = Math.min(
+        1,
+        MAX_ATTACHMENT_PREVIEW_WIDTH / image.naturalWidth,
+        MAX_ATTACHMENT_PREVIEW_HEIGHT / image.naturalHeight,
+      );
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d');
+      if (!context) {
+        resolve(undefined);
+        return;
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/webp', ATTACHMENT_PREVIEW_QUALITY));
+    };
+    image.src = dataUrl;
+  });
+}
+
+function resolveAttachmentMimeType(file: File) {
+  if (ALLOWED_ATTACHMENT_TYPES.has(file.type)) return file.type;
+  const extension = file.name.match(/\.[^.]+$/)?.[0].toLowerCase();
+  return extension ? (ATTACHMENT_MIME_TYPES_BY_EXTENSION.get(extension) || file.type) : file.type;
 }
 
 function messageMediaLabel(message: ApiMessage) {
@@ -251,8 +322,10 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const [activeModel, setActiveModel] = useState('');
   const [settings, setSettings] = useState<ThreadAiSettings>(EMPTY_SETTINGS);
   const [settingsModel, setSettingsModel] = useState('');
+  const [settingsAnswerModel, setSettingsAnswerModel] = useState('');
   const [question, setQuestion] = useState('');
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [isDraggingAttachments, setIsDraggingAttachments] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState('');
   const [hoveredMessageAction, setHoveredMessageAction] = useState<{
     messageId: string;
@@ -269,15 +342,16 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
 
   const messagesRef = useRef<HTMLDivElement>();
   const questionInputRef = useRef<HTMLTextAreaElement>();
-  const imageInputRef = useRef<HTMLInputElement>();
+  const attachmentInputRef = useRef<HTMLInputElement>();
   const contextMenuRef = useRef<HTMLDivElement>();
   const contextLoadIdRef = useRef(0);
+  const attachmentDragDepthRef = useRef(0);
   const shouldScrollQuestionToEndRef = useRef(false);
   const currentStorageKey = chatStorageKey(currentChatId);
   const canSend = Boolean(
     settings.apiKeyConfigured
     && activeModel
-    && (question.trim() || pendingImages.length)
+    && (question.trim() || pendingAttachments.length)
     && !isSending,
   );
 
@@ -371,7 +445,9 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     const storageKey = chatStorageKey(currentChatId);
     setMessages(readStoredMessages(storageKey));
     setHydratedStorageKey(storageKey);
-    setPendingImages([]);
+    setPendingAttachments([]);
+    setIsDraggingAttachments(false);
+    attachmentDragDepthRef.current = 0;
     setQuestion('');
     setError('');
     setNotice('');
@@ -394,6 +470,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     if (settingsResult.status === 'fulfilled') {
       setSettings(settingsResult.value);
       setSettingsModel(settingsResult.value.defaultModel);
+      setSettingsAnswerModel(settingsResult.value.answerModel || settingsResult.value.defaultModel);
       if (!settingsResult.value.apiKeyConfigured) setView('settings');
     } else {
       setError(errorMessage(settingsResult.reason));
@@ -409,11 +486,15 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       setModels(catalog.models);
       setActiveModel(nextModel);
       setSettingsModel(configuredModel || catalog.defaultModel || nextModel);
+      setSettingsAnswerModel(settingsResult.status === 'fulfilled'
+        ? (settingsResult.value.answerModel || configuredModel || catalog.defaultModel || nextModel)
+        : (configuredModel || catalog.defaultModel || nextModel));
     } else if (settingsResult.status === 'fulfilled') {
       const storedModel = localStorage.getItem(MODEL_STORAGE_KEY) || '';
       const configuredModel = settingsResult.value.defaultModel || storedModel;
       setActiveModel(configuredModel);
       setSettingsModel(configuredModel);
+      setSettingsAnswerModel(settingsResult.value.answerModel || configuredModel);
       setView('settings');
       setError(errorMessage(modelsResult.reason));
     }
@@ -547,31 +628,68 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     setIsContextMenuOpen(false);
   });
 
-  const handleImages = useLastCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files || []);
-    event.currentTarget.value = '';
+  const addAttachments = useLastCallback(async (files: File[]) => {
     if (!files.length) return;
-    if (pendingImages.length + files.length > MAX_IMAGE_COUNT) {
-      setError(lang('ThreadAIImageCountError'));
+    if (pendingAttachments.length + files.length > MAX_ATTACHMENT_COUNT) {
+      setError(lang('ThreadAIAttachmentCountError'));
       return;
     }
-    if (files.some((file) => !ALLOWED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_BYTES)) {
-      setError(lang('ThreadAIImageTypeError'));
+    if (files.some((file) => (
+      !ALLOWED_ATTACHMENT_TYPES.has(resolveAttachmentMimeType(file)) || file.size > MAX_ATTACHMENT_BYTES
+    ))) {
+      setError(lang('ThreadAIAttachmentTypeError'));
       return;
     }
-    const totalBytes = pendingImages.reduce((total, image) => total + image.byteSize, 0)
+    const totalBytes = pendingAttachments.reduce((total, attachment) => total + attachment.byteSize, 0)
       + files.reduce((total, file) => total + file.size, 0);
-    if (totalBytes > MAX_TOTAL_IMAGE_BYTES) {
-      setError(lang('ThreadAIImageTotalError'));
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      setError(lang('ThreadAIAttachmentTotalError'));
       return;
     }
     try {
-      const images = await Promise.all(files.map(readImage));
-      setPendingImages((current) => [...current, ...images]);
+      const attachments = await Promise.all(files.map(readAttachment));
+      setPendingAttachments((current) => [...current, ...attachments]);
       setError('');
     } catch (nextError) {
       setError(errorMessage(nextError));
     }
+  });
+
+  const handleAttachments = useLastCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = '';
+    void addAttachments(files);
+  });
+
+  const handleAttachmentDragEnter = useLastCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    if (isSending) return;
+    attachmentDragDepthRef.current += 1;
+    setIsDraggingAttachments(true);
+  });
+
+  const handleAttachmentDragOver = useLastCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    if (isSending) return;
+    event.dataTransfer.dropEffect = 'copy';
+  });
+
+  const handleAttachmentDragLeave = useLastCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    attachmentDragDepthRef.current = Math.max(0, attachmentDragDepthRef.current - 1);
+    if (!attachmentDragDepthRef.current) setIsDraggingAttachments(false);
+  });
+
+  const handleAttachmentDrop = useLastCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    attachmentDragDepthRef.current = 0;
+    setIsDraggingAttachments(false);
+    if (isSending) return;
+    void addAttachments(Array.from(event.dataTransfer.files));
   });
 
   const submitQuestion = useLastCallback(async (event?: FormEvent<HTMLFormElement>) => {
@@ -581,19 +699,23 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       return;
     }
 
-    const nextQuestion = question.trim() || lang('ThreadAIImagePrompt');
+    const nextQuestion = question.trim() || lang('ThreadAIAttachmentPrompt');
     const userMessage: LocalAssistantMessage = {
       id: localMessageId('user'),
       role: 'user',
       content: nextQuestion,
       createdAt: new Date().toISOString(),
-      attachments: pendingImages.map(({ name }) => ({ name })),
+      attachments: pendingAttachments.map(({ name, mimeType, previewUrl }) => ({
+        name,
+        mimeType,
+        previewUrl,
+      })),
     };
     const history = messages.slice(-20).map((message) => ({ role: message.role, text: message.content }));
-    const attachments = pendingImages.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
+    const attachments = pendingAttachments.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
     setMessages((current) => [...current, userMessage]);
     setQuestion('');
-    setPendingImages([]);
+    setPendingAttachments([]);
     setIsSending(true);
     setError('');
     setNotice('');
@@ -627,21 +749,32 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   });
 
   const saveSettings = useLastCallback(async (shouldTest = false) => {
-    if (!settingsModel || settings.canEdit === false) return;
+    if (!settingsModel || !settingsAnswerModel || settings.canEdit === false) return;
     const requestedModel = settingsModel;
+    const requestedAnswerModel = settingsAnswerModel;
     setIsSavingSettings(true);
     setError('');
     setNotice('');
     try {
-      const nextSettings = await updateThreadAiSettings({ defaultModel: requestedModel });
+      const nextSettings = await updateThreadAiSettings({
+        defaultModel: requestedModel,
+        answerModel: requestedAnswerModel,
+      });
       const persistedSettings = await getThreadAiSettings();
-      if (nextSettings.defaultModel !== requestedModel || persistedSettings.defaultModel !== requestedModel) {
+      if (
+        nextSettings.defaultModel !== requestedModel
+        || nextSettings.answerModel !== requestedAnswerModel
+        || persistedSettings.defaultModel !== requestedModel
+        || persistedSettings.answerModel !== requestedAnswerModel
+      ) {
         setSettings(persistedSettings);
         setSettingsModel(persistedSettings.defaultModel || requestedModel);
+        setSettingsAnswerModel(persistedSettings.answerModel || requestedAnswerModel);
         throw new Error(lang('ThreadAISettingsNotSaved'));
       }
       setSettings(persistedSettings);
       setSettingsModel(requestedModel);
+      setSettingsAnswerModel(requestedAnswerModel);
       setActiveModel(requestedModel);
       localStorage.setItem(MODEL_STORAGE_KEY, requestedModel);
       setNotice(lang('ThreadAISettingsSaved'));
@@ -663,6 +796,17 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     focusMessage({ chatId: currentChatId, messageId });
   });
 
+  const fillAssistantSuggestion = useLastCallback((suggestion: string) => {
+    setQuestion(suggestion);
+    requestMutation(() => {
+      const questionInput = questionInputRef.current;
+      if (!questionInput) return;
+
+      questionInput.focus();
+      questionInput.setSelectionRange(suggestion.length, suggestion.length);
+    });
+  });
+
   const renderAssistantTextPart = (text: string, key: string): TeactNode[] => {
     return text.split(/(\[#\d+\])/g).filter(Boolean).map((part, index) => {
       const match = part.match(/^\[#(\d+)\]$/);
@@ -682,17 +826,36 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     });
   };
 
-  const renderMarkdownChildren = (node: ChildNode, key: string): TeactNode[] => {
-    return Array.from(node.childNodes).map((child, index) => renderMarkdownNode(child, `${key}-${index}`));
+  const renderMarkdownChildren = (
+    node: ChildNode,
+    key: string,
+    isAssistantCommentary?: boolean,
+  ): TeactNode[] => {
+    return Array.from(node.childNodes).map((child, index) => (
+      renderMarkdownNode(child, `${key}-${index}`, isAssistantCommentary)
+    ));
   };
 
-  const renderMarkdownNode = (node: ChildNode, key: string): TeactNode => {
+  const renderMarkdownNode = (
+    node: ChildNode,
+    key: string,
+    isAssistantCommentary?: boolean,
+  ): TeactNode => {
     if (node.nodeType === Node.TEXT_NODE) {
       return renderAssistantTextPart(node.textContent || '', key);
     }
     if (!(node instanceof HTMLElement)) return undefined;
 
-    const children = renderMarkdownChildren(node, key);
+    if (node.tagName === 'BLOCKQUOTE') {
+      const commentaryChildren = renderMarkdownChildren(node, key, true);
+      return (
+        <blockquote key={key} className="ThreadAssistantDrawer-markdownQuote">
+          {commentaryChildren}
+        </blockquote>
+      );
+    }
+
+    const children = renderMarkdownChildren(node, key, isAssistantCommentary);
     switch (node.tagName) {
       case 'P':
         return <p key={key} className="ThreadAssistantDrawer-markdownParagraph">{children}</p>;
@@ -716,8 +879,24 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
             {children}
           </ol>
         );
-      case 'LI':
+      case 'LI': {
+        const suggestion = node.textContent?.trim();
+        if (isAssistantCommentary && suggestion) {
+          return (
+            <li key={key} className="ThreadAssistantDrawer-markdownListItem">
+              <button
+                type="button"
+                className="ThreadAssistantDrawer-commentarySuggestion"
+                onClick={() => fillAssistantSuggestion(suggestion)}
+              >
+                {suggestion}
+              </button>
+            </li>
+          );
+        }
+
         return <li key={key} className="ThreadAssistantDrawer-markdownListItem">{children}</li>;
+      }
       case 'H1':
       case 'H2':
         return <h2 key={key} className="ThreadAssistantDrawer-markdownHeading">{children}</h2>;
@@ -726,8 +905,6 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       case 'H5':
       case 'H6':
         return <h3 key={key} className="ThreadAssistantDrawer-markdownSubheading">{children}</h3>;
-      case 'BLOCKQUOTE':
-        return <blockquote key={key} className="ThreadAssistantDrawer-markdownQuote">{children}</blockquote>;
       case 'PRE':
         return <pre key={key} className="ThreadAssistantDrawer-markdownCodeBlock">{node.textContent}</pre>;
       case 'CODE':
@@ -849,7 +1026,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const startNewChat = useLastCallback(() => {
     setMessages([]);
     setQuestion('');
-    setPendingImages([]);
+    setPendingAttachments([]);
     setError('');
     setNotice('');
   });
@@ -1021,12 +1198,32 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
           </div>
           {Boolean(message.attachments?.length) && (
             <div className="ThreadAssistantDrawer-attachmentNames">
-              {message.attachments.map(({ name }) => (
-                <span key={name}>
-                  <Icon name="attach" />
-                  {name}
-                </span>
-              ))}
+              {message.attachments.map((attachment, index) => {
+                const { name, mimeType, previewUrl } = attachment;
+                const isImagePreview = Boolean(
+                  previewUrl && mimeType && IMAGE_ATTACHMENT_TYPES.has(mimeType),
+                );
+
+                if (isImagePreview) {
+                  return (
+                    <div key={`${name}-${index}`} className="ThreadAssistantDrawer-messageImage">
+                      <img
+                        className="ThreadAssistantDrawer-messageImagePreview"
+                        src={previewUrl}
+                        alt={name}
+                      />
+                      <span className="ThreadAssistantDrawer-messageImageName">{name}</span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <span key={`${name}-${index}`} className="ThreadAssistantDrawer-attachmentName">
+                    <Icon name="attach" />
+                    {name}
+                  </span>
+                );
+              })}
             </div>
           )}
           {message.role === 'assistant' && (
@@ -1087,19 +1284,32 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
 
   const renderComposer = () => (
     <form className="ThreadAssistantDrawer-composer" onSubmit={submitQuestion}>
-      {Boolean(pendingImages.length) && (
+      {Boolean(pendingAttachments.length) && (
         <div className="ThreadAssistantDrawer-previews">
-          {pendingImages.map((image, index) => (
-            <button
-              key={`${image.name}-${index}`}
-              type="button"
-              aria-label={lang('ThreadAIRemoveImage')}
-              onClick={() => setPendingImages((current) => current.filter((_, imageIndex) => imageIndex !== index))}
-            >
-              <img src={image.dataUrl} alt={image.name} />
-              <Icon name="close" />
-            </button>
-          ))}
+          {pendingAttachments.map((attachment, index) => {
+            const isImage = IMAGE_ATTACHMENT_TYPES.has(attachment.mimeType);
+            return (
+              <button
+                key={`${attachment.name}-${index}`}
+                type="button"
+                className={!isImage ? 'ThreadAssistantDrawer-filePreview' : undefined}
+                aria-label={lang('ThreadAIRemoveAttachment')}
+                onClick={() => setPendingAttachments((current) => (
+                  current.filter((_, attachmentIndex) => attachmentIndex !== index)
+                ))}
+              >
+                {isImage ? (
+                  <img src={attachment.dataUrl} alt={attachment.name} />
+                ) : (
+                  <span className="ThreadAssistantDrawer-fileMeta">
+                    <Icon name="document" className="ThreadAssistantDrawer-fileIcon" />
+                    <em className="ThreadAssistantDrawer-fileName">{attachment.name}</em>
+                  </span>
+                )}
+                <Icon name="close" className="ThreadAssistantDrawer-removeAttachment" />
+              </button>
+            );
+          })}
         </div>
       )}
       <textarea
@@ -1116,19 +1326,19 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       <div className="ThreadAssistantDrawer-composerTools">
         <div>
           <input
-            ref={imageInputRef}
+            ref={attachmentInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept={ATTACHMENT_ACCEPT}
             multiple
             hidden
-            onChange={(event) => void handleImages(event)}
+            onChange={handleAttachments}
           />
           <button
             type="button"
             className="ThreadAssistantDrawer-attach"
-            aria-label={lang('ThreadAIAttachImage')}
+            aria-label={lang('ThreadAIAttachFile')}
             disabled={isSending}
-            onClick={() => imageInputRef.current?.click()}
+            onClick={() => attachmentInputRef.current?.click()}
           >
             <Icon name="attach" />
           </button>
@@ -1214,19 +1424,42 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         )}
         {!models.length && <small>{lang('ThreadAIModelCatalogUnavailable')}</small>}
       </label>
+      <label className="ThreadAssistantDrawer-field">
+        <span>{lang('ThreadAIAnswerModel')}</span>
+        {models.length ? (
+          <select value={settingsAnswerModel} onChange={(event) => setSettingsAnswerModel(event.currentTarget.value)}>
+            {models.map((model) => (
+              <option
+                key={model.apiName}
+                value={model.apiName}
+                selected={model.apiName === settingsAnswerModel}
+              >
+                {model.displayName}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={settingsAnswerModel}
+            placeholder={lang('ThreadAIModelApiNamePlaceholder')}
+            onChange={(event) => setSettingsAnswerModel(event.currentTarget.value)}
+          />
+        )}
+      </label>
 
       <div className="ThreadAssistantDrawer-settingsActions">
         <button
           type="button"
           className="primary"
-          disabled={isSavingSettings || !settingsModel || settings.canEdit === false}
+          disabled={isSavingSettings || !settingsModel || !settingsAnswerModel || settings.canEdit === false}
           onClick={() => void saveSettings(false)}
         >
           {lang('ThreadAISaveSettings')}
         </button>
         <button
           type="button"
-          disabled={isSavingSettings || !settingsModel || settings.canEdit === false}
+          disabled={isSavingSettings || !settingsModel || !settingsAnswerModel || settings.canEdit === false}
           onClick={() => void saveSettings(true)}
         >
           {isTestingSettings ? lang('ThreadAITestingConnection') : lang('ThreadAITestConnection')}
@@ -1298,9 +1531,21 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         : view === 'settings'
           ? renderSettings()
           : (
-            <div className="ThreadAssistantDrawer-chat">
+            <div
+              className="ThreadAssistantDrawer-chat"
+              onDragEnter={handleAttachmentDragEnter}
+              onDragOver={handleAttachmentDragOver}
+              onDragLeave={handleAttachmentDragLeave}
+              onDrop={handleAttachmentDrop}
+            >
               {renderMessages()}
               {renderComposer()}
+              {isDraggingAttachments && (
+                <div className="ThreadAssistantDrawer-dropZone">
+                  <Icon name="attach" className="ThreadAssistantDrawer-dropZoneIcon" />
+                  <span>{lang('ThreadAIDropFiles')}</span>
+                </div>
+              )}
             </div>
           )}
     </div>

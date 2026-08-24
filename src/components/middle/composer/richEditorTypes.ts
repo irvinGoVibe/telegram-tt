@@ -41,6 +41,7 @@ export type RichEditor = {
   insertContent: (content: RichEditorInsertContent | RichEditorInsertContent[], shouldPrepend?: boolean) => void;
   insertMarkdown: (markdown: string, shouldPrepend?: boolean) => void;
   redo: NoneToVoidFunction;
+  replaceMarkdown: (markdown: string) => void;
   replaceValue: (value: ApiInputRichMessage) => void;
   replaceRange: (
     range: TiptapRange, content: RichEditorInsertContent | RichEditorInsertContent[],

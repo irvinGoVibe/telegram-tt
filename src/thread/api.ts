@@ -25,6 +25,7 @@ export type ThreadAiSettings = {
   apiUrl: string;
   apiKeyConfigured: boolean;
   defaultModel: string;
+  answerModel: string;
   scope?: 'server';
   canEdit?: boolean;
 };
@@ -158,9 +159,15 @@ export async function getThreadAiSettings() {
   return request<ThreadAiSettings>('/api/ai/settings', { cache: 'no-store' });
 }
 
-export async function updateThreadAiSettings(payload: { defaultModel: string }) {
+export async function updateThreadAiSettings(payload: { defaultModel: string; answerModel: string }) {
   return request<ThreadAiSettings>('/api/ai/settings', {
     method: 'PUT', body: JSON.stringify(payload),
+  });
+}
+
+export async function generateThreadAiAnswer(payload: { message: ThreadAiChatContextMessage }) {
+  return request<{ answer: string; model: string }>('/api/assistant/reply', {
+    method: 'POST', body: JSON.stringify(payload),
   });
 }
 

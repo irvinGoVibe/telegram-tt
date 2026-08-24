@@ -305,6 +305,8 @@
 }
 
 .ThreadAssistantDrawer-chat {
+  position: relative;
+
   overflow: hidden;
   display: flex;
   flex: 1;
@@ -500,6 +502,31 @@
   }
 }
 
+.ThreadAssistantDrawer-commentarySuggestion {
+  cursor: var(--custom-cursor, pointer);
+
+  padding: 0;
+  border: 0;
+
+  font: inherit;
+  line-height: inherit;
+  color: var(--color-primary);
+  text-align: start;
+
+  background: none;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 0.125rem;
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
 .ThreadAssistantDrawer-markdownCode,
 .ThreadAssistantDrawer-markdownCodeBlock {
   border-radius: 0.375rem;
@@ -577,24 +604,55 @@
   flex-wrap: wrap;
   gap: 0.25rem;
   margin-top: 0.5rem;
+}
 
-  span {
-    overflow: hidden;
-    display: flex;
-    gap: 0.25rem;
-    align-items: center;
+.ThreadAssistantDrawer-attachmentName {
+  overflow: hidden;
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
 
-    max-width: 100%;
-    padding: 0.1875rem 0.375rem;
-    border-radius: 0.375rem;
+  max-width: 100%;
+  padding: 0.1875rem 0.375rem;
+  border-radius: 0.375rem;
 
-    font-size: 0.6875rem;
-    color: var(--color-text-secondary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  font-size: 0.6875rem;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 
-    background: var(--color-background);
-  }
+  background: var(--color-background);
+}
+
+.ThreadAssistantDrawer-messageImage {
+  overflow: hidden;
+
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 0.5rem;
+
+  background: var(--color-background);
+}
+
+.ThreadAssistantDrawer-messageImagePreview {
+  display: block;
+  max-width: 100%;
+  max-height: 10rem;
+  object-fit: contain;
+}
+
+.ThreadAssistantDrawer-messageImageName {
+  overflow: hidden;
+  display: block;
+
+  max-width: 12rem;
+  padding: 0.1875rem 0.375rem 0.25rem;
+
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ThreadAssistantDrawer-messageActions {
@@ -755,6 +813,7 @@
 
 .ThreadAssistantDrawer-previews {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.375rem;
   padding: 0.625rem 0.625rem 0;
 
@@ -776,25 +835,80 @@
       height: 100%;
       object-fit: cover;
     }
-
-    i {
-      position: absolute;
-      top: 0.125rem;
-      right: 0.125rem;
-
-      display: grid;
-      place-items: center;
-
-      width: 1.125rem;
-      height: 1.125rem;
-      border-radius: 50%;
-
-      font-size: 0.6875rem;
-      color: var(--color-white);
-
-      background: rgb(0 0 0 / 60%);
-    }
   }
+}
+
+.ThreadAssistantDrawer-previews .ThreadAssistantDrawer-filePreview {
+  width: min(12rem, 100%);
+}
+
+.ThreadAssistantDrawer-fileMeta {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+
+  min-width: 0;
+  padding: 0 1.75rem 0 0.625rem;
+}
+
+.ThreadAssistantDrawer-fileName {
+  overflow: hidden;
+
+  font-size: 0.75rem;
+  font-style: normal;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ThreadAssistantDrawer-fileIcon {
+  flex: 0 0 auto;
+  color: var(--color-primary);
+}
+
+.ThreadAssistantDrawer-removeAttachment {
+  position: absolute;
+  top: 0.125rem;
+  right: 0.125rem;
+
+  display: grid;
+  place-items: center;
+
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+
+  font-size: 0.6875rem;
+  color: var(--color-white);
+
+  background: rgb(0 0 0 / 60%);
+}
+
+.ThreadAssistantDrawer-dropZone {
+  pointer-events: none;
+
+  position: absolute;
+  z-index: 3;
+  inset: 0.5rem;
+
+  display: grid;
+  gap: 0.5rem;
+  place-content: center;
+
+  border: 0.125rem dashed var(--color-primary);
+  border-radius: 0.875rem;
+
+  font-size: 0.875rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary);
+  text-align: center;
+
+  opacity: 0.96;
+  background: var(--color-background);
+}
+
+.ThreadAssistantDrawer-dropZoneIcon {
+  font-size: 1.5rem;
 }
 
 .ThreadAssistantDrawer-composerTools {

@@ -1390,6 +1390,8 @@ export interface LangPair {
   'RichEditorTableStriped': undefined;
   'RichEditorTableBorderless': undefined;
   'AriaComposerCloseRichInput': undefined;
+  'AriaComposerReformatRichInput': undefined;
+  'AriaComposerDeleteRichInput': undefined;
   'RichEditorFormula': undefined;
   'RichEditorFormulaPrompt': undefined;
   'RichEditorFormulaToBlock': undefined;
@@ -2094,13 +2096,18 @@ export interface LangPair {
   'ThreadAIAddToMessage': undefined;
   'ThreadCreateTask': undefined;
   'ThreadSendToAIChat': undefined;
+  'ThreadAIAnswer': undefined;
+  'ThreadAIAnswerGenerating': undefined;
+  'ThreadAIAnswerReady': undefined;
+  'ThreadAITelegramParticipant': undefined;
   'ThreadAIMediaMessage': undefined;
-  'ThreadAIAttachImage': undefined;
-  'ThreadAIRemoveImage': undefined;
-  'ThreadAIImagePrompt': undefined;
-  'ThreadAIImageCountError': undefined;
-  'ThreadAIImageTypeError': undefined;
-  'ThreadAIImageTotalError': undefined;
+  'ThreadAIAttachFile': undefined;
+  'ThreadAIRemoveAttachment': undefined;
+  'ThreadAIAttachmentPrompt': undefined;
+  'ThreadAIAttachmentCountError': undefined;
+  'ThreadAIAttachmentTypeError': undefined;
+  'ThreadAIAttachmentTotalError': undefined;
+  'ThreadAIDropFiles': undefined;
   'ThreadAITasksTitle': undefined;
   'ThreadAITasksText': undefined;
   'ThreadAIDraft': undefined;
@@ -2129,6 +2136,7 @@ export interface LangPair {
   'ThreadAIApiKeyReplacePlaceholder': undefined;
   'ThreadAIApiKeyHint': undefined;
   'ThreadAIDefaultModel': undefined;
+  'ThreadAIAnswerModel': undefined;
   'ThreadAISaveSettings': undefined;
   'ThreadAITestConnection': undefined;
   'ThreadAITestingConnection': undefined;
@@ -4038,6 +4046,9 @@ export interface LangPairWithVariables<V = LangVariable> {
   };
   'ThreadAIContextLimited': {
     'count': V;
+  };
+  'ThreadAIAnswerError': {
+    'error': V;
   };
   'ThreadAIOpenCitation': {
     'id': V;

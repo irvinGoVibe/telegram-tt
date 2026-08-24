@@ -57,6 +57,13 @@ export function insertEditorMarkdown(editor: Editor | undefined, markdown: strin
   editor.chain().focus().insertContent(preparedMarkdown, { contentType: 'markdown' }).run();
 }
 
+export function replaceEditorMarkdown(editor: Editor | undefined, markdown: string) {
+  if (!editor || !markdown) return;
+
+  const preparedMarkdown = prepareRichEditorMarkdown(markdown);
+  editor.chain().focus().setContent(preparedMarkdown, { contentType: 'markdown' }).run();
+}
+
 export function replaceEditorRange(
   editor: Editor | undefined,
   range: { from: number; to: number },

@@ -658,6 +658,18 @@ const Composer = ({
     richEditor.setValue(value);
   });
 
+  const handleReformatRichInput = useLastCallback(() => {
+    const markdown = richEditor.getAsFormatted()?.text;
+    if (!markdown) return;
+
+    richEditor.replaceMarkdown(markdown);
+  });
+
+  const handleDeleteRichInput = useLastCallback(() => {
+    updateRichMessage(undefined);
+    collapseRichInput();
+  });
+
   const checkCanSendRichContent = useLastCallback(() => {
     if (!isInMessageList || isCurrentUserPremium) {
       return true;
@@ -2776,6 +2788,34 @@ const Composer = ({
               iconName="redo"
               disabled={!richEditor.canRedo}
               onClick={richEditor.redo}
+            />
+          </div>
+          <div
+            className={buildClassName(
+              'rich-editor-document-actions',
+              isRichInputExpansionActive && 'rich-editor-document-actions-open',
+            )}
+            aria-hidden={!isRichInputExpansionActive}
+            inert={!isRichInputExpansionActive}
+          >
+            <Button
+              round
+              faded
+              size="smaller"
+              color="translucent"
+              ariaLabel={lang('AriaComposerReformatRichInput')}
+              iconName="reload"
+              disabled={!hasInputContent}
+              onClick={handleReformatRichInput}
+            />
+            <Button
+              round
+              faded
+              size="smaller"
+              color="translucent"
+              ariaLabel={lang('AriaComposerDeleteRichInput')}
+              iconName="delete"
+              onClick={handleDeleteRichInput}
             />
           </div>
           <Button
