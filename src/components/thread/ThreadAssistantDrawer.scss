@@ -486,7 +486,18 @@
   margin: 0 0 0.625rem;
   padding: 0.125rem 0 0.125rem 0.625rem;
   border-inline-start: 0.125rem solid var(--color-primary);
+
   color: var(--color-text-secondary);
+  white-space: normal;
+
+  .ThreadAssistantDrawer-markdownParagraph,
+  .ThreadAssistantDrawer-markdownList {
+    margin-bottom: 0.375rem;
+  }
+
+  .ThreadAssistantDrawer-markdownListItem {
+    margin-block: 0.0625rem;
+  }
 }
 
 .ThreadAssistantDrawer-markdownCode,

@@ -57,6 +57,9 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'i
 const RE_BLOCK_MARKDOWN_FORMATTING = /(?:^|\n)\s*(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|.+\|)/m;
 const RE_INLINE_MARKDOWN_FORMATTING = /\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\)/;
 const RE_MESSAGE_CITATION = /\[#(\d+)\](?!\()/g;
+const RE_ASSISTANT_COMMENTARY_LINE = /^\s*>/;
+const RE_MARKDOWN_FENCE_LINE = /^\s*(?:```|~~~)/;
+const RE_EXCESSIVE_LINE_BREAKS = /\n{3,}/g;
 
 type ContextMode = 'recent' | 'since' | 'until' | 'range' | 'all';
 type DateContextMode = Extract<ContextMode, 'since' | 'until' | 'range'>;
@@ -129,6 +132,20 @@ function replaceMessageCitationsWithLinks(markdown: string, peer: ApiPeer, threa
   return markdown.replace(RE_MESSAGE_CITATION, (_citation, messageId: string) => {
     return `[\\[#${messageId}\\]](${getMessageLink(peer, threadId, Number(messageId))})`;
   });
+}
+
+function extractAssistantAnswer(markdown: string) {
+  let isInsideCodeBlock = false;
+  const answerLines = markdown.split('\n').filter((line) => {
+    if (RE_MARKDOWN_FENCE_LINE.test(line)) {
+      isInsideCodeBlock = !isInsideCodeBlock;
+      return true;
+    }
+
+    return isInsideCodeBlock || !RE_ASSISTANT_COMMENTARY_LINE.test(line);
+  });
+
+  return answerLines.join('\n').replace(RE_EXCESSIVE_LINE_BREAKS, '\n\n').trim();
 }
 
 function readStoredContextSelection(chatId?: string): ContextSelection {
@@ -774,19 +791,25 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   };
 
   const copyAnswer = useLastCallback(async (message: LocalAssistantMessage) => {
-    await navigator.clipboard.writeText(message.content);
+    const answer = extractAssistantAnswer(message.content);
+    if (!answer) return;
+
+    await navigator.clipboard.writeText(answer);
     setCopiedMessageId(message.id);
     window.setTimeout(() => setCopiedMessageId(''), 1500);
   });
 
   const downloadAnswer = useLastCallback((message: LocalAssistantMessage) => {
+    const answer = extractAssistantAnswer(message.content);
+    if (!answer) return;
+
     const activeContext = buildTelegramContext();
     const markdown = [
       '# AI chat',
       `- Telegram chat: ${activeContext.title}`,
       `- Model: ${message.model || activeModel || 'AI'}`,
       '',
-      message.content,
+      answer,
       '',
     ].join('\n');
     const blobUrl = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
@@ -800,9 +823,12 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const insertAnswerInChat = useLastCallback((message: LocalAssistantMessage) => {
     if (!currentChatId) return;
 
+    const answer = extractAssistantAnswer(message.content);
+    if (!answer) return;
+
     const articleMarkdown = contextPeer
-      ? replaceMessageCitationsWithLinks(message.content, contextPeer, currentThreadId)
-      : message.content;
+      ? replaceMessageCitationsWithLinks(answer, contextPeer, currentThreadId)
+      : answer;
     const shouldOpenAsArticle = articleMarkdown.length >= ARTICLE_MIN_TEXT_LENGTH
       && (
         RE_BLOCK_MARKDOWN_FORMATTING.test(articleMarkdown)
@@ -815,7 +841,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     openChatWithDraft({
       chatId: currentChatId,
       threadId: currentThreadId,
-      text: { text: shouldOpenAsArticle ? articleMarkdown : message.content },
+      text: { text: shouldOpenAsArticle ? articleMarkdown : answer },
       isMarkdown: shouldOpenAsArticle,
     });
   });

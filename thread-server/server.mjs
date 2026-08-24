@@ -448,6 +448,9 @@ Rules:
 - Never invent Telegram messages, participants, dates, or decisions.
 - When the question is unrelated to the Telegram conversation, answer normally from your general knowledge and do not force citations.
 - Clearly label uncertainty and distinguish a message fact from your inference.
+- When the response contains reusable working copy, keep that copy as normal Markdown and separate your own commentary from it with Markdown blockquotes.
+- Commentary includes framing summaries, reasoning notes, caveats, and optional follow-ups such as "if you want, I can also...". Prefix every commentary paragraph and list line with > so the interface renders it with a vertical rule.
+- Never put the reusable answer body inside a blockquote. If the whole response is a direct explanation rather than working copy, use normal Markdown without forcing a commentary block.
 - Keep the response compact unless the user asks for depth.
 
 OPEN TELEGRAM CONVERSATION
@@ -1169,7 +1172,7 @@ async function handleStandaloneAssistant({ request, response, url }) {
     prompt,
     model,
     responseLanguage: "auto",
-    instruction: "You are the helpful AI assistant in a Telegram side panel. Follow the supplied conversation rules and answer the user's latest message.",
+    instruction: "You are the helpful AI assistant in a Telegram side panel. Follow the supplied conversation rules, keep reusable answer text separate from your commentary, and format commentary as Markdown blockquotes.",
     attachments: r2Attachments,
     outputLimit,
     inputLimit,
