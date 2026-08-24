@@ -26,6 +26,10 @@
 
     overflow: hidden;
     height: calc(100% - var(--column-header-height));
+
+    &.ThreadAssistantDrawer-transition {
+      height: 100%;
+    }
   }
 
   .panel-content {

@@ -2832,7 +2832,7 @@
 "ThreadAINoChatText" = "Add the open Telegram chat to a Telegram Tasks project, then return here to work with its messages.";
 "ThreadAIConnectCurrentChat" = "Connect current chat";
 "ThreadAIResearcher" = "AI";
-"ThreadAIThinking" = "Thinking…";
+"ThreadAIThinking" = "Thinking";
 "ThreadAIDownload" = "Download .md";
 "ThreadAICopied" = "Copied";
 "ThreadAIOpenCitation" = "Open Telegram message #{id}";

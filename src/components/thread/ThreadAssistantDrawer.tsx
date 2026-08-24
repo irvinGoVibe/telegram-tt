@@ -817,10 +817,12 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       ))}
       {isSending && (
         <div className="ThreadAssistantDrawer-thinking" role="status">
-          <span />
-          <span />
-          <span />
           {lang('ThreadAIThinking')}
+          <span className="ThreadAssistantDrawer-thinkingDots" aria-hidden="true">
+            <span className="ThreadAssistantDrawer-thinkingDot" />
+            <span className="ThreadAssistantDrawer-thinkingDot" />
+            <span className="ThreadAssistantDrawer-thinkingDot" />
+          </span>
         </div>
       )}
     </div>
@@ -872,11 +874,11 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
             <Icon name="attach" />
           </button>
           <label className="ThreadAssistantDrawer-model">
-            <Icon name="bot-command" />
-            <span className="sr-only">{lang('ThreadAIModel')}</span>
+            <Icon name="bot-command" className="ThreadAssistantDrawer-modelIcon" />
             {models.length ? (
               <select
                 value={activeModel}
+                aria-label={lang('ThreadAIModel')}
                 disabled={isSending}
                 onChange={(event) => setActiveModel(event.currentTarget.value)}
               >

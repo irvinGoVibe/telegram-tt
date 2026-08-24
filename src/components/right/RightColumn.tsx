@@ -519,6 +519,7 @@ const RightColumn: FC<OwnProps & StateProps> = ({
         )}
         <Transition
           ref={containerRef}
+          className={isThreadAssistant ? 'ThreadAssistantDrawer-transition' : undefined}
           name={resolveTransitionName(
             'layers', animationLevel, !isOpen || shouldSkipOpenTransition || shouldSkipHistoryAnimations,
           )}
