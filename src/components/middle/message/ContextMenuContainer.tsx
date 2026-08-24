@@ -301,6 +301,8 @@ const ContextMenuContainer = ({
     loadRichMessage,
     loadSavedMusicIds,
     toggleMusicInProfile,
+    toggleThreadAssistant,
+    setThreadAssistantDraft,
   } = getActions();
 
   const oldLang = useOldLang();
@@ -531,6 +533,14 @@ const ContextMenuContainer = ({
       sentAt: message.date * 1000,
       telegramUrl: chat && !isUserId(chat.id) ? getMessageLink(chat, threadId, message.id) : undefined,
     });
+    closeMenu();
+  });
+
+  const handleSendToAiChat = useLastCallback(() => {
+    setThreadAssistantDraft({
+      draft: message.content.text?.text || lang('ThreadAIMediaMessage'),
+    });
+    toggleThreadAssistant({ force: true });
     closeMenu();
   });
 
@@ -865,6 +875,7 @@ const ContextMenuContainer = ({
         onEdit={handleEdit}
         onAppendTodoList={handleAppendTodoList}
         onCreateTask={handleCreateTask}
+        onSendToAiChat={handleSendToAiChat}
         onPin={handlePin}
         onUnpin={handleUnpin}
         onForward={handleForward}

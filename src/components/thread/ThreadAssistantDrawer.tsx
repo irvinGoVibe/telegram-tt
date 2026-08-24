@@ -1,6 +1,7 @@
 import type {
   ChangeEvent, FormEvent, KeyboardEvent,
 } from 'react';
+import { parse } from 'marked';
 import type { FC, TeactNode } from '../../lib/teact/teact';
 import {
   memo, useEffect, useRef, useState,
@@ -13,12 +14,15 @@ import type {
   ThreadAiSettings,
   ThreadModel,
 } from '../../thread/api';
+import type { ThreadId } from '../../types';
 import { MAIN_THREAD_ID } from '../../api/types';
 
+import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
 import { getPeerTitle } from '../../global/helpers/peers';
 import {
   selectChat, selectChatMessages, selectPeer, selectSender,
 } from '../../global/selectors';
+import { formatDateTime } from '../../util/localization/dateFormat';
 import { callApi } from '../../api/gramjs';
 import {
   askStandaloneThreadAssistant,
@@ -33,6 +37,7 @@ import useLastCallback from '../../hooks/useLastCallback';
 
 import CalendarModal from '../common/CalendarModal';
 import Icon from '../common/icons/Icon';
+import SafeLink from '../common/SafeLink';
 import Button from '../ui/Button';
 
 import './ThreadAssistantDrawer.scss';
@@ -45,8 +50,11 @@ const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_CONTEXT_MESSAGES = 250;
 const MAX_HISTORY_CONTEXT_MESSAGES = 2500;
 const HISTORY_PAGE_SIZE = 100;
+const ARTICLE_MIN_TEXT_LENGTH = 800;
 const CONTEXT_STORAGE_PREFIX = 'telegram-thread.ai-context';
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const RE_BLOCK_MARKDOWN_FORMATTING = /(?:^|\n)\s*(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|.+\|)/m;
+const RE_INLINE_MARKDOWN_FORMATTING = /\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\)/;
 
 type ContextMode = 'recent' | 'since' | 'until' | 'range' | 'all';
 type DateContextMode = Extract<ContextMode, 'since' | 'until' | 'range'>;
@@ -58,6 +66,7 @@ type ContextSelection = {
 };
 
 type ContextDateField = 'from' | 'to' | 'range';
+type MessageAction = 'copy' | 'download' | 'insert';
 
 type PendingImage = {
   name: string;
@@ -78,6 +87,8 @@ type LocalAssistantMessage = {
 
 type OwnProps = {
   currentChatId?: string;
+  currentThreadId?: ThreadId;
+  draft?: string;
   isActive: boolean;
   onClose: () => void;
 };
@@ -195,10 +206,12 @@ function messageMediaLabel(message: ApiMessage) {
 }
 
 const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
-  currentChatId, isActive, onClose, contextChat, contextPeer, contextMessages,
+  currentChatId, currentThreadId, draft, isActive, onClose, contextChat, contextPeer, contextMessages,
 }) => {
   const lang = useLang();
-  const { focusMessage } = getActions();
+  const {
+    focusMessage, openChatWithDraft, setIsRichInputExpanded, setThreadAssistantDraft,
+  } = getActions();
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -216,6 +229,10 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const [question, setQuestion] = useState('');
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [copiedMessageId, setCopiedMessageId] = useState('');
+  const [hoveredMessageAction, setHoveredMessageAction] = useState<{
+    messageId: string;
+    action: MessageAction;
+  }>();
   const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
   const [isLoadingContext, setIsLoadingContext] = useState(false);
   const [contextSelection, setContextSelection] = useState<ContextSelection>({ mode: 'recent' });
@@ -226,9 +243,11 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const [calendarMaxAt, setCalendarMaxAt] = useState(0);
 
   const messagesRef = useRef<HTMLDivElement>();
+  const questionInputRef = useRef<HTMLTextAreaElement>();
   const imageInputRef = useRef<HTMLInputElement>();
   const contextMenuRef = useRef<HTMLDivElement>();
   const contextLoadIdRef = useRef(0);
+  const shouldScrollQuestionToEndRef = useRef(false);
   const currentStorageKey = chatStorageKey(currentChatId);
   const canSend = Boolean(
     settings.apiKeyConfigured
@@ -236,6 +255,46 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     && (question.trim() || pendingImages.length)
     && !isSending,
   );
+
+  const resizeQuestionInput = useLastCallback((element: HTMLTextAreaElement, shouldScrollToEnd?: boolean) => {
+    requestMutation(() => {
+      element.style.height = '0';
+      requestForcedReflow(() => {
+        const newHeight = element.scrollHeight;
+        const textLength = element.value.length;
+        return () => {
+          element.style.height = `${newHeight}px`;
+          if (shouldScrollToEnd) {
+            element.focus();
+            element.setSelectionRange(textLength, textLength);
+            element.scrollTop = newHeight;
+          }
+        };
+      });
+    });
+  });
+
+  useEffect(() => {
+    if (!draft) return;
+
+    shouldScrollQuestionToEndRef.current = true;
+    setQuestion(draft);
+    setView('chat');
+    setThreadAssistantDraft({ draft: undefined });
+
+    if (questionInputRef.current && draft === question) {
+      resizeQuestionInput(questionInputRef.current, true);
+      shouldScrollQuestionToEndRef.current = false;
+    }
+  }, [draft, question]);
+
+  useEffect(() => {
+    const questionInput = questionInputRef.current;
+    if (!questionInput) return;
+    const shouldScrollToEnd = shouldScrollQuestionToEndRef.current;
+    shouldScrollQuestionToEndRef.current = false;
+    resizeQuestionInput(questionInput, shouldScrollToEnd);
+  }, [question]);
 
   const getSelectedTelegramMessages = useLastCallback(() => {
     const from = startOfLocalDay(contextSelection.from);
@@ -579,14 +638,14 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     focusMessage({ chatId: currentChatId, messageId });
   });
 
-  const renderAssistantText = (message: LocalAssistantMessage): TeactNode[] => {
-    return message.content.split(/(\[#\d+\])/g).filter(Boolean).map((part, index) => {
+  const renderAssistantTextPart = (text: string, key: string): TeactNode[] => {
+    return text.split(/(\[#\d+\])/g).filter(Boolean).map((part, index) => {
       const match = part.match(/^\[#(\d+)\]$/);
-      if (!match || !currentChatId) return <span key={`${message.id}-text-${index}`}>{part}</span>;
+      if (!match || !currentChatId) return <span key={`${key}-text-${index}`}>{part}</span>;
       const messageId = Number(match[1]);
       return (
         <button
-          key={`${message.id}-citation-${messageId}-${index}`}
+          key={`${key}-citation-${messageId}-${index}`}
           type="button"
           className="ThreadAssistantDrawer-citation"
           aria-label={lang('ThreadAIOpenCitation', { id: messageId })}
@@ -596,6 +655,114 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         </button>
       );
     });
+  };
+
+  const renderMarkdownChildren = (node: ChildNode, key: string): TeactNode[] => {
+    return Array.from(node.childNodes).map((child, index) => renderMarkdownNode(child, `${key}-${index}`));
+  };
+
+  const renderMarkdownNode = (node: ChildNode, key: string): TeactNode => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return renderAssistantTextPart(node.textContent || '', key);
+    }
+    if (!(node instanceof HTMLElement)) return undefined;
+
+    const children = renderMarkdownChildren(node, key);
+    switch (node.tagName) {
+      case 'P':
+        return <p key={key} className="ThreadAssistantDrawer-markdownParagraph">{children}</p>;
+      case 'STRONG':
+      case 'B':
+        return <strong key={key} className="ThreadAssistantDrawer-markdownStrong">{children}</strong>;
+      case 'EM':
+      case 'I':
+        return <em key={key} className="ThreadAssistantDrawer-markdownEmphasis">{children}</em>;
+      case 'DEL':
+        return <del key={key} className="ThreadAssistantDrawer-markdownDeleted">{children}</del>;
+      case 'UL':
+        return <ul key={key} className="ThreadAssistantDrawer-markdownList">{children}</ul>;
+      case 'OL':
+        return (
+          <ol
+            key={key}
+            className="ThreadAssistantDrawer-markdownList"
+            start={Number(node.getAttribute('start')) || undefined}
+          >
+            {children}
+          </ol>
+        );
+      case 'LI':
+        return <li key={key} className="ThreadAssistantDrawer-markdownListItem">{children}</li>;
+      case 'H1':
+      case 'H2':
+        return <h2 key={key} className="ThreadAssistantDrawer-markdownHeading">{children}</h2>;
+      case 'H3':
+      case 'H4':
+      case 'H5':
+      case 'H6':
+        return <h3 key={key} className="ThreadAssistantDrawer-markdownSubheading">{children}</h3>;
+      case 'BLOCKQUOTE':
+        return <blockquote key={key} className="ThreadAssistantDrawer-markdownQuote">{children}</blockquote>;
+      case 'PRE':
+        return <pre key={key} className="ThreadAssistantDrawer-markdownCodeBlock">{node.textContent}</pre>;
+      case 'CODE':
+        return <code key={key} className="ThreadAssistantDrawer-markdownCode">{children}</code>;
+      case 'A': {
+        const url = node.getAttribute('href') || '';
+        return (
+          <SafeLink
+            key={key}
+            url={url}
+            text={node.textContent || url}
+            className="ThreadAssistantDrawer-markdownLink"
+          >
+            {children}
+          </SafeLink>
+        );
+      }
+      case 'IMG': {
+        const url = node.getAttribute('src') || '';
+        const label = node.getAttribute('alt') || url;
+        return (
+          <SafeLink key={key} url={url} text={label} className="ThreadAssistantDrawer-markdownLink">
+            {label}
+          </SafeLink>
+        );
+      }
+      case 'HR':
+        return <hr key={key} className="ThreadAssistantDrawer-markdownRule" />;
+      case 'TABLE':
+        return (
+          <div key={key} className="ThreadAssistantDrawer-markdownTableWrap custom-scroll-x">
+            <table className="ThreadAssistantDrawer-markdownTable">{children}</table>
+          </div>
+        );
+      case 'TH':
+        return <th key={key} className="ThreadAssistantDrawer-markdownTableCell">{children}</th>;
+      case 'TD':
+        return <td key={key} className="ThreadAssistantDrawer-markdownTableCell">{children}</td>;
+      case 'BR':
+        return <br key={key} />;
+      case 'INPUT':
+        return (
+          <span key={key} className="ThreadAssistantDrawer-markdownCheckbox">
+            {node.hasAttribute('checked') ? '☑' : '☐'}
+          </span>
+        );
+      case 'SCRIPT':
+      case 'STYLE':
+        return undefined;
+      default:
+        return children;
+    }
+  };
+
+  const renderAssistantText = (message: LocalAssistantMessage): TeactNode[] => {
+    const html = parse(message.content, { async: false, breaks: true, gfm: true });
+    if (typeof html !== 'string') return renderAssistantTextPart(message.content, message.id);
+
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    return renderMarkdownChildren(document.body, message.id);
   };
 
   const copyAnswer = useLastCallback(async (message: LocalAssistantMessage) => {
@@ -620,6 +787,25 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     link.download = 'ai-chat-answer.md';
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  });
+
+  const insertAnswerInChat = useLastCallback((message: LocalAssistantMessage) => {
+    if (!currentChatId) return;
+
+    const shouldOpenAsArticle = message.content.length >= ARTICLE_MIN_TEXT_LENGTH
+      && (
+        RE_BLOCK_MARKDOWN_FORMATTING.test(message.content)
+        || RE_INLINE_MARKDOWN_FORMATTING.test(message.content)
+      );
+    if (shouldOpenAsArticle) {
+      setIsRichInputExpanded({ isRichInputExpanded: true });
+    }
+
+    openChatWithDraft({
+      chatId: currentChatId,
+      threadId: currentThreadId,
+      text: { text: message.content },
+    });
   });
 
   const startNewChat = useLastCallback(() => {
@@ -785,10 +971,14 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
           {message.role === 'assistant' && (
             <div className="ThreadAssistantDrawer-byline">
               <strong>{lang('ThreadAIResearcher')}</strong>
-              <span>{message.model || 'AI'}</span>
+              <span>{resolveModelDisplayName(message.model)}</span>
             </div>
           )}
-          <div className="ThreadAssistantDrawer-copy">
+          <div
+            className={`ThreadAssistantDrawer-copy${
+              message.role === 'assistant' ? ' ThreadAssistantDrawer-markdown' : ''
+            }`}
+          >
             {message.role === 'assistant' ? renderAssistantText(message) : message.content}
           </div>
           {Boolean(message.attachments?.length) && (
@@ -803,14 +993,43 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
           )}
           {message.role === 'assistant' && (
             <div className="ThreadAssistantDrawer-messageActions">
-              <button type="button" onClick={() => void copyAnswer(message)}>
+              <button
+                type="button"
+                aria-label={copiedMessageId === message.id ? lang('ThreadAICopied') : lang('Copy')}
+                onMouseEnter={() => setHoveredMessageAction({ messageId: message.id, action: 'copy' })}
+                onMouseLeave={() => setHoveredMessageAction(undefined)}
+                onFocus={() => setHoveredMessageAction({ messageId: message.id, action: 'copy' })}
+                onBlur={() => setHoveredMessageAction(undefined)}
+                onClick={() => void copyAnswer(message)}
+              >
                 <Icon name="copy" />
-                {copiedMessageId === message.id ? lang('ThreadAICopied') : lang('Copy')}
               </button>
-              <button type="button" onClick={() => downloadAnswer(message)}>
+              <button
+                type="button"
+                aria-label={lang('ThreadAIDownload')}
+                onMouseEnter={() => setHoveredMessageAction({ messageId: message.id, action: 'download' })}
+                onMouseLeave={() => setHoveredMessageAction(undefined)}
+                onFocus={() => setHoveredMessageAction({ messageId: message.id, action: 'download' })}
+                onBlur={() => setHoveredMessageAction(undefined)}
+                onClick={() => downloadAnswer(message)}
+              >
                 <Icon name="download" />
-                {lang('ThreadAIDownload')}
               </button>
+              <button
+                type="button"
+                aria-label={lang('ThreadAIAddToMessage')}
+                disabled={!currentChatId}
+                onMouseEnter={() => setHoveredMessageAction({ messageId: message.id, action: 'insert' })}
+                onMouseLeave={() => setHoveredMessageAction(undefined)}
+                onFocus={() => setHoveredMessageAction({ messageId: message.id, action: 'insert' })}
+                onBlur={() => setHoveredMessageAction(undefined)}
+                onClick={() => insertAnswerInChat(message)}
+              >
+                <Icon name="send-outline" className="ThreadAssistantDrawer-insertIcon" />
+              </button>
+              <span className="ThreadAssistantDrawer-messageActionLabel">
+                {resolveMessageActionLabel(message)}
+              </span>
             </div>
           )}
         </article>
@@ -846,6 +1065,8 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         </div>
       )}
       <textarea
+        ref={questionInputRef}
+        className="custom-scroll"
         rows={2}
         value={question}
         aria-label={lang('ThreadAIAskPlaceholder')}
@@ -883,7 +1104,13 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
                 onChange={(event) => setActiveModel(event.currentTarget.value)}
               >
                 {models.map((model) => (
-                  <option key={model.apiName} value={model.apiName}>{model.displayName}</option>
+                  <option
+                    key={model.apiName}
+                    value={model.apiName}
+                    selected={model.apiName === activeModel}
+                  >
+                    {model.displayName}
+                  </option>
                 ))}
               </select>
             ) : <em>{activeModel || lang('ThreadAIUnavailable')}</em>}
@@ -930,7 +1157,13 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         {models.length ? (
           <select value={settingsModel} onChange={(event) => setSettingsModel(event.currentTarget.value)}>
             {models.map((model) => (
-              <option key={model.apiName} value={model.apiName}>{model.displayName}</option>
+              <option
+                key={model.apiName}
+                value={model.apiName}
+                selected={model.apiName === settingsModel}
+              >
+                {model.displayName}
+              </option>
             ))}
           </select>
         ) : (
@@ -963,6 +1196,21 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       </div>
     </div>
   );
+
+  function resolveModelDisplayName(modelApiName?: string) {
+    if (!modelApiName) return 'AI';
+    return models.find(({ apiName }) => apiName === modelApiName)?.displayName || modelApiName;
+  }
+
+  function resolveMessageActionLabel(message: LocalAssistantMessage) {
+    const action = hoveredMessageAction?.messageId === message.id ? hoveredMessageAction.action : undefined;
+    if (action === 'copy') {
+      return copiedMessageId === message.id ? lang('ThreadAICopied') : lang('Copy');
+    }
+    if (action === 'download') return lang('ThreadAIDownload');
+    if (action === 'insert') return lang('ThreadAIAddToMessage');
+    return formatDateTime(lang, new Date(message.createdAt), { time: 'short' });
+  }
 
   return (
     <div className="ThreadAssistantDrawer">

@@ -542,6 +542,7 @@ function MiddleColumn({
     'middle-column-footer',
     !renderingCanPost && 'no-composer',
     !hasFooter && 'no-content',
+    isRichInputExpanded && 'rich-input-footer-expanded',
   );
 
   useEffect(() => {

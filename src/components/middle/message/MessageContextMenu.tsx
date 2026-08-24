@@ -126,6 +126,7 @@ type OwnProps = {
   onEdit?: NoneToVoidFunction;
   onAppendTodoList?: NoneToVoidFunction;
   onCreateTask?: NoneToVoidFunction;
+  onSendToAiChat?: NoneToVoidFunction;
   onPin?: NoneToVoidFunction;
   onUnpin?: NoneToVoidFunction;
   onForward?: NoneToVoidFunction;
@@ -234,6 +235,7 @@ const MessageContextMenu = ({
   onEdit,
   onAppendTodoList,
   onCreateTask,
+  onSendToAiChat,
   onPin,
   onUnpin,
   onForward,
@@ -476,7 +478,12 @@ const MessageContextMenu = ({
         )}
         {canCreateTask && (
           <MenuItem icon="check" onClick={onCreateTask}>
-            Create Linear task
+            {lang('ThreadCreateTask')}
+          </MenuItem>
+        )}
+        {canCreateTask && (
+          <MenuItem icon="bot-command" onClick={onSendToAiChat}>
+            {lang('ThreadSendToAIChat')}
           </MenuItem>
         )}
         {!noReplies && Boolean(repliesThreadInfo?.messagesCount) && (

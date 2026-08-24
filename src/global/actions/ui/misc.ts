@@ -85,6 +85,14 @@ addActionHandler('toggleThreadAssistant', (global, actions, payload): ActionRetu
   }, tabId);
 });
 
+addActionHandler('setThreadAssistantDraft', (global, actions, payload): ActionReturnType => {
+  const { draft, tabId = getCurrentTabId() } = payload;
+
+  return updateTabState(global, {
+    threadAssistantDraft: draft,
+  }, tabId);
+});
+
 addActionHandler('setLeftColumnWidth', (global, actions, payload): ActionReturnType => {
   const { leftColumnWidth } = payload;
 

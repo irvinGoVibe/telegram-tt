@@ -2091,6 +2091,10 @@ export interface LangPair {
   'ThreadAIThinking': undefined;
   'ThreadAIDownload': undefined;
   'ThreadAICopied': undefined;
+  'ThreadAIAddToMessage': undefined;
+  'ThreadCreateTask': undefined;
+  'ThreadSendToAIChat': undefined;
+  'ThreadAIMediaMessage': undefined;
   'ThreadAIAttachImage': undefined;
   'ThreadAIRemoveImage': undefined;
   'ThreadAIImagePrompt': undefined;

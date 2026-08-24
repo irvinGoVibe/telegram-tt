@@ -2838,6 +2838,10 @@
 "ThreadAIThinking" = "Thinking";
 "ThreadAIDownload" = "Download .md";
 "ThreadAICopied" = "Copied";
+"ThreadAIAddToMessage" = "Add to message";
+"ThreadCreateTask" = "Create Task";
+"ThreadSendToAIChat" = "Send to AI Chat";
+"ThreadAIMediaMessage" = "Media message";
 "ThreadAIOpenCitation" = "Open Telegram message #{id}";
 "ThreadAIAttachImage" = "Attach image";
 "ThreadAIRemoveImage" = "Remove image";

@@ -58,6 +58,7 @@ type StateProps = {
   shouldSkipHistoryAnimations?: boolean;
   nextManagementScreen?: ManagementScreens;
   shouldCloseRightColumn?: boolean;
+  threadAssistantDraft?: string;
   isSavedMessages?: boolean;
   isSavedDialog?: boolean;
   isOwnProfile?: boolean;
@@ -81,6 +82,7 @@ const RightColumn: FC<OwnProps & StateProps> = ({
   shouldSkipHistoryAnimations,
   nextManagementScreen,
   shouldCloseRightColumn,
+  threadAssistantDraft,
   isSavedMessages,
   isSavedDialog,
   isOwnProfile,
@@ -413,6 +415,8 @@ const RightColumn: FC<OwnProps & StateProps> = ({
           <ThreadAssistantDrawer
             key={`thread_assistant_${chatId!}`}
             currentChatId={chatId}
+            currentThreadId={threadId}
+            draft={threadAssistantDraft}
             isActive={isOpen && isActive}
             onClose={close}
           />
@@ -548,7 +552,7 @@ export default memo(withGlobal<OwnProps>(
     const areActiveChatsLoaded = selectAreActiveChatsLoaded(global);
     const { animationLevel } = selectSharedSettings(global);
     const {
-      management, shouldSkipHistoryAnimations, shouldCloseRightColumn, chatInfo,
+      management, shouldSkipHistoryAnimations, shouldCloseRightColumn, chatInfo, threadAssistantDraft,
     } = selectTabState(global);
     const nextManagementScreen = chatId ? management.byChatId[chatId]?.nextScreen : undefined;
 
@@ -565,6 +569,7 @@ export default memo(withGlobal<OwnProps>(
       shouldSkipHistoryAnimations,
       nextManagementScreen,
       shouldCloseRightColumn,
+      threadAssistantDraft,
       isSavedMessages,
       isSavedDialog,
       isOwnProfile,

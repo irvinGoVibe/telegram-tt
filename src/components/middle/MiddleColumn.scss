@@ -244,6 +244,29 @@
   }
 }
 
+html.interface-style-classic {
+  @media (min-width: 601px) {
+    #MiddleColumn .middle-column-footer.rich-input-footer-expanded {
+      right: 0;
+      left: 0;
+      transform: none;
+
+      width: auto;
+      max-width: none;
+      margin: 0;
+
+      .Composer.is-chat-composer {
+        min-width: 0;
+      }
+    }
+
+    #Main.right-column-open #MiddleColumn .middle-column-footer.rich-input-footer-expanded {
+      right: var(--right-column-width);
+      transform: none;
+    }
+  }
+}
+
 /* Common styles for message list fade-out shadow */
 .Composer,
 .messaging-disabled {

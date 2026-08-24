@@ -161,6 +161,7 @@ export type TabState = {
   inviteHash?: string;
   canInstall?: boolean;
   isThreadAssistantShown?: boolean;
+  threadAssistantDraft?: string;
   isStatisticsShown?: boolean;
   isLeftColumnShown: boolean;
   newChatMembersProgress?: NewChatMembersProgress;

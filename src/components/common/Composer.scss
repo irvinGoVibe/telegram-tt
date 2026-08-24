@@ -1133,6 +1133,14 @@ html.interface-style-classic {
           border-right: 0.5rem solid transparent;
           border-bottom: 0.75rem solid var(--color-background);
         }
+
+        &.rich-input-expanded {
+          border-bottom-right-radius: var(--border-radius-messages);
+
+          &::after {
+            display: none;
+          }
+        }
       }
 
       .message-input-wrapper {
@@ -1161,6 +1169,12 @@ html.interface-style-classic {
             color: var(--color-primary);
           }
         }
+      }
+    }
+
+    #Main.right-column-open .composer-wrapper.rich-input-expanded {
+      #message-input-text .input-scroller-content {
+        margin-inline-end: 3rem;
       }
     }
   }
