@@ -1173,8 +1173,18 @@ html.interface-style-classic {
     }
 
     #Main.right-column-open .composer-wrapper.rich-input-expanded {
-      #message-input-text .input-scroller-content {
-        margin-inline-end: 3rem;
+      #message-input-text .input-scroller {
+        margin-inline-end: -3rem;
+        padding-inline-end: 3rem;
+      }
+
+      #message-input-text .form-control {
+        overflow-wrap: anywhere;
+      }
+
+      .rich-editor-button {
+        top: 0.4375rem;
+        right: 0.625rem;
       }
     }
   }

@@ -99,6 +99,7 @@ import {
   selectIsInSelectMode,
   selectIsPremiumPurchaseBlocked,
   selectIsReactionPickerOpen,
+  selectIsRequestedDraftMarkdown,
   selectIsRightColumnShown,
   selectNewestMessageWithBotKeyboardButtons,
   selectNotifyDefaults,
@@ -290,6 +291,7 @@ type StateProps = {
   sendAsId?: string;
   editingDraft?: EditingDraft;
   requestedDraft?: ApiFormattedText;
+  isRequestedDraftMarkdown?: boolean;
   requestedDraftFiles?: File[];
   attachBots: GlobalState['attachMenu']['bots'];
   attachMenuPeerType?: ApiAttachMenuPeerType;
@@ -425,6 +427,7 @@ const Composer = ({
   sendAsId,
   editingDraft,
   requestedDraft,
+  isRequestedDraftMarkdown,
   requestedDraftFiles,
   botMenuButton,
   attachBots,
@@ -788,6 +791,12 @@ const Composer = ({
     }
 
     richEditor.insertContent({ type: 'formattedText', text }, shouldPrepend);
+  });
+
+  const insertMarkdownAndUpdateCursor = useLastCallback((markdown: string, shouldPrepend = false) => {
+    if (isComposerBlocked || !richEditor.isReady) return;
+
+    richEditor.insertMarkdown(markdown, shouldPrepend);
   });
 
   const insertCustomEmojiAndUpdateCursor = useLastCallback((emoji: ApiSticker) => {
@@ -1711,17 +1720,24 @@ const Composer = ({
   }, [contentToBeScheduled, currentMessageList, handleMessageSchedule, requestMessageSchedule]);
 
   useEffect(() => {
-    if (requestedDraft) {
-      updateRichMessage(undefined);
-      insertFormattedTextAndUpdateCursor(requestedDraft, true);
-      resetOpenChatWithDraft();
+    if (!requestedDraft || (isRequestedDraftMarkdown && !richEditor.isReady)) return;
 
-      requestNextMutation(() => {
-        const messageInput = document.getElementById(editableInputId)!;
-        focusEditableElement(messageInput, true);
-      });
+    updateRichMessage(undefined);
+    if (isRequestedDraftMarkdown) {
+      insertMarkdownAndUpdateCursor(requestedDraft.text, true);
+    } else {
+      insertFormattedTextAndUpdateCursor(requestedDraft, true);
     }
-  }, [editableInputId, insertFormattedTextAndUpdateCursor, requestedDraft, resetOpenChatWithDraft, updateRichMessage]);
+    resetOpenChatWithDraft();
+
+    requestNextMutation(() => {
+      const messageInput = document.getElementById(editableInputId)!;
+      focusEditableElement(messageInput, true);
+    });
+  }, [
+    editableInputId, insertFormattedTextAndUpdateCursor, insertMarkdownAndUpdateCursor,
+    isRequestedDraftMarkdown, requestedDraft, resetOpenChatWithDraft, richEditor.isReady, updateRichMessage,
+  ]);
 
   useEffect(() => {
     if (requestedDraftFiles?.length) {
@@ -3147,6 +3163,7 @@ export default memo(withGlobal<OwnProps>(
     const sendAsId = defaultSendAsId;
     const sendAsPeer = sendAsId ? selectPeer(global, sendAsId) : undefined;
     const requestedDraft = selectRequestedDraft(global, chatId);
+    const isRequestedDraftMarkdown = selectIsRequestedDraftMarkdown(global, chatId);
     const requestedDraftFiles = selectRequestedDraftFiles(global, chatId);
 
     const tabState = selectTabState(global);
@@ -3260,6 +3277,7 @@ export default memo(withGlobal<OwnProps>(
       sendAsId,
       editingDraft,
       requestedDraft,
+      isRequestedDraftMarkdown,
       requestedDraftFiles,
       attachBots: global.attachMenu.bots,
       attachMenuPeerType: selectChatType(global, chatId),

@@ -223,6 +223,16 @@ export function selectRequestedDraftFiles<T extends GlobalState>(
   return undefined;
 }
 
+export function selectIsRequestedDraftMarkdown<T extends GlobalState>(
+  global: T, chatId: string,
+  ...[tabId = getCurrentTabId()]: TabArgs<T>
+) {
+  const { requestedDraft } = selectTabState(global, tabId);
+  return requestedDraft?.chatId === chatId && !requestedDraft.files?.length
+    ? requestedDraft.isMarkdown
+    : undefined;
+}
+
 export function filterChatIdsByType<T extends GlobalState>(
   global: T, chatIds: string[], filter: readonly ApiChatType[],
 ) {

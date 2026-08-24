@@ -15,6 +15,7 @@ import {
   deleteEditorCharacterBeforeSelection,
   hasEditorCollapsedSelection,
   insertEditorContent,
+  insertEditorMarkdown,
   replaceEditorRange,
 } from '../helpers/richEditorComposer';
 
@@ -139,6 +140,7 @@ export default function useRichEditor() {
       return isEditorEmptyRef.current ? isEditorEmptyRef.current(editor) : !valueRef.current.blocks.length;
     },
     insertContent: (content, shouldPrepend) => insertEditorContent(editorRef.current, content, shouldPrepend),
+    insertMarkdown: (markdown, shouldPrepend) => insertEditorMarkdown(editorRef.current, markdown, shouldPrepend),
     redo: () => {
       editorRef.current?.chain().focus().redo().run();
     },

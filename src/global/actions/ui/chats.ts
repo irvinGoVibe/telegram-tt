@@ -192,7 +192,7 @@ function processChatInfoState<T extends GlobalState>({
 
 addActionHandler('openChatWithDraft', (global, actions, payload): ActionReturnType => {
   const {
-    chatId, text, threadId = MAIN_THREAD_ID, files, filter, tabId = getCurrentTabId(),
+    chatId, text, isMarkdown, threadId = MAIN_THREAD_ID, files, filter, tabId = getCurrentTabId(),
   } = payload;
 
   if (chatId) {
@@ -203,6 +203,7 @@ addActionHandler('openChatWithDraft', (global, actions, payload): ActionReturnTy
     requestedDraft: {
       chatId,
       text,
+      isMarkdown,
       files,
       filter,
     },

@@ -39,6 +39,7 @@ export type RichEditor = {
   hasCollapsedSelection: () => boolean;
   isEmpty: () => boolean;
   insertContent: (content: RichEditorInsertContent | RichEditorInsertContent[], shouldPrepend?: boolean) => void;
+  insertMarkdown: (markdown: string, shouldPrepend?: boolean) => void;
   redo: NoneToVoidFunction;
   replaceValue: (value: ApiInputRichMessage) => void;
   replaceRange: (

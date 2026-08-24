@@ -6,6 +6,7 @@ import type { RichEditorInsertContent } from '../richEditorTypes';
 import { getRichMessagePreviewText } from '../../../../global/helpers/richMessage';
 import buildClassName from '../../../../util/buildClassName';
 import { buildRichMessageFromFormatted, buildTiptapJsonFromRichMessage } from '../../../ui/textInput/richText';
+import { prepareRichEditorMarkdown } from './richEditorMarkdown';
 
 import placeholderSrc from '../../../../assets/square.svg';
 
@@ -42,6 +43,18 @@ export function insertEditorContent(
   }
 
   editor.chain().focus().insertContent(tiptapContent).run();
+}
+
+export function insertEditorMarkdown(editor: Editor | undefined, markdown: string, shouldPrepend = false) {
+  if (!editor || !markdown) return;
+
+  const preparedMarkdown = prepareRichEditorMarkdown(markdown);
+  if (shouldPrepend) {
+    editor.chain().focus('start').insertContent(preparedMarkdown, { contentType: 'markdown' }).run();
+    return;
+  }
+
+  editor.chain().focus().insertContent(preparedMarkdown, { contentType: 'markdown' }).run();
 }
 
 export function replaceEditorRange(

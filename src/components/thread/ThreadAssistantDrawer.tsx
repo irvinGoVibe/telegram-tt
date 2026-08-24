@@ -18,6 +18,7 @@ import type { ThreadId } from '../../types';
 import { MAIN_THREAD_ID } from '../../api/types';
 
 import { requestForcedReflow, requestMutation } from '../../lib/fasterdom/fasterdom';
+import { getMessageLink } from '../../global/helpers';
 import { getPeerTitle } from '../../global/helpers/peers';
 import {
   selectChat, selectChatMessages, selectPeer, selectSender,
@@ -55,6 +56,7 @@ const CONTEXT_STORAGE_PREFIX = 'telegram-thread.ai-context';
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const RE_BLOCK_MARKDOWN_FORMATTING = /(?:^|\n)\s*(?:#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|.+\|)/m;
 const RE_INLINE_MARKDOWN_FORMATTING = /\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\)/;
+const RE_MESSAGE_CITATION = /\[#(\d+)\](?!\()/g;
 
 type ContextMode = 'recent' | 'since' | 'until' | 'range' | 'all';
 type DateContextMode = Extract<ContextMode, 'since' | 'until' | 'range'>;
@@ -121,6 +123,12 @@ function chatStorageKey(chatId?: string) {
 
 function contextStorageKey(chatId?: string) {
   return `${CONTEXT_STORAGE_PREFIX}.${chatId || 'global'}`;
+}
+
+function replaceMessageCitationsWithLinks(markdown: string, peer: ApiPeer, threadId?: ThreadId) {
+  return markdown.replace(RE_MESSAGE_CITATION, (_citation, messageId: string) => {
+    return `[\\[#${messageId}\\]](${getMessageLink(peer, threadId, Number(messageId))})`;
+  });
 }
 
 function readStoredContextSelection(chatId?: string): ContextSelection {
@@ -792,10 +800,13 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const insertAnswerInChat = useLastCallback((message: LocalAssistantMessage) => {
     if (!currentChatId) return;
 
-    const shouldOpenAsArticle = message.content.length >= ARTICLE_MIN_TEXT_LENGTH
+    const articleMarkdown = contextPeer
+      ? replaceMessageCitationsWithLinks(message.content, contextPeer, currentThreadId)
+      : message.content;
+    const shouldOpenAsArticle = articleMarkdown.length >= ARTICLE_MIN_TEXT_LENGTH
       && (
-        RE_BLOCK_MARKDOWN_FORMATTING.test(message.content)
-        || RE_INLINE_MARKDOWN_FORMATTING.test(message.content)
+        RE_BLOCK_MARKDOWN_FORMATTING.test(articleMarkdown)
+        || RE_INLINE_MARKDOWN_FORMATTING.test(articleMarkdown)
       );
     if (shouldOpenAsArticle) {
       setIsRichInputExpanded({ isRichInputExpanded: true });
@@ -804,7 +815,8 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     openChatWithDraft({
       chatId: currentChatId,
       threadId: currentThreadId,
-      text: { text: message.content },
+      text: { text: shouldOpenAsArticle ? articleMarkdown : message.content },
+      isMarkdown: shouldOpenAsArticle,
     });
   });
 

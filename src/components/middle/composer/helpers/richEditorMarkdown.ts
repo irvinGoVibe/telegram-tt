@@ -38,7 +38,7 @@ export const RichEditorMarkdown = Markdown.extend({
             return false;
           }
 
-          return editor.commands.insertContent(preserveUnsupportedMarkdown(markdown), {
+          return editor.commands.insertContent(prepareRichEditorMarkdown(markdown), {
             contentType: 'markdown',
           });
         },
@@ -47,7 +47,7 @@ export const RichEditorMarkdown = Markdown.extend({
   },
 });
 
-function preserveUnsupportedMarkdown(markdown: string) {
+export function prepareRichEditorMarkdown(markdown: string) {
   return markdown
     .replace(RE_RICH_MARKDOWN_LINKS, preserveSupportedMarkdownLink)
     .replace(RE_MARKDOWN_FOOTNOTE, escapeMarkdownOpeningBracket)

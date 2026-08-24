@@ -1331,6 +1331,7 @@ export interface ActionPayloads {
     chatId?: string;
     threadId?: ThreadId;
     text: ApiFormattedText;
+    isMarkdown?: boolean;
     files?: File[];
     filter?: ApiChatType[];
   } & WithTabId;

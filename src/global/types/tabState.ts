@@ -579,6 +579,7 @@ export type TabState = {
   requestedDraft?: {
     chatId?: string;
     text: ApiFormattedText;
+    isMarkdown?: boolean;
     files?: File[];
     filter?: ApiChatType[];
   };

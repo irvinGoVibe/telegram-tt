@@ -39,6 +39,7 @@ const DraftRecipientPicker: FC<OwnProps> = ({
       chatId: recipientId,
       threadId,
       text: requestedDraft!.text,
+      isMarkdown: requestedDraft!.isMarkdown,
       files: requestedDraft!.files,
     });
   }, [openChatWithDraft, requestedDraft]);
