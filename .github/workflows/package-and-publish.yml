@@ -100,6 +100,8 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
         with:
           tagName: ${{ needs.prepare-release.outputs.tag-name }}
           releaseName: ${{ needs.prepare-release.outputs.release-name }}
