@@ -62,22 +62,9 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-application:
-    name: Build ${{ matrix.settings.name }}
+    name: Build macOS Apple Silicon
     needs: prepare-release
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - name: macOS Apple Silicon
-            platform: macos-latest
-            args: '--target aarch64-apple-darwin --bundles dmg --config {"bundle":{"macOS":{"signingIdentity":"-"}}}'
-          - name: macOS Intel
-            platform: macos-latest
-            args: '--target x86_64-apple-darwin --bundles dmg --config {"bundle":{"macOS":{"signingIdentity":"-"}}}'
-          - name: Windows
-            platform: windows-latest
-            args: '--bundles nsis'
-    runs-on: ${{ matrix.settings.platform }}
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -91,7 +78,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.settings.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: aarch64-apple-darwin
 
       - name: Install dependencies
         run: npm install
@@ -111,7 +98,7 @@ jobs:
           uploadUpdaterJson: false
           uploadUpdaterSignatures: false
           releaseAssetNamePattern: 'Telegram-Tasks-v[version]-[platform]-[arch][ext]'
-          args: ${{ matrix.settings.args }}
+          args: '--target aarch64-apple-darwin --bundles dmg --config {"bundle":{"macOS":{"signingIdentity":"-"}}}'
 
   publish-release:
     name: Publish release

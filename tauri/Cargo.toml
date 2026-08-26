@@ -1,6 +1,6 @@
  [package]
 name = "telegram_tasks"
-version = "2.11.5"
+version = "2.11.6"
 description = "Telegram Tasks"
 authors = ["Alexander Zinchuk"]
 license = "GPLv3"
