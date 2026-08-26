@@ -7,3 +7,5 @@ tests/artifacts/
 .env.*
 !.env.example
 .convex-runtime-url
+.vercel
+.env*

@@ -7,8 +7,6 @@ import { LeftColumnContent, SettingsScreens } from '../../types';
 import { requestMeasure, requestMutation } from '../../lib/fasterdom/fasterdom';
 import { selectTabState } from '../../global/selectors';
 import { selectCurrentLimit } from '../../global/selectors/limits';
-import { IS_TAURI } from '../../util/browser/globalEnvironment';
-import { IS_MAC_OS } from '../../util/browser/windowEnvironment';
 import buildClassName from '../../util/buildClassName';
 
 import useFolderTabs from '../../hooks/useFolderTabs';
@@ -165,7 +163,6 @@ const FoldersSidebar = ({
     >
       <MainMenuDropdown
         trigger={MainButton}
-        className={buildClassName(IS_TAURI && IS_MAC_OS && styles.hideMenuButton)}
       />
       {!isAtBeginning && <div className={styles.divider} />}
       <div

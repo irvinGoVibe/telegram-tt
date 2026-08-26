@@ -150,7 +150,7 @@ export default function useRichEditor() {
       valueRef.current = nextValue;
       setCurrentValue(nextValue);
       editorRef.current?.chain()
-        .setContent(buildTiptapJsonFromRichMessage(nextValue), { emitUpdate: false })
+        .setContent(buildTiptapJsonFromRichMessage(nextValue))
         .focus('end')
         .run();
     },

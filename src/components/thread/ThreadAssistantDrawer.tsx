@@ -2,7 +2,7 @@ import type {
   ChangeEvent, DragEvent, FormEvent, KeyboardEvent,
 } from 'react';
 import { parse } from 'marked';
-import type { FC, TeactNode } from '../../lib/teact/teact';
+import type { TeactNode } from '../../lib/teact/teact';
 import {
   memo, useEffect, useRef, useState,
 } from '../../lib/teact/teact';
@@ -12,6 +12,7 @@ import type { ApiChat, ApiMessage, ApiPeer } from '../../api/types';
 import type {
   ThreadAiChatContext,
   ThreadAiSettings,
+  ThreadAiSkill,
   ThreadModel,
 } from '../../thread/api';
 import type { ThreadId } from '../../types';
@@ -40,11 +41,16 @@ import CalendarModal from '../common/CalendarModal';
 import Icon from '../common/icons/Icon';
 import SafeLink from '../common/SafeLink';
 import Button from '../ui/Button';
+import ThreadAssistantSkills, { type ThreadAssistantSkill } from './ThreadAssistantSkills';
 
 import './ThreadAssistantDrawer.scss';
 
 const CHAT_STORAGE_PREFIX = 'telegram-thread.ai-chat';
 const MODEL_STORAGE_KEY = 'telegram-thread.ai-model';
+const MAX_STORED_CHATS = 20;
+const MAX_ACTIVE_SKILLS = 5;
+const MAX_CHAT_TITLE_WORDS = 5;
+const MAX_CHAT_TITLE_LENGTH = 32;
 const MAX_ATTACHMENT_COUNT = 4;
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 12 * 1024 * 1024;
@@ -124,6 +130,22 @@ type LocalAssistantMessage = {
   attachments?: LocalAssistantAttachment[];
 };
 
+type LocalAssistantChat = {
+  id: string;
+  title: string;
+  draft: string;
+  messages: LocalAssistantMessage[];
+  skills: ThreadAssistantSkill[];
+};
+
+type StoredAssistantChats = {
+  activeChatId: string;
+  chats: LocalAssistantChat[];
+};
+
+const EMPTY_ASSISTANT_MESSAGES: LocalAssistantMessage[] = [];
+const EMPTY_ASSISTANT_SKILLS: ThreadAssistantSkill[] = [];
+
 type OwnProps = {
   currentChatId?: string;
   currentThreadId?: ThreadId;
@@ -153,6 +175,26 @@ function errorMessage(error: unknown) {
 
 function localMessageId(role: LocalAssistantMessage['role']) {
   return `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function localChatId() {
+  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createAssistantChat(): LocalAssistantChat {
+  return {
+    id: localChatId(),
+    title: '',
+    draft: '',
+    messages: [],
+    skills: [],
+  };
+}
+
+function createChatTitle(prompt: string) {
+  const title = prompt.replace(/\s+/g, ' ').trim().split(' ').slice(0, MAX_CHAT_TITLE_WORDS).join(' ');
+  if (title.length <= MAX_CHAT_TITLE_LENGTH) return title;
+  return `${title.slice(0, MAX_CHAT_TITLE_LENGTH - 1).trimEnd()}…`;
 }
 
 function chatStorageKey(chatId?: string) {
@@ -222,12 +264,36 @@ function isDateContextMode(mode: ContextMode): mode is DateContextMode {
   return mode === 'since' || mode === 'until' || mode === 'range';
 }
 
-function readStoredMessages(key: string): LocalAssistantMessage[] {
+function readStoredChats(key: string): StoredAssistantChats {
+  const fallbackChat = createAssistantChat();
   try {
     const value = JSON.parse(localStorage.getItem(key) || '[]');
-    return Array.isArray(value) ? value.slice(-100) : [];
+    if (Array.isArray(value)) {
+      const messages = value.slice(-100);
+      const firstPrompt = messages.find((message) => message?.role === 'user')?.content || '';
+      const chat = {
+        ...fallbackChat,
+        title: createChatTitle(firstPrompt),
+        messages,
+      };
+      return { activeChatId: chat.id, chats: [chat] };
+    }
+
+    const chats: LocalAssistantChat[] = Array.isArray(value?.chats)
+      ? value.chats.slice(-MAX_STORED_CHATS).map((chat: LocalAssistantChat) => ({
+        id: String(chat.id || localChatId()),
+        title: String(chat.title || ''),
+        draft: String(chat.draft || ''),
+        messages: Array.isArray(chat.messages) ? chat.messages.slice(-100) : [],
+        skills: Array.isArray(chat.skills) ? chat.skills.slice(0, MAX_ACTIVE_SKILLS) : [],
+      }))
+      : [];
+    if (!chats.length) return { activeChatId: fallbackChat.id, chats: [fallbackChat] };
+    const activeChatId = chats.some(({ id }) => id === value.activeChatId)
+      ? value.activeChatId : chats[0].id;
+    return { activeChatId, chats };
   } catch {
-    return [];
+    return { activeChatId: fallbackChat.id, chats: [fallbackChat] };
   }
 }
 
@@ -301,9 +367,9 @@ function messageMediaLabel(message: ApiMessage) {
   return '';
 }
 
-const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
+const ThreadAssistantDrawer = ({
   currentChatId, currentThreadId, draft, isActive, onClose, contextChat, contextPeer, contextMessages,
-}) => {
+}: OwnProps & StateProps) => {
   const lang = useLang();
   const {
     focusMessage, openChatWithDraft, setIsRichInputExpanded, setThreadAssistantDraft,
@@ -316,14 +382,14 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [view, setView] = useState<'chat' | 'settings'>('chat');
-  const [messages, setMessages] = useState<LocalAssistantMessage[]>([]);
+  const [chats, setChats] = useState<LocalAssistantChat[]>([]);
+  const [activeChatId, setActiveChatId] = useState('');
   const [hydratedStorageKey, setHydratedStorageKey] = useState('');
   const [models, setModels] = useState<ThreadModel[]>([]);
   const [activeModel, setActiveModel] = useState('');
   const [settings, setSettings] = useState<ThreadAiSettings>(EMPTY_SETTINGS);
   const [settingsModel, setSettingsModel] = useState('');
   const [settingsAnswerModel, setSettingsAnswerModel] = useState('');
-  const [question, setQuestion] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isDraggingAttachments, setIsDraggingAttachments] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState('');
@@ -348,12 +414,37 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   const attachmentDragDepthRef = useRef(0);
   const shouldScrollQuestionToEndRef = useRef(false);
   const currentStorageKey = chatStorageKey(currentChatId);
+  const activeChat = chats.find(({ id }) => id === activeChatId);
+  const messages = activeChat?.messages || EMPTY_ASSISTANT_MESSAGES;
+  const activeSkills = activeChat?.skills || EMPTY_ASSISTANT_SKILLS;
+  const question = activeChat?.draft || '';
   const canSend = Boolean(
     settings.apiKeyConfigured
     && activeModel
     && (question.trim() || pendingAttachments.length)
     && !isSending,
   );
+
+  const setQuestion = useLastCallback((value: string) => {
+    setChats((current) => current.map((chat) => (
+      chat.id === activeChatId ? { ...chat, draft: value } : chat
+    )));
+  });
+
+  const updateChatMessages = useLastCallback((
+    chatId: string,
+    update: (current: LocalAssistantMessage[]) => LocalAssistantMessage[],
+  ) => {
+    setChats((current) => current.map((chat) => (
+      chat.id === chatId ? { ...chat, messages: update(chat.messages) } : chat
+    )));
+  });
+
+  const setActiveSkills = useLastCallback((skills: ThreadAssistantSkill[]) => {
+    setChats((current) => current.map((chat) => (
+      chat.id === activeChatId ? { ...chat, skills } : chat
+    )));
+  });
 
   const resizeQuestionInput = useLastCallback((element: HTMLTextAreaElement, shouldScrollToEnd?: boolean) => {
     requestMutation(() => {
@@ -374,7 +465,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   });
 
   useEffect(() => {
-    if (!draft) return;
+    if (!draft || hydratedStorageKey !== currentStorageKey) return;
 
     shouldScrollQuestionToEndRef.current = true;
     setQuestion(draft);
@@ -385,7 +476,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
       resizeQuestionInput(questionInputRef.current, true);
       shouldScrollQuestionToEndRef.current = false;
     }
-  }, [draft, question]);
+  }, [currentStorageKey, draft, hydratedStorageKey, question]);
 
   useEffect(() => {
     const questionInput = questionInputRef.current;
@@ -443,12 +534,13 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
 
   const loadDrawer = useLastCallback(async () => {
     const storageKey = chatStorageKey(currentChatId);
-    setMessages(readStoredMessages(storageKey));
+    const storedChats = readStoredChats(storageKey);
+    setChats(storedChats.chats);
+    setActiveChatId(storedChats.activeChatId);
     setHydratedStorageKey(storageKey);
     setPendingAttachments([]);
     setIsDraggingAttachments(false);
     attachmentDragDepthRef.current = 0;
-    setQuestion('');
     setError('');
     setNotice('');
     contextLoadIdRef.current += 1;
@@ -510,8 +602,14 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
 
   useEffect(() => {
     if (!hydratedStorageKey || hydratedStorageKey !== currentStorageKey) return;
-    localStorage.setItem(hydratedStorageKey, JSON.stringify(messages.slice(-100)));
-  }, [currentStorageKey, hydratedStorageKey, messages]);
+    localStorage.setItem(hydratedStorageKey, JSON.stringify({
+      activeChatId,
+      chats: chats.slice(-MAX_STORED_CHATS).map((chat) => ({
+        ...chat,
+        messages: chat.messages.slice(-100),
+      })),
+    } satisfies StoredAssistantChats));
+  }, [activeChatId, chats, currentStorageKey, hydratedStorageKey]);
 
   useEffect(() => {
     if (!activeModel) return;
@@ -713,8 +811,19 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
     };
     const history = messages.slice(-20).map((message) => ({ role: message.role, text: message.content }));
     const attachments = pendingAttachments.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
-    setMessages((current) => [...current, userMessage]);
-    setQuestion('');
+    const skills: ThreadAiSkill[] = activeSkills.map(({ title, instructions }) => ({
+      name: title,
+      instructions,
+    }));
+    const submittedChatId = activeChatId;
+    setChats((current) => current.map((chat) => (
+      chat.id === submittedChatId ? {
+        ...chat,
+        title: chat.title || createChatTitle(nextQuestion),
+        draft: '',
+        messages: [...chat.messages, userMessage],
+      } : chat
+    )));
     setPendingAttachments([]);
     setIsSending(true);
     setError('');
@@ -727,8 +836,9 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
         history,
         context: buildTelegramContext(),
         attachments,
+        skills,
       });
-      setMessages((current) => [...current, {
+      updateChatMessages(submittedChatId, (current) => [...current, {
         id: localMessageId('assistant'),
         role: 'assistant',
         content: result.answer,
@@ -1024,8 +1134,41 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   });
 
   const startNewChat = useLastCallback(() => {
-    setMessages([]);
-    setQuestion('');
+    if (isSending) return;
+    const chat = createAssistantChat();
+    setChats((current) => [...current, chat].slice(-MAX_STORED_CHATS));
+    setActiveChatId(chat.id);
+    setPendingAttachments([]);
+    setError('');
+    setNotice('');
+    setView('chat');
+  });
+
+  const openAssistantChat = useLastCallback((chatId: string) => {
+    if (isSending || chatId === activeChatId) return;
+    setActiveChatId(chatId);
+    setPendingAttachments([]);
+    setError('');
+    setNotice('');
+    setView('chat');
+  });
+
+  const closeAssistantChat = useLastCallback((chatId: string) => {
+    if (isSending) return;
+    const chatIndex = chats.findIndex(({ id }) => id === chatId);
+    if (chatIndex < 0) return;
+
+    const nextChats = chats.filter(({ id }) => id !== chatId);
+    if (!nextChats.length) {
+      const replacement = createAssistantChat();
+      setChats([replacement]);
+      setActiveChatId(replacement.id);
+    } else {
+      setChats(nextChats);
+      if (activeChatId === chatId) {
+        setActiveChatId(nextChats[Math.max(0, chatIndex - 1)].id);
+      }
+    }
     setPendingAttachments([]);
     setError('');
     setNotice('');
@@ -1152,6 +1295,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
           type="button"
           aria-label={lang('ThreadAINewChat')}
           title={lang('ThreadAINewChat')}
+          disabled={isSending}
           onClick={startNewChat}
         >
           <Icon name="add" />
@@ -1166,6 +1310,35 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
           <Icon name="settings" />
         </button>
       </div>
+    </div>
+  );
+
+  const renderChatTabs = () => (
+    <div className="ThreadAssistantDrawer-tabs custom-scroll-x">
+      {chats.map((chat) => (
+        <div
+          key={chat.id}
+          className={`ThreadAssistantDrawer-tab${chat.id === activeChatId ? ' active' : ''}`}
+        >
+          <button
+            type="button"
+            className="ThreadAssistantDrawer-tabLabel"
+            disabled={isSending}
+            onClick={() => openAssistantChat(chat.id)}
+          >
+            {chat.title || lang('ThreadAINewChat')}
+          </button>
+          <button
+            type="button"
+            className="ThreadAssistantDrawer-tabClose"
+            aria-label={lang('ThreadAICloseChat')}
+            disabled={isSending}
+            onClick={() => closeAssistantChat(chat.id)}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 
@@ -1284,6 +1457,24 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
 
   const renderComposer = () => (
     <form className="ThreadAssistantDrawer-composer" onSubmit={submitQuestion}>
+      {Boolean(activeSkills.length) && (
+        <div className="ThreadAssistantDrawer-skillChips">
+          {activeSkills.map((skill) => (
+            <button
+              key={skill.id}
+              type="button"
+              className="ThreadAssistantDrawer-skillChip"
+              aria-label={lang('ThreadAIRemoveSkill', { skill: skill.title })}
+              disabled={isSending}
+              onClick={() => setActiveSkills(activeSkills.filter(({ id }) => id !== skill.id))}
+            >
+              <Icon name="tools" className="ThreadAssistantDrawer-skillChipIcon" />
+              <span className="ThreadAssistantDrawer-skillChipTitle">{skill.title}</span>
+              <Icon name="close" className="ThreadAssistantDrawer-skillChipRemove" />
+            </button>
+          ))}
+        </div>
+      )}
       {Boolean(pendingAttachments.length) && (
         <div className="ThreadAssistantDrawer-previews">
           {pendingAttachments.map((attachment, index) => {
@@ -1342,6 +1533,11 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
           >
             <Icon name="attach" />
           </button>
+          <ThreadAssistantSkills
+            skills={activeSkills}
+            isDisabled={isSending}
+            onChange={setActiveSkills}
+          />
           <label className="ThreadAssistantDrawer-model">
             <Icon name="bot-command" className="ThreadAssistantDrawer-modelIcon" />
             {models.length ? (
@@ -1486,6 +1682,7 @@ const ThreadAssistantDrawer: FC<OwnProps & StateProps> = ({
   return (
     <div className="ThreadAssistantDrawer">
       {renderToolbar()}
+      {renderChatTabs()}
       <CalendarModal
         isOpen={Boolean(activeContextDateField)}
         selectedAt={contextDateToTimestamp(

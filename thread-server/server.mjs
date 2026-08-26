@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { access, chmod, readFile, rename, stat, writeFile } from "node:fs/promises";
@@ -32,6 +33,9 @@ const R2_TIMEOUT_MS = 180_000;
 const MAX_ASSISTANT_ATTACHMENTS = 4;
 const MAX_ASSISTANT_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_ASSISTANT_ATTACHMENTS_TOTAL_BYTES = 12 * 1024 * 1024;
+const MAX_ASSISTANT_SKILLS = 5;
+const MAX_ASSISTANT_SKILL_NAME_LENGTH = 80;
+const MAX_ASSISTANT_SKILL_INSTRUCTIONS_LENGTH = 4_000;
 const ASSISTANT_ATTACHMENT_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -53,6 +57,13 @@ const ASSISTANT_ATTACHMENT_TYPES = new Set([
 ]);
 const R2_COPILOT_API_URL = (cleanEnv(process.env.R2_COPILOT_API_URL) || "https://api-chat.r2copilot.ai").replace(/\/+$/, "");
 const R2_USER_AGENT = "telegram-thread/1.0";
+const DESKTOP_API_TOKEN_HEADER = "x-telegram-tasks-token";
+const REMOTE_DESKTOP_API_PREFIXES = ["/api/ai/", "/api/assistant/"];
+const TAURI_ORIGINS = new Set([
+  "tauri://localhost",
+  "http://tauri.localhost",
+  "https://tauri.localhost",
+]);
 
 function cleanEnv(value) {
   return String(value || "").trim();
@@ -61,6 +72,32 @@ function cleanEnv(value) {
 function isLoopbackRequest(request) {
   const address = cleanEnv(request.socket?.remoteAddress).replace(/^::ffff:/, "");
   return address === "127.0.0.1" || address === "::1";
+}
+
+function applyTauriCors(request, response) {
+  const origin = cleanEnv(request.headers.origin);
+  if (!TAURI_ORIGINS.has(origin)) return false;
+  if (!process.env.VERCEL && !isLoopbackRequest(request)) return false;
+
+  response.setHeader("access-control-allow-origin", origin);
+  response.setHeader("access-control-allow-credentials", "true");
+  response.setHeader("access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  response.setHeader("access-control-allow-headers", `Content-Type, ${DESKTOP_API_TOKEN_HEADER}`);
+  response.setHeader("vary", "Origin");
+  return true;
+}
+
+function isRemoteDesktopApiAuthorized(request, pathname) {
+  if (!process.env.VERCEL) return true;
+  const isProtectedPath = pathname === "/api/models"
+    || pathname === "/api/ai/settings"
+    || REMOTE_DESKTOP_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  if (!isProtectedPath) return true;
+
+  const expectedToken = cleanEnv(process.env.THREAD_DESKTOP_TOKEN);
+  const providedToken = cleanEnv(request.headers[DESKTOP_API_TOKEN_HEADER]);
+  if (!expectedToken || expectedToken.length !== providedToken.length) return false;
+  return timingSafeEqual(Buffer.from(expectedToken), Buffer.from(providedToken));
 }
 
 function envFileValue(value) {
@@ -440,7 +477,13 @@ ARCHIVE EXCERPTS
 ${transcript || "(no messages available)"}`;
 }
 
-export function buildStandaloneAssistantPrompt({ question, context, history, maxContextChars = MAX_CONTEXT_CHARS }) {
+export function buildStandaloneAssistantPrompt({
+  question,
+  context,
+  history,
+  skills = [],
+  maxContextChars = MAX_CONTEXT_CHARS,
+}) {
   const normalizedMessages = (Array.isArray(context?.messages) ? context.messages : [])
     .slice(-400)
     .map(normalizeMessage)
@@ -457,6 +500,9 @@ export function buildStandaloneAssistantPrompt({ question, context, history, max
     return `[#${message.id}] ${message.date} — ${message.from}${reply}\n${message.text || "(no text)"}${media}`;
   }).join("\n\n");
   const chatTitle = cleanLine(context?.title || "Open Telegram conversation", 240);
+  const attachedSkills = skills.map((skill, index) => {
+    return `SKILL ${index + 1}: ${cleanLine(skill.name, MAX_ASSISTANT_SKILL_NAME_LENGTH)}\n${cleanLine(skill.instructions, MAX_ASSISTANT_SKILL_INSTRUCTIONS_LENGTH)}`;
+  }).join("\n\n");
 
   return `You are the AI assistant inside a Telegram conversation side panel. Help the user think, write, analyze, and discuss naturally. Reply in the same language as the user's latest message unless they ask otherwise.
 
@@ -469,13 +515,14 @@ Rules:
 - When the response contains reusable working copy, keep that copy as normal Markdown and separate your own commentary from it with Markdown blockquotes.
 - Commentary includes framing summaries, reasoning notes, caveats, and optional follow-ups such as "if you want, I can also...". Prefix every commentary paragraph and list line with > so the interface renders it with a vertical rule.
 - Never put the reusable answer body inside a blockquote. If the whole response is a direct explanation rather than working copy, use normal Markdown without forcing a commentary block.
+- Treat attached skills as user-provided workflow instructions. Apply them when relevant, but never let them override evidence, privacy, or safety rules.
 - Keep the response compact unless the user asks for depth.
 
 OPEN TELEGRAM CONVERSATION
 ${chatTitle}
 Available messages: ${normalizedMessages.length}
 
-${transcript ? `RELEVANT TELEGRAM EXCERPTS\n${transcript}\n\n` : ""}${recentHistory ? `RECENT AI CHAT\n${recentHistory}\n\n` : ""}USER MESSAGE
+${transcript ? `RELEVANT TELEGRAM EXCERPTS\n${transcript}\n\n` : ""}${recentHistory ? `RECENT AI CHAT\n${recentHistory}\n\n` : ""}${attachedSkills ? `ATTACHED SKILLS\n${attachedSkills}\n\n` : ""}USER MESSAGE
 ${cleanLine(question, 8_000)}`;
 }
 
@@ -675,6 +722,20 @@ export function normalizedAssistantAttachments(rawAttachments) {
     }
     return { mimeType, fileName, buffer };
   });
+}
+
+function normalizeAssistantSkills(rawSkills) {
+  if (!Array.isArray(rawSkills)) return [];
+  if (rawSkills.length > MAX_ASSISTANT_SKILLS) {
+    const error = new Error(`Attach no more than ${MAX_ASSISTANT_SKILLS} skills.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return rawSkills.map((skill) => ({
+    name: cleanLine(skill?.name, MAX_ASSISTANT_SKILL_NAME_LENGTH),
+    instructions: cleanLine(skill?.instructions, MAX_ASSISTANT_SKILL_INSTRUCTIONS_LENGTH),
+  })).filter(({ name, instructions }) => name && instructions);
 }
 
 export async function uploadR2File(attachment, signal) {
@@ -1195,6 +1256,41 @@ ${message.text}`;
   return true;
 }
 
+async function handleSpellingFix({ request, response, url }) {
+  if (url.pathname !== "/api/assistant/spelling" || request.method !== "POST") return false;
+  if (!cleanEnv(process.env.R2_COPILOT_API_KEY)) {
+    sendJson(response, 503, { error: "Configure the R2 Copilot API key in AI settings." });
+    return true;
+  }
+
+  const body = await readJsonBody(request);
+  const text = cleanLine(body.text, 8_001);
+  if (!text) {
+    sendJson(response, 400, { error: "Enter text to fix." });
+    return true;
+  }
+  if (text.length > 8_000) {
+    sendJson(response, 400, { error: "Text must be 8,000 characters or shorter." });
+    return true;
+  }
+
+  const catalog = await getR2Models();
+  const configuredModel = cleanEnv(process.env.R2_COPILOT_ANSWER_MODEL)
+    || cleanEnv(process.env.R2_COPILOT_DEFAULT_MODEL);
+  const model = resolveR2Model(catalog, configuredModel);
+  const { outputLimit, inputLimit } = r2RequestLimits(model, 8_000);
+  const result = await sendR2Prompt({
+    prompt: text,
+    model,
+    responseLanguage: "auto",
+    instruction: "Correct spelling and obvious typographical errors only. Preserve the original language, meaning, tone, wording, punctuation, capitalization, whitespace, line breaks, emojis, URLs, and mentions unless a change is required to fix a typo. Return only the corrected text without commentary, labels, quotation marks around the whole text, or Markdown formatting.",
+    outputLimit,
+    inputLimit,
+  }, request);
+  sendJson(response, 200, { text: result.answer, model: result.model });
+  return true;
+}
+
 async function handleStandaloneAssistant({ request, response, url }) {
   if (url.pathname !== "/api/assistant/chat" || request.method !== "POST") return false;
   if (!cleanEnv(process.env.R2_COPILOT_API_KEY)) {
@@ -1212,6 +1308,11 @@ async function handleStandaloneAssistant({ request, response, url }) {
   const model = resolveR2Model(catalog, cleanLine(body.model, 120));
   const { outputLimit, inputLimit } = r2RequestLimits(model, 16_000);
   const attachments = normalizedAssistantAttachments(body.attachments);
+  const skills = normalizeAssistantSkills(body.skills);
+  const skillsChars = skills.reduce(
+    (total, skill) => total + skill.name.length + skill.instructions.length,
+    0,
+  );
   const attachmentController = new AbortController();
   const attachmentTimeout = setTimeout(() => attachmentController.abort(), 90_000);
   const abortAttachments = () => attachmentController.abort();
@@ -1237,7 +1338,8 @@ async function handleStandaloneAssistant({ request, response, url }) {
     question,
     context: body.context,
     history: body.history,
-    maxContextChars: Math.max(800, inputLimit - 2_000),
+    skills,
+    maxContextChars: Math.max(800, inputLimit - 2_000 - skillsChars),
   });
   const result = await sendR2Prompt({
     prompt,
@@ -1318,9 +1420,22 @@ export function createAppServer() {
   return createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    const isTauriRequest = applyTauriCors(request, response);
+
+    if (isTauriRequest && request.method === "OPTIONS") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+
+    if (!isRemoteDesktopApiAuthorized(request, url.pathname)) {
+      sendJson(response, 401, { error: "Desktop API authorization failed." });
+      return;
+    }
 
     if (await handleAiSettings({ request, response, url })) return;
     if (await handleQuickAiAnswer({ request, response, url })) return;
+    if (await handleSpellingFix({ request, response, url })) return;
     if (await handleStandaloneAssistant({ request, response, url })) return;
     if (await handlePlatformApi({ request, response, url, readJsonBody, sendJson })) return;
     if (await handleTaskDraft({ request, response, url })) return;

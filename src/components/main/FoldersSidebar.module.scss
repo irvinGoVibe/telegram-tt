@@ -33,6 +33,10 @@
     backdrop-filter: blur(25px);
   }
 
+  :global(body.is-tauri.is-macos #Main:not(.is-fullscreen)) & {
+    padding-top: var(--tauri-titlebar-height);
+  }
+
   :global {
     .Menu .bubble {
       --offset-y: 3.5rem;
@@ -131,10 +135,6 @@
   width: calc(100% - 0.5rem);
   height: 1px;
   background-color: rgba(255, 255, 255, 0.15);
-}
-
-.hideMenuButton {
-  visibility: hidden;
 }
 
 :global(html.interface-style-classic) .root {

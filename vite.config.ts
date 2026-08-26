@@ -13,6 +13,7 @@ import packageJson from './package.json' with { type: 'json' };
 
 const DIR_NAME = dirname(fileURLToPath(import.meta.url));
 const PRODUCTION_URL = 'https://web.telegram.org/a';
+const PRODUCTION_THREAD_API_URL = 'https://telegram-tasks-server.vercel.app';
 
 const { version: APP_VERSION } = packageJson;
 const BUNDLE_STATS_OUT_DIR = 'bundle-stats';
@@ -67,6 +68,7 @@ type BundleReportHook = (
 
 export default defineConfig(({ mode }): UserConfig => {
   const env = loadEnv(mode, process.cwd(), '');
+  const threadServerEnv = loadEnv(mode, resolve(DIR_NAME, 'thread-server'), '');
   setViteEnv(env);
   const {
     HEAD = '',
@@ -87,6 +89,11 @@ export default defineConfig(({ mode }): UserConfig => {
   const manifest = isProductionApp ? 'site.webmanifest' : 'site_dev.webmanifest';
   const csp = buildCsp(appEnv);
   const isDevelopmentMode = mode === 'development';
+  const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM);
+  const threadApiUrl = env.THREAD_API_URL || (isTauriBuild ? PRODUCTION_THREAD_API_URL : '');
+  const threadDesktopToken = isTauriBuild
+    ? env.THREAD_DESKTOP_TOKEN || threadServerEnv.THREAD_DESKTOP_TOKEN || ''
+    : '';
   const telegramApiId = env.TELEGRAM_API_ID || '';
   const telegramApiHash = env.TELEGRAM_API_HASH || '';
   const workerReportBundles: OutputBundle[] = [];
@@ -184,7 +191,8 @@ export default defineConfig(({ mode }): UserConfig => {
     TG_TELEGRAM_API_ID: telegramApiId,
     TG_TELEGRAM_API_HASH: telegramApiHash,
     TG_TEST_SESSION: env.TEST_SESSION || '',
-    TG_THREAD_API_URL: env.THREAD_API_URL || '',
+    TG_THREAD_API_URL: threadApiUrl,
+    TG_THREAD_DESKTOP_TOKEN: threadDesktopToken,
   });
 
   return {
@@ -234,7 +242,7 @@ export default defineConfig(({ mode }): UserConfig => {
       },
     },
     build: {
-      sourcemap: true,
+      sourcemap: !isTauriBuild,
       assetsInlineLimit: (filePath) => (IMAGE_ASSET_RE.test(filePath) ? false : undefined),
     },
     worker: {

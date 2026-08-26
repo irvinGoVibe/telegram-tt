@@ -6,9 +6,10 @@
     }
   },
   "build": {
+    "beforeBuildCommand": "npm run build:production",
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1234",
-    "frontendDist": "http://localhost:1234",
+    "frontendDist": "../dist",
     "removeUnusedCommands": true
   },
   "plugins": {
@@ -22,7 +23,7 @@
     "active": true,
     "createUpdaterArtifacts": false,
     "category": "SocialNetworking",
-    "copyright": "Telegram Air",
+    "copyright": "Telegram Tasks",
     "externalBin": [],
     "icon": [
       "icons/32x32.png",
@@ -53,6 +54,6 @@
       }
     }
   },
-  "identifier": "org.telegram.TelegramAirBeta",
-  "productName": "Telegram Air"
+  "identifier": "org.telegram.TelegramTasks",
+  "productName": "Telegram Tasks"
 }

@@ -115,7 +115,7 @@ const LeftMainHeader = ({
   const areContactsVisible = content === LeftColumnContent.Contacts;
   const hasMenu = content === LeftColumnContent.ChatList;
 
-  const isSearchButton = isForumPanelOpen && isFoldersSidebarShown && !IS_WITH_WINDOW_BUTTONS;
+  const isSearchButton = isForumPanelOpen && isFoldersSidebarShown;
 
   const selectedSearchDate = useMemo(() => {
     return searchDate
@@ -256,7 +256,7 @@ const LeftMainHeader = ({
         <MainMenuDropdown
           trigger={MainButton}
           className={buildClassName(
-            hasMenu && isFoldersSidebarShown && !IS_WITH_WINDOW_BUTTONS && !isSearchButton && 'hide-menu-button',
+            hasMenu && isFoldersSidebarShown && !isSearchButton && 'hide-menu-button',
             isSearchButton && 'forum-search-button',
           )}
         />
@@ -266,7 +266,7 @@ const LeftMainHeader = ({
           className={buildClassName(
             (globalSearchChatId || searchDate) ? 'with-picker-item' : undefined,
             shouldHideSearch && 'SearchInput--hidden',
-            hasMenu && isFoldersSidebarShown && !IS_WITH_WINDOW_BUTTONS && 'SearchInput--no-left-margin',
+            hasMenu && isFoldersSidebarShown && 'SearchInput--no-left-margin',
           )}
           value={isClosingSearch ? undefined : (contactsFilter || searchQuery)}
           focused={isSearchFocused}

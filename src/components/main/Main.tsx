@@ -616,9 +616,6 @@ const Main = ({
       className={className}
       bgClassName={bgClassName}
     >
-      {IS_TAURI && IS_MAC_OS && (
-        <div className="tauri-drag-region" data-tauri-drag-region />
-      )}
       <FoldersSidebar isMobile={isMobile} isActive={isFoldersSidebarShown} />
       <LeftColumn ref={leftColumnRef} isFoldersSidebarShown={isFoldersSidebarShown} />
       <MiddleColumn

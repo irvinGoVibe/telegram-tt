@@ -2,13 +2,13 @@
 export default function prepareTauriConfig() {
   const config = {
     build: {
-      frontendDist: process.env.BASE_URL,
+      frontendDist: '../dist',
       devUrl: null,
     },
     bundle: {
       windows: {},
     },
-    identifier: 'org.telegram.TelegramAir',
+    identifier: 'org.telegram.TelegramTasks',
   };
 
   if (process.env.WITH_UPDATER === 'true') {

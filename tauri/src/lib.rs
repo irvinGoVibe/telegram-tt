@@ -33,46 +33,51 @@ impl Default for AppStateStruct {
 
 pub type AppState = Mutex<AppStateStruct>;
 
-pub const TRAFFIC_LIGHT_POSITION_OVERLAY_LEGACY: LogicalPosition<f64> = LogicalPosition::new(26.0, 46.0);
-pub const TRAFFIC_LIGHT_POSITION_OVERLAY_26: LogicalPosition<f64> = LogicalPosition::new(26.0, 50.0);
-pub const TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_LEGACY: LogicalPosition<f64> = LogicalPosition::new(16.0, 30.0);
-pub const TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_26: LogicalPosition<f64> = LogicalPosition::new(16.0, 34.0);
+pub const TRAFFIC_LIGHT_POSITION_OVERLAY_LEGACY: LogicalPosition<f64> =
+  LogicalPosition::new(14.0, 26.0);
+pub const TRAFFIC_LIGHT_POSITION_OVERLAY_26: LogicalPosition<f64> =
+  LogicalPosition::new(14.0, 26.0);
+pub const TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_LEGACY: LogicalPosition<f64> =
+  LogicalPosition::new(14.0, 26.0);
+pub const TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_26: LogicalPosition<f64> =
+  LogicalPosition::new(14.0, 26.0);
 pub const TRAFFIC_LIGHT_POSITION_DEFAULT: LogicalPosition<f64> = LogicalPosition::new(14.0, 19.0);
 
 pub static TRAFFIC_LIGHT_POSITION_OVERLAY: LazyLock<LogicalPosition<f64>> = LazyLock::new(|| {
   if let tauri_plugin_os::Version::Semantic(major, _, _) = tauri_plugin_os::version() {
-      if major >= 26 {
-          return TRAFFIC_LIGHT_POSITION_OVERLAY_26;
-      }
+    if major >= 26 {
+      return TRAFFIC_LIGHT_POSITION_OVERLAY_26;
+    }
   }
   TRAFFIC_LIGHT_POSITION_OVERLAY_LEGACY
 });
 
-pub static TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE: LazyLock<LogicalPosition<f64>> = LazyLock::new(|| {
-  if let tauri_plugin_os::Version::Semantic(major, _, _) = tauri_plugin_os::version() {
+pub static TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE: LazyLock<LogicalPosition<f64>> =
+  LazyLock::new(|| {
+    if let tauri_plugin_os::Version::Semantic(major, _, _) = tauri_plugin_os::version() {
       if major >= 26 {
-          return TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_26;
+        return TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_26;
       }
-  }
-  TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_LEGACY
-});
+    }
+    TRAFFIC_LIGHT_POSITION_OVERLAY_MOBILE_LEGACY
+  });
 
 pub const WINDOW_WIDTH: f64 = 1088.0;
 pub const WINDOW_HEIGHT: f64 = 700.0;
-pub const WINDOW_MIN_WIDTH: f64 = 360.0;
-pub const WINDOW_MIN_HEIGHT: f64 = 200.0;
+pub const WINDOW_MIN_WIDTH: f64 = 420.0;
+pub const WINDOW_MIN_HEIGHT: f64 = 480.0;
 
 pub static LAST_URL: LazyLock<std::sync::Mutex<String>> =
   LazyLock::new(|| std::sync::Mutex::new(BASE_URL.to_string()));
 
 pub const DEFAULT_WINDOW_TITLE: &str = match std::option_env!("APP_TITLE") {
   Some(title) => title,
-  None => "Telegram Air",
+  None => "Telegram Tasks",
 };
 
-pub const BASE_URL: &str = match std::option_env!("BASE_URL") {
+pub const BASE_URL: &str = match std::option_env!("TAURI_APP_URL") {
   Some(url) => url,
-  None => "http://localhost:1234",
+  None => "tauri://localhost",
 };
 
 pub const WITH_UPDATER: &str = match std::option_env!("WITH_UPDATER") {
@@ -122,17 +127,22 @@ pub fn run() {
 
   let app = app.on_window_event(|window, event| match event {
     tauri::WindowEvent::CloseRequested { api, .. } => {
+      #[cfg(not(target_os = "macos"))]
       let active_windows = window.app_handle().windows();
 
+      #[cfg(not(target_os = "macos"))]
       if active_windows.len() == 1 {
         // Save current URL before hiding the last window
         save_window_url(&window.app_handle(), window.label());
 
-        #[cfg(target_os = "macos")]
-        window.app_handle().hide().unwrap_or_default();
-        #[cfg(not(target_os = "macos"))]
         window.hide().unwrap_or_default();
         api.prevent_close();
+      }
+
+      #[cfg(target_os = "macos")]
+      {
+        let _ = api;
+        save_window_url(&window.app_handle(), window.label());
       }
     }
     tauri::WindowEvent::ThemeChanged(_) => {
@@ -199,9 +209,29 @@ pub fn run() {
     set_menu_translations
   ]);
 
-  app
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+  let app = app
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application");
+
+  app.run(|app_handle, event| {
+    #[cfg(target_os = "macos")]
+    if let tauri::RunEvent::Reopen {
+      has_visible_windows,
+      ..
+    } = event
+    {
+      if has_visible_windows {
+        return;
+      }
+
+      if let Some(window) = app_handle.windows().values().next() {
+        window.show().unwrap_or_default();
+        window.set_focus().unwrap_or_default();
+      } else {
+        let _ = open_new_window(app_handle.clone(), BASE_URL.to_string());
+      }
+    }
+  });
 }
 
 #[tauri::command]
@@ -234,11 +264,7 @@ fn mark_title_bar_overlay(window: tauri::WebviewWindow, is_overlay: bool, is_mob
       .unwrap_or_default();
 
     if let Some(base_window) = window.app_handle().get_window(window.label()) {
-      mac::update_window_title(
-        base_window.clone(),
-        "".to_string(),
-        position,
-      );
+      mac::update_window_title(base_window.clone(), "".to_string(), position);
     }
   } else {
     window
@@ -324,53 +350,55 @@ pub(crate) fn open_new_window(
 ) -> Result<tauri::WebviewWindow, String> {
   let base_url = Url::parse(BASE_URL).map_err(|err| format!("Invalid base URL: {err}"))?;
   let url = resolve_app_url(&url, &base_url).ok_or_else(|| format!("Disallowed app URL: {url}"))?;
+  let webview_url = if url.scheme() == "tauri" {
+    tauri::WebviewUrl::App(build_app_path(&url).into())
+  } else {
+    tauri::WebviewUrl::External(url)
+  };
   let window_label = Uuid::new_v4().to_string();
-  let new_window_builder = tauri::WebviewWindowBuilder::new(
-    &app,
-    window_label.clone(),
-    tauri::WebviewUrl::App(url.to_string().into()),
-  )
-  .additional_browser_args("--autoplay-policy=no-user-gesture-required")
-  .fullscreen(false)
-  .resizable(true)
-  .title(DEFAULT_WINDOW_TITLE)
-  .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
-  .min_inner_size(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
-  .disable_drag_drop_handler() // Required for Drag & Drop on Windows
-  .initialization_script(&format!(
-    "window.tauri = {{ version: '{}' }};",
-    env!("CARGO_PKG_VERSION")
-  ))
-  .on_navigation(move |url| is_allowed_app_url(url, &base_url))
-  .on_download(|window, event| {
-    match event {
-      #[allow(unused_variables)]
-      DownloadEvent::Requested { destination, .. } => {
-        // On macOS, Webview does not provide basic download logic
-        #[cfg(target_os = "macos")]
-        if let Some(filename) = destination.file_name() {
-          if let Ok(downloads_dir) = window.app_handle().path().download_dir() {
-            let new_destination = downloads_dir.join(filename);
-            *destination = new_destination;
+  let new_window_builder =
+    tauri::WebviewWindowBuilder::new(&app, window_label.clone(), webview_url)
+      .additional_browser_args("--autoplay-policy=no-user-gesture-required")
+      .fullscreen(false)
+      .resizable(true)
+      .title(DEFAULT_WINDOW_TITLE)
+      .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
+      .min_inner_size(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+      .disable_drag_drop_handler() // Required for Drag & Drop on Windows
+      .initialization_script(&format!(
+        "window.tauri = {{ version: '{}' }};",
+        env!("CARGO_PKG_VERSION")
+      ))
+      .on_navigation(move |url| is_allowed_app_url(url, &base_url))
+      .on_download(|window, event| {
+        match event {
+          #[allow(unused_variables)]
+          DownloadEvent::Requested { destination, .. } => {
+            // On macOS, Webview does not provide basic download logic
+            #[cfg(target_os = "macos")]
+            if let Some(filename) = destination.file_name() {
+              if let Ok(downloads_dir) = window.app_handle().path().download_dir() {
+                let new_destination = downloads_dir.join(filename);
+                *destination = new_destination;
+              }
+            }
           }
-        }
-      }
-      DownloadEvent::Finished { url, success, .. } => {
-        window
-          .emit_to(
-            window.label(),
-            "download-finished",
-            json!({
-              "url": url.to_string(),
-              "success": success
-            }),
-          )
-          .unwrap_or_default();
-      }
-      _ => {}
-    };
-    true
-  });
+          DownloadEvent::Finished { url, success, .. } => {
+            window
+              .emit_to(
+                window.label(),
+                "download-finished",
+                json!({
+                  "url": url.to_string(),
+                  "success": success
+                }),
+              )
+              .unwrap_or_default();
+          }
+          _ => {}
+        };
+        true
+      });
 
   if let Ok(mut states) = WINDOW_STATES.lock() {
     let new_state = WindowState {
@@ -414,5 +442,29 @@ fn resolve_app_url(url: &str, base_url: &Url) -> Option<Url> {
 }
 
 fn is_allowed_app_url(url: &Url, base_url: &Url) -> bool {
+  if base_url.scheme() == "tauri" {
+    return url.scheme() == "tauri" && url.host_str() == base_url.host_str();
+  }
+
   matches!(url.scheme(), "http" | "https") && url.origin() == base_url.origin()
+}
+
+fn build_app_path(url: &Url) -> String {
+  let mut app_path = url.path().trim_start_matches('/').to_string();
+
+  if app_path.is_empty() {
+    app_path = "index.html".to_string();
+  }
+
+  if let Some(query) = url.query() {
+    app_path.push('?');
+    app_path.push_str(query);
+  }
+
+  if let Some(fragment) = url.fragment() {
+    app_path.push('#');
+    app_path.push_str(fragment);
+  }
+
+  app_path
 }

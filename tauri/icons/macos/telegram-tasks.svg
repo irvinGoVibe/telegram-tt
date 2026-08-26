@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="224" y1="176" x2="810" y2="864" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1B222C"/>
+      <stop offset="0.55" stop-color="#0D1219"/>
+      <stop offset="1" stop-color="#06080C"/>
+    </linearGradient>
+    <linearGradient id="plane" x1="294" y1="350" x2="690" y2="736" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCE7F2"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="454" y1="516" x2="641" y2="713" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#62C7FF"/>
+      <stop offset="1" stop-color="#2388D1"/>
+    </linearGradient>
+    <filter id="shadow" x="180" y="220" width="672" height="672" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.48"/>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="864" height="864" rx="208" fill="url(#background)"/>
+  <rect x="85" y="85" width="854" height="854" rx="203" fill="none" stroke="#34404E" stroke-width="10"/>
+  <g filter="url(#shadow)">
+    <path fill="url(#plane)" d="M249 497 745 296c39-16 77 21 62 61L629 772c-14 34-59 42-84 14L439 666l-96-45c-42-20-44-79-3-102l308-176-253 219 78 37 261-274-233 310 82 92 176-410-465 223c-28 13-57-2-64-28-2-6-1-11-1-15Z"/>
+    <path fill="url(#fold)" d="m473 599 261-274-233 310 82 92-144-61 34-67Z"/>
+    <path fill="#FFFFFF" fill-opacity="0.34" d="m249 497 496-201c16-6 32-4 44 5L294 540c-28 13-57-2-64-28-2-6-1-11-1-15Z"/>
+  </g>
+</svg>

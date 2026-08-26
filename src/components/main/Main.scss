@@ -34,16 +34,6 @@
   }
 }
 
-.tauri-drag-region {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
-  left: 0;
-
-  height: 1rem;
-}
-
 .has-call-header {
   --call-header-height: 2rem;
 

@@ -5302,7 +5302,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "telegram_air"
+name = "telegram_tasks"
 version = "2.11.5"
 dependencies = [
  "ab_glyph",

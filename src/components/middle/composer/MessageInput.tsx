@@ -89,6 +89,7 @@ export type OwnProps = {
   onRichInputCollapse?: NoneToVoidFunction;
   onRichInputExpand?: NoneToVoidFunction;
   onSuppressedFocus?: () => void;
+  onFixSpelling?: NoneToVoidFunction;
   onSend: () => void;
   onScroll?: (event: React.UIEvent<HTMLElement>) => void;
   onFocus?: NoneToVoidFunction;
@@ -137,6 +138,7 @@ const MessageInput = ({
   onRichInputCollapse,
   onRichInputExpand,
   onSuppressedFocus,
+  onFixSpelling,
   onSend,
   onScroll,
   onFocus,
@@ -579,7 +581,7 @@ const MessageInput = ({
     const isEnterKey = e.key === 'Enter';
     const isSubmitModifierPressed = e.ctrlKey || e.metaKey;
 
-    if (!isEnterKey || e.shiftKey || isMobileDevice) {
+    if (!isEnterKey || e.altKey || e.shiftKey || isMobileDevice) {
       return false;
     }
 
@@ -599,6 +601,21 @@ const MessageInput = ({
 
   function handleKeyDownCapture(e: React.KeyboardEvent<HTMLDivElement>) {
     if (!(e.target instanceof Node) || !inputRef.current?.contains(e.target)) {
+      return;
+    }
+
+    if (
+      !e.isComposing
+      && e.key === 'Enter'
+      && e.altKey
+      && !e.ctrlKey
+      && !e.metaKey
+      && !e.shiftKey
+      && onFixSpelling
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      onFixSpelling();
       return;
     }
 

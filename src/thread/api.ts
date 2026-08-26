@@ -1,5 +1,7 @@
 import type { ThreadSource } from './events';
 
+import { IS_TAURI } from '../util/browser/globalEnvironment';
+
 export type ThreadUser = {
   id: string;
   email?: string;
@@ -91,7 +93,15 @@ export type LinearCatalog = {
   projects: { id: string; name: string; teamIds: string[] }[];
 };
 
-const API_BASE = String(import.meta.env.TG_THREAD_API_URL || '').replace(/\/+$/, '');
+export type ThreadAiSkill = {
+  name: string;
+  instructions: string;
+};
+
+const TAURI_API_BASE = 'http://127.0.0.1:4317';
+const API_BASE = String(import.meta.env.TG_THREAD_API_URL || (IS_TAURI ? TAURI_API_BASE : '')).replace(/\/+$/, '');
+const DESKTOP_API_TOKEN = String(import.meta.env.TG_THREAD_DESKTOP_TOKEN || '');
+const DESKTOP_API_TOKEN_HEADER = 'x-telegram-tasks-token';
 
 export class ThreadApiError extends Error {
   status: number;
@@ -103,13 +113,18 @@ export class ThreadApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body) {
+    headers.set('content-type', 'application/json');
+  }
+  if (IS_TAURI && DESKTOP_API_TOKEN) {
+    headers.set(DESKTOP_API_TOKEN_HEADER, DESKTOP_API_TOKEN);
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: 'include',
-    headers: {
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...init.headers,
-    },
+    headers,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -171,6 +186,12 @@ export async function generateThreadAiAnswer(payload: { message: ThreadAiChatCon
   });
 }
 
+export async function fixThreadAiSpelling(payload: { text: string }) {
+  return request<{ text: string; model: string }>('/api/assistant/spelling', {
+    method: 'POST', body: JSON.stringify(payload),
+  });
+}
+
 export async function testThreadAiSettings(model?: string) {
   return request<{ connected: boolean; model: string; modelsCount: number }>('/api/ai/settings/test', {
     method: 'POST', body: JSON.stringify({ model }),
@@ -183,6 +204,7 @@ export async function askStandaloneThreadAssistant(payload: {
   history: ThreadAiChatHistoryItem[];
   context: ThreadAiChatContext;
   attachments?: { name: string; mimeType: string; data: string }[];
+  skills?: ThreadAiSkill[];
 }) {
   return request<{ answer: string; model: string }>('/api/assistant/chat', {
     method: 'POST', body: JSON.stringify(payload),

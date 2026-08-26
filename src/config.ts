@@ -36,7 +36,7 @@ export const DEBUG_ALERT_MSG = 'Shoot!\nSomething went wrong, please see the err
 export const DEBUG_GRAMJS = false;
 
 export const PAGE_TITLE = import.meta.env.TG_APP_TITLE;
-export const PAGE_TITLE_TAURI = 'Telegram Air';
+export const PAGE_TITLE_TAURI = 'Telegram Tasks';
 export const INACTIVE_MARKER = '[Inactive]';
 export const TELEGRAM_API_ID = Number(import.meta.env.TG_TELEGRAM_API_ID);
 export const TELEGRAM_API_HASH = import.meta.env.TG_TELEGRAM_API_HASH;

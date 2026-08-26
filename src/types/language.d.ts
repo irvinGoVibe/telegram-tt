@@ -2078,7 +2078,40 @@ export interface LangPair {
   'ThreadAIProject': undefined;
   'ThreadAIProjectChat': undefined;
   'ThreadAIModel': undefined;
+  'ThreadAISkills': undefined;
+  'ThreadAIBrowseSkills': undefined;
+  'ThreadAICreateSkill': undefined;
+  'ThreadAICreateSkillDescription': undefined;
+  'ThreadAICreateAndAttachSkill': undefined;
+  'ThreadAISkillsLibraryTitle': undefined;
+  'ThreadAISkillsLibraryDescription': undefined;
+  'ThreadAISkillTemplates': undefined;
+  'ThreadAIMySkills': undefined;
+  'ThreadAINoCustomSkills': undefined;
+  'ThreadAISkillName': undefined;
+  'ThreadAISkillDescription': undefined;
+  'ThreadAISkillDescriptionPlaceholder': undefined;
+  'ThreadAISkillInstructions': undefined;
+  'ThreadAISkillInstructionsPlaceholder': undefined;
+  'ThreadAISkillInstructionsHint': undefined;
+  'ThreadAIAttachSkill': undefined;
+  'ThreadAISkillAttached': undefined;
+  'ThreadAIDeleteSkill': undefined;
+  'ThreadAISkillsLimit': undefined;
+  'ThreadAISkillSummaryTitle': undefined;
+  'ThreadAISkillSummaryDescription': undefined;
+  'ThreadAISkillSummaryInstructions': undefined;
+  'ThreadAISkillActionsTitle': undefined;
+  'ThreadAISkillActionsDescription': undefined;
+  'ThreadAISkillActionsInstructions': undefined;
+  'ThreadAISkillReplyTitle': undefined;
+  'ThreadAISkillReplyDescription': undefined;
+  'ThreadAISkillReplyInstructions': undefined;
+  'ThreadAISkillBriefTitle': undefined;
+  'ThreadAISkillBriefDescription': undefined;
+  'ThreadAISkillBriefInstructions': undefined;
   'ThreadAINewChat': undefined;
+  'ThreadAICloseChat': undefined;
   'ThreadAIChats': undefined;
   'ThreadAIAskPlaceholder': undefined;
   'ThreadAIChooseChat': undefined;
@@ -2099,6 +2132,11 @@ export interface LangPair {
   'ThreadAIAnswer': undefined;
   'ThreadAIAnswerGenerating': undefined;
   'ThreadAIAnswerReady': undefined;
+  'ThreadAISpellingFixing': undefined;
+  'ThreadAISpellingFixed': undefined;
+  'ThreadAISpellingUnchanged': undefined;
+  'ThreadAISpellingDraftChanged': undefined;
+  'ThreadAISpellingApplyError': undefined;
   'ThreadAITelegramParticipant': undefined;
   'ThreadAIMediaMessage': undefined;
   'ThreadAIAttachFile': undefined;
@@ -4047,7 +4085,16 @@ export interface LangPairWithVariables<V = LangVariable> {
   'ThreadAIContextLimited': {
     'count': V;
   };
+  'ThreadAISkillsAttachedCount': {
+    'count': V;
+  };
+  'ThreadAIRemoveSkill': {
+    'skill': V;
+  };
   'ThreadAIAnswerError': {
+    'error': V;
+  };
+  'ThreadAISpellingError': {
     'error': V;
   };
   'ThreadAIOpenCitation': {

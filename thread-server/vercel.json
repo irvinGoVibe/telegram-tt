@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx convex deploy --cmd-url-env-var-name CONVEX_URL --cmd 'npm run build:app'",
+  "buildCommand": "npm run build:app",
   "functions": {
     "server.mjs": {
       "maxDuration": 300,

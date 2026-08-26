@@ -144,6 +144,7 @@ import { getServerTime } from '../../util/serverTime';
 import stopEvent from '../../util/stopEvent';
 import { getUtf8Length } from '../../util/textFormat';
 import windowSize from '../../util/windowSize';
+import { fixThreadAiSpelling } from '../../thread/api';
 import applyIosAutoCapitalizationFix from '../middle/composer/helpers/applyIosAutoCapitalizationFix';
 import buildAttachment, {
   buildGifAttachment,
@@ -528,6 +529,7 @@ const Composer = ({
   const counterRef = useRef<HTMLSpanElement>();
 
   const storyReactionRef = useRef<HTMLButtonElement>();
+  const isSpellingFixPendingRef = useRef(false);
 
   const [isMounted, setIsMounted] = useState(false);
   const lastMessageSendTimeSecondsRef = useRef<number>();
@@ -668,6 +670,41 @@ const Composer = ({
   const handleDeleteRichInput = useLastCallback(() => {
     updateRichMessage(undefined);
     collapseRichInput();
+  });
+
+  const handleFixSpelling = useLastCallback(async () => {
+    const originalText = richEditor.getAsFormatted()?.text;
+    if (!originalText?.trim() || isSpellingFixPendingRef.current) return;
+
+    isSpellingFixPendingRef.current = true;
+    showNotification({ message: lang('ThreadAISpellingFixing') });
+
+    try {
+      const result = await fixThreadAiSpelling({ text: originalText });
+      if (richEditor.getAsFormatted()?.text !== originalText) {
+        showNotification({ message: lang('ThreadAISpellingDraftChanged') });
+        return;
+      }
+
+      if (result.text === originalText) {
+        showNotification({ message: lang('ThreadAISpellingUnchanged') });
+        return;
+      }
+
+      richEditor.replaceValue(buildRichMessageFromFormatted({ text: result.text }));
+      if (richEditor.getAsFormatted()?.text !== result.text) {
+        throw new Error(lang('ThreadAISpellingApplyError'));
+      }
+      showNotification({ message: lang('ThreadAISpellingFixed') });
+    } catch (error) {
+      showNotification({
+        message: lang('ThreadAISpellingError', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
+    } finally {
+      isSpellingFixPendingRef.current = false;
+    }
   });
 
   const checkCanSendRichContent = useLastCallback(() => {
@@ -2850,6 +2887,7 @@ const Composer = ({
             shouldSuppressFocus={isMobile && isSymbolMenuOpen}
             onRichInputCollapse={collapseRichInput}
             onRichInputExpand={handleOpenRichInput}
+            onFixSpelling={isInMessageList ? handleFixSpelling : undefined}
             onSend={onSend}
             onSuppressedFocus={closeSymbolMenu}
             onFocus={markInputHasFocus}

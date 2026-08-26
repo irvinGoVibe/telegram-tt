@@ -31,6 +31,13 @@
 - Show chat context as compact orientation, not as another heavy settings card.
 - Use text hierarchy and spacing before introducing additional containers or navigation.
 
+## macOS window chrome
+
+- In regular and native-fullscreen Tauri windows, do not render or reserve a full-width titlebar, background strip, border, margin, or fixed-column offset. The Telegram interface uses the full viewport height.
+- In a regular window, native macOS traffic-light controls overlay the top-left corner. Reserve their `2.5rem` vertical zone only inside the folder sidebar; when that sidebar is hidden, headers reserve horizontal space through `--window-controls-width`.
+- Leave fullscreen window controls to the native macOS top-edge reveal behavior. Do not imitate the traffic-light controls inside the Telegram interface.
+- Every fixed column and drawer, including the AI drawer, occupies the full viewport height and does not inherit a titlebar top offset.
+
 ## Interface styles
 
 - The product supports two interface styles: `islands` and `classic`. This choice changes layout presentation, not the color theme.
